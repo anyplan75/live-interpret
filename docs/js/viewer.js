@@ -111,12 +111,27 @@ LI.viewer = (() => {
         .join("<br>");
     }
 
+    let unsubSettings = null;
+    let unsubSubs = null;
+    let stopped = false;
+    function stop() {
+      stopped = true;
+      if (unsubSettings) unsubSettings();
+      if (unsubSubs) unsubSubs();
+      unsubSettings = null;
+      unsubSubs = null;
+      subtitleLines = [];
+      lastTime = 0;
+    }
+
     LI.db.init().then(() => {
-      LI.db.onValue("settings", applySettings);
-      LI.db.onValue("subtitles", applySubtitles);
+      if (stopped) return;
+      unsubSettings = LI.db.onValue("settings", applySettings);
+      unsubSubs = LI.db.onValue("subtitles", applySubtitles);
     }).catch((err) => {
-      subtitle.textContent = err.message || "연결 실패";
+      subtitle.textContent = LI.catalog.redactSecrets(err.message || "연결 실패");
     });
+    return { stop };
   }
 
   function startPrompter(opts) {
@@ -167,7 +182,7 @@ LI.viewer = (() => {
       return true;
     }
 
-    langSelect.addEventListener("change", () => {
+    function onLangChange() {
       currentLang = langSelect.value;
       if (ingestLatestForLang(true)) {
         lastTime = latestPayload ? latestPayload._timestamp : 0;
@@ -175,7 +190,8 @@ LI.viewer = (() => {
         lastTime = 0;
         clearScreen("언어가 변경되었습니다. 다음 문장을 기다리는 중입니다...");
       }
-    });
+    }
+    langSelect.addEventListener("change", onLangChange);
 
     function applySubtitles(subtitles) {
       if (!subtitles) return;
@@ -185,13 +201,26 @@ LI.viewer = (() => {
       ingestLatestForLang(false);
     }
 
+    let unsub = null;
+    let stopped = false;
+    function stop() {
+      stopped = true;
+      langSelect.removeEventListener("change", onLangChange);
+      if (unsub) unsub();
+      unsub = null;
+      lines = [];
+      latestPayload = null;
+      lastTime = 0;
+    }
+
     LI.db.init().then(() => {
-      LI.db.onValue("subtitles", applySubtitles);
+      if (stopped) return;
+      unsub = LI.db.onValue("subtitles", applySubtitles);
     }).catch((err) => {
-      clearScreen(err.message || "연결에 실패했습니다.");
+      clearScreen(LI.catalog.redactSecrets(err.message || "연결에 실패했습니다."));
     });
 
-    return { clearScreen };
+    return { clearScreen, stop };
   }
 
   return {

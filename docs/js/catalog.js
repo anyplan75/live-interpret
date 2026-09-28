@@ -50,6 +50,7 @@
   ];
 
   const BANNED_SEGMENTS = new Set(["cheil", "jifc"]);
+  const platformKeyRel = "platform/openaiKey";
 
   function targetLangCodes() {
     return languages.map((lang) => lang.code).filter((code) => code !== "ko");
@@ -209,6 +210,22 @@
     return `${root}/admin.html?church=${encodeURIComponent(churchId)}`;
   }
 
+  function churchIsActive(value) {
+    if (value === false) return false;
+    if (value == null || value === true) return true;
+    if (typeof value !== "object") return true;
+    if (!Object.prototype.hasOwnProperty.call(value, "active")) return true;
+    return value.active !== false;
+  }
+
+  function isPlatformKey(value) {
+    return typeof value === "string" && /^sk-[A-Za-z0-9_-]{10,}$/.test(value.trim());
+  }
+
+  function redactSecrets(text) {
+    return String(text == null ? "" : text).replace(/sk-[A-Za-z0-9_-]{4,}/g, "[redacted]");
+  }
+
   return {
     languages,
     langByCode,
@@ -231,5 +248,9 @@
     buildLinks,
     homeLink,
     adminLink,
+    platformKeyRel,
+    churchIsActive,
+    isPlatformKey,
+    redactSecrets,
   };
 });

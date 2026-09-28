@@ -11,9 +11,20 @@
   <div class="container">
     <header class="brand">
       <div class="church">통역 관리</div>
-      <div class="sub">교회를 추가하고, 방송이 끝난 뒤 언어별 텍스트를 보고 받습니다.</div>
+      <div class="sub">키를 한 번 넣고, 교회를 켜거나 끈 다음, 방송이 끝난 뒤 언어별 텍스트를 보고 받습니다.</div>
     </header>
     <p id="banner" class="error"></p>
+
+    <section class="card">
+      <h2>OpenAI 키</h2>
+      <p class="hint">교회마다 키를 두지 않습니다. 여기에 한 번 저장하면 방송 앱이 그 키로 번역합니다.</p>
+      <label for="apiKey">API 키</label>
+      <input id="apiKey" type="password" autocomplete="off" placeholder="한 번만 입력">
+      <div class="row" style="margin-top:8px;">
+        <button type="button" id="saveKey">키 저장</button>
+      </div>
+      <p id="keyMsg" class="msg"></p>
+    </section>
 
     <section class="card">
       <h2>교회 추가</h2>
@@ -33,6 +44,10 @@
       <h2 id="detailTitle">교회</h2>
       <label for="editName">교회 이름</label>
       <input id="editName" type="text" maxlength="80">
+      <div class="row" style="margin-top:12px;">
+        <button type="button" id="toggleActive">비활성화</button>
+        <span id="activeState" class="hint"></span>
+      </div>
       <div id="links"></div>
       <label for="glossary" style="margin-top:16px;">예배 용어집</label>
       <textarea id="glossary"></textarea>

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   saveSettings: (settings) => ipcRenderer.invoke("settings:set", settings),
   catalog: () => ipcRenderer.invoke("catalog"),
   listChurches: () => ipcRenderer.invoke("churches:list"),
+  keyStatus: () => ipcRenderer.invoke("platform:keyStatus"),
   listDevices: () => ipcRenderer.invoke("devices:list"),
   pickFolder: () => ipcRenderer.invoke("dialog:folder"),
   monitor: (deviceKey, channel) => ipcRenderer.invoke("audio:monitor", deviceKey, channel),

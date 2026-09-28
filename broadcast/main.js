@@ -16,14 +16,22 @@ function settingsFile() {
 
 function readSettings() {
   try {
-    return JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
+    const saved = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    if (Object.prototype.hasOwnProperty.call(saved, "apiKey")) {
+      delete saved.apiKey;
+      fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
+      fs.writeFileSync(settingsFile(), JSON.stringify(saved, null, 2));
+    }
+    return saved;
   } catch (_) {
     return {};
   }
 }
 
 function writeSettings(next) {
-  const merged = { ...readSettings(), ...next };
+  const merged = { ...readSettings(), ...(next || {}) };
+  delete merged.apiKey;
   fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
   fs.writeFileSync(settingsFile(), JSON.stringify(merged, null, 2));
   return merged;
@@ -76,6 +84,10 @@ function registerIpc() {
     defaultTargets: catalog.defaultSelectedTargets(),
   }));
   ipcMain.handle("churches:list", () => require("./lib/firebase").listChurches());
+  ipcMain.handle("platform:keyStatus", async () => {
+    const key = await require("./lib/firebase").getPlatformKey();
+    return { configured: Boolean(key) };
+  });
   ipcMain.handle("devices:list", () => {
     try {
       return engine.listDevices();

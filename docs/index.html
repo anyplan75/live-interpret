@@ -52,6 +52,7 @@
       langsCard.hidden = true;
     } else {
       LI.db.useChurch(churchId);
+      let latestSettings = null;
       render(["ko", ...LI.catalog.defaultSelectedTargets()]);
       LI.db.init().then(async () => {
         const name = await LI.db.get(`churches/${churchId}/name`);
@@ -60,10 +61,20 @@
           document.title = `${name} 실시간 통역`;
         }
         LI.db.onValue("settings", (settings) => {
+          latestSettings = settings;
+          if (langsCard.hidden) return;
           render(LI.viewer.activeLangCodesFromSettings(settings));
         });
+        LI.db.onValue(`churches/${churchId}/active`, (value) => {
+          const active = LI.catalog.churchIsActive(value);
+          langsCard.hidden = !active;
+          document.getElementById("churchSub").textContent = active
+            ? "오늘 송출 중인 언어를 고르면 자막이 열립니다."
+            : "이 교회는 지금 통역을 사용하지 않습니다.";
+          if (active) render(LI.viewer.activeLangCodesFromSettings(latestSettings));
+        });
       }).catch((err) => {
-        document.getElementById("churchSub").textContent = err.message || "연결에 실패했습니다.";
+        document.getElementById("churchSub").textContent = LI.catalog.redactSecrets(err.message || "연결에 실패했습니다.");
       });
     }
   </script>

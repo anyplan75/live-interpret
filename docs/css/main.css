@@ -85,6 +85,8 @@ button.warn { background: var(--warning); color: #1a1a1a; }
 }
 .lang-link .flag { font-size: 1.4rem; }
 .church-item.on { border-color: var(--accent); }
+.church-item .state { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
+.church-item.off { opacity: 0.72; }
 
 .link-box { display: grid; grid-template-columns: 88px 1fr auto; gap: 8px; align-items: center; margin-top: 8px; }
 .link-box input { width: 100%; font-size: 0.88rem; }

@@ -1,4 +1,4 @@
-const { firebase, underRoot, isChurchId } = require("./catalog");
+const { firebase, underRoot, isChurchId, churchIsActive, isPlatformKey, redactSecrets, platformKeyRel } = require("./catalog");
 const { isSessionFolder: folderOk } = require("./paths");
 
 function assertChurch(id) {
@@ -18,7 +18,7 @@ async function request(method, rel, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Firebase ${res.status}: ${text.slice(0, 180)}`);
+  if (!res.ok) throw new Error(`Firebase ${res.status}: ${redactSecrets(text).slice(0, 180)}`);
   if (!text || text === "null") return null;
   try {
     return JSON.parse(text);
@@ -51,18 +51,23 @@ function rowsFromIndex(index) {
       id,
       name: typeof row.name === "string" && row.name.trim() ? row.name.trim() : id,
       createdAt: typeof row.createdAt === "number" ? row.createdAt : 0,
+      active: churchIsActive(row),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }
 
+function activeChurchesFromIndex(index) {
+  return rowsFromIndex(index).filter((row) => row.active);
+}
+
 async function listChurches() {
   const index = await get("churchIndex");
-  const rows = rowsFromIndex(index);
-  if (rows.length) return rows;
+  const known = rowsFromIndex(index);
+  if (known.length) return known.filter((row) => row.active);
   const shallowUrl = `${firebase.databaseURL.replace(/\/$/, "")}/${underRoot("churches")}.json?shallow=true`;
   const res = await fetch(shallowUrl);
   const text = await res.text();
-  if (!res.ok) throw new Error(`Firebase ${res.status}: ${text.slice(0, 180)}`);
+  if (!res.ok) throw new Error(`Firebase ${res.status}: ${redactSecrets(text).slice(0, 180)}`);
   const keys = text && text !== "null" ? JSON.parse(text) : null;
   if (!keys || typeof keys !== "object") return [];
   const churches = [];
@@ -70,22 +75,32 @@ async function listChurches() {
     if (!isChurchId(id)) continue;
     const name = await get(`churches/${id}/name`);
     const createdAt = await get(`churches/${id}/createdAt`);
+    const active = await get(`churches/${id}/active`);
+    if (!churchIsActive(active)) continue;
     churches.push({
       id,
       name: typeof name === "string" && name.trim() ? name.trim() : id,
       createdAt: typeof createdAt === "number" ? createdAt : 0,
+      active: true,
     });
   }
   churches.sort((a, b) => a.name.localeCompare(b.name, "ko"));
   return churches;
 }
 
+async function getPlatformKey() {
+  const value = await get(platformKeyRel);
+  if (!isPlatformKey(value)) return "";
+  return value.trim();
+}
+
 async function getChurch(id) {
   assertChurch(id);
-  const [name, glossary, createdAt] = await Promise.all([
+  const [name, glossary, createdAt, active] = await Promise.all([
     get(`churches/${id}/name`),
     get(`churches/${id}/glossary`),
     get(`churches/${id}/createdAt`),
+    get(`churches/${id}/active`),
   ]);
   if (typeof name !== "string" || !name.trim()) return null;
   return {
@@ -93,6 +108,7 @@ async function getChurch(id) {
     name: name.trim(),
     createdAt: createdAt || 0,
     glossary: typeof glossary === "string" ? glossary : "",
+    active: churchIsActive(active),
   };
 }
 
@@ -115,6 +131,8 @@ module.exports = {
   update,
   remove,
   listChurches,
+  activeChurchesFromIndex,
+  getPlatformKey,
   getChurch,
   setSessionText,
   setSessionMeta,

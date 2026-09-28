@@ -1,6 +1,5 @@
 const statusEl = document.getElementById("status");
 const churchEl = document.getElementById("church");
-const apiKeyEl = document.getElementById("apiKey");
 const modelEl = document.getElementById("model");
 const sensitivityEl = document.getElementById("sensitivity");
 const deviceEl = document.getElementById("device");
@@ -32,7 +31,7 @@ function setStatus(text, kind) {
 function log(text, level) {
   const line = document.createElement("div");
   if (level === "error") line.className = "err";
-  line.textContent = text;
+  line.textContent = String(text || "").replace(/sk-[A-Za-z0-9_-]{4,}/g, "[redacted]");
   logEl.prepend(line);
   while (logEl.childNodes.length > 80) logEl.removeChild(logEl.lastChild);
 }
@@ -262,7 +261,6 @@ async function chooseDevice() {
 async function boot() {
   state.catalog = await window.broadcast.catalog();
   state.settings = await window.broadcast.getSettings();
-  apiKeyEl.value = state.settings.apiKey || "";
   sensitivityEl.value = state.settings.sensitivity || "normal";
   modelEl.innerHTML = "";
   state.catalog.models.forEach((model) => {
@@ -274,6 +272,7 @@ async function boot() {
   modelEl.value = state.settings.model || state.catalog.defaultModel;
   if (state.settings.folder) folderHint.textContent = state.settings.folder;
   await renderLangs(state.settings.targets || state.catalog.defaultTargets);
+  await refreshKeyHint();
   await reloadChurches();
   await reloadDevices();
   window.broadcast.onEvent((event) => {
@@ -300,13 +299,26 @@ async function boot() {
   });
 }
 
+async function refreshKeyHint() {
+  const hint = document.getElementById("keyHint");
+  try {
+    const status = await window.broadcast.keyStatus();
+    hint.textContent = status && status.configured
+      ? "관리 페이지에 저장된 키로 번역합니다."
+      : "관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.";
+  } catch (err) {
+    hint.textContent = "키 상태를 확인하지 못했습니다.";
+    log(err.message || String(err), "error");
+  }
+}
+
 async function reloadChurches() {
   try {
     state.churches = await window.broadcast.listChurches();
     renderChurches();
     document.getElementById("churchHint").textContent = state.churches.length
-      ? "성도·OBS 링크는 오른쪽 카드에 표시됩니다."
-      : "관리 페이지에서 교회 이름을 추가해 주세요.";
+      ? "활성화된 교회만 나옵니다. 성도·OBS 링크는 오른쪽 카드에 표시됩니다."
+      : "활성화된 교회가 없습니다. 관리 페이지에서 교회를 추가하거나 활성화해 주세요.";
     if (currentChurchId()) {
       try { await window.broadcast.setTargets(currentChurchId(), state.targets); }
       catch (err) { log(err.message || String(err), "error"); }
@@ -337,7 +349,6 @@ churchEl.addEventListener("change", async () => {
   }
 });
 deviceEl.addEventListener("change", chooseDevice);
-apiKeyEl.addEventListener("change", () => persist({ apiKey: apiKeyEl.value.trim() }));
 modelEl.addEventListener("change", () => persist({ model: modelEl.value }));
 sensitivityEl.addEventListener("change", () => persist({ sensitivity: sensitivityEl.value }));
 document.getElementById("pickDefault").addEventListener("click", () => renderLangs(state.catalog.defaultTargets));
@@ -354,7 +365,6 @@ document.getElementById("pickFolder").addEventListener("click", async () => {
 document.getElementById("start").addEventListener("click", async () => {
   try {
     await persist({
-      apiKey: apiKeyEl.value.trim(),
       model: modelEl.value,
       sensitivity: sensitivityEl.value,
       churchId: currentChurchId(),
@@ -363,7 +373,6 @@ document.getElementById("start").addEventListener("click", async () => {
     });
     state.lines = {};
     await window.broadcast.start({
-      apiKey: apiKeyEl.value.trim(),
       model: modelEl.value,
       sensitivity: sensitivityEl.value,
       churchId: currentChurchId(),

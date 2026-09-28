@@ -99,14 +99,34 @@
         localStorage.setItem(fontKey(code), String(size - profile.fontSize));
         applyReadability(code);
       }
-      if (navigator.wakeLock) {
+      let prompter = null;
+      let wakeHeld = false;
+      let latestSettings = null;
+      function holdWake() {
+        if (wakeHeld || !navigator.wakeLock) return;
+        wakeHeld = true;
         const lock = () => navigator.wakeLock.request("screen").catch(() => {});
         lock();
         document.addEventListener("visibilitychange", () => {
           if (document.visibilityState === "visible") lock();
         });
       }
-      LI.viewer.startPrompter({ langSelect: select, scriptBox, maxLines: 40 });
+      function showInactive() {
+        if (prompter) {
+          prompter.stop();
+          prompter = null;
+        }
+        scriptBox.innerHTML = '<p class="waiting">이 교회는 지금 통역을 사용하지 않습니다.</p>';
+      }
+      function ensureLive() {
+        if (prompter) return;
+        scriptBox.innerHTML = '<p class="waiting">자막을 준비하고 있습니다.</p>';
+        prompter = LI.viewer.startPrompter({ langSelect: select, scriptBox, maxLines: 40 });
+        if (latestSettings) {
+          rebuild(LI.viewer.activeLangCodesFromSettings(latestSettings), select.value || initial);
+        }
+        holdWake();
+      }
       LI.db.init().then(async () => {
         const name = await LI.db.get(`churches/${churchId}/name`);
         if (name) {
@@ -114,7 +134,13 @@
           document.title = `${name} 나의 통역`;
         }
         LI.db.onValue("settings", (settings) => {
+          latestSettings = settings;
+          if (!prompter) return;
           rebuild(LI.viewer.activeLangCodesFromSettings(settings), select.value || initial);
+        });
+        LI.db.onValue(`churches/${churchId}/active`, (value) => {
+          if (LI.catalog.churchIsActive(value)) ensureLive();
+          else showInactive();
         });
       });
     }

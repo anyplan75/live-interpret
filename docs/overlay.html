@@ -26,10 +26,27 @@
       const lang = LI.viewer.queryLang("ko");
       document.title = `Overlay (${lang})`;
       LI.db.useChurch(churchId);
-      LI.viewer.startOverlay({
-        lang,
-        container: document.getElementById("container"),
-        subtitle,
+      let overlay = null;
+      LI.db.init().then(() => {
+        LI.db.onValue(`churches/${churchId}/active`, (value) => {
+          if (!LI.catalog.churchIsActive(value)) {
+            if (overlay) {
+              overlay.stop();
+              overlay = null;
+            }
+            subtitle.textContent = "이 교회는 지금 통역을 사용하지 않습니다.";
+            return;
+          }
+          if (!overlay) {
+            overlay = LI.viewer.startOverlay({
+              lang,
+              container: document.getElementById("container"),
+              subtitle,
+            });
+          }
+        });
+      }).catch((err) => {
+        subtitle.textContent = LI.catalog.redactSecrets(err.message || "연결 실패");
       });
     }
   </script>

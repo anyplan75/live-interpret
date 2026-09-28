@@ -23,14 +23,12 @@
           <select id="church" class="grow"></select>
           <button type="button" class="ghost" id="reloadChurches">새로고침</button>
         </div>
-        <p class="hint" id="churchHint">관리 페이지에서 교회를 추가한 뒤 여기서 고릅니다.</p>
+        <p class="hint" id="churchHint">관리 페이지에서 활성화한 교회만 고릅니다.</p>
       </div>
 
       <div class="card">
-        <h2>OpenAI</h2>
-        <label for="apiKey">API 키</label>
-        <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off">
-        <div class="row" style="margin-top:10px;">
+        <h2>번역</h2>
+        <div class="row">
           <select id="model"></select>
           <select id="sensitivity" title="입력 감도">
             <option value="high">감도 높음</option>
@@ -38,7 +36,7 @@
             <option value="low">감도 낮음</option>
           </select>
         </div>
-        <p class="hint">번역 모델은 기존 송출기와 같습니다. 키는 이 PC에만 저장됩니다.</p>
+        <p class="hint" id="keyHint">번역 키는 관리 페이지에 한 번 저장됩니다.</p>
       </div>
 
       <div class="card">

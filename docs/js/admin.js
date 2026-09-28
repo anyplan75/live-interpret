@@ -9,7 +9,8 @@ let currentId = "";
 let textUnsub = null;
 
 function showError(err) {
-  banner.textContent = err && err.message ? err.message : String(err || "");
+  const raw = err && err.message ? err.message : String(err || "");
+  banner.textContent = LI.catalog.redactSecrets(raw);
 }
 
 function pageBase() {
@@ -61,7 +62,12 @@ async function loadChurches() {
   const index = await LI.db.get("churchIndex");
   churches = !index || typeof index !== "object" ? [] : Object.entries(index)
     .filter(([id, row]) => LI.catalog.isChurchId(id) && row)
-    .map(([id, row]) => ({ id, name: row.name || id, createdAt: row.createdAt || 0 }))
+    .map(([id, row]) => ({
+      id,
+      name: row.name || id,
+      createdAt: row.createdAt || 0,
+      active: LI.catalog.churchIsActive(row),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   listEl.innerHTML = "";
   if (!churches.length) {
@@ -71,8 +77,14 @@ async function loadChurches() {
   churches.forEach((church) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `church-item${church.id === currentId ? " on" : ""}`;
-    button.textContent = church.name;
+    button.dataset.id = church.id;
+    button.className = `church-item${church.id === currentId ? " on" : ""}${church.active ? "" : " off"}`;
+    const name = document.createElement("span");
+    name.textContent = church.name;
+    const state = document.createElement("span");
+    state.className = "state";
+    state.textContent = church.active ? "활성" : "비활성";
+    button.append(name, state);
     button.addEventListener("click", () => openChurch(church.id));
     listEl.append(button);
   });
@@ -124,7 +136,7 @@ async function openChurch(id) {
   document.getElementById("editName").value = church ? church.name : id;
   renderLinks(church || { id, name: id });
   [...listEl.children].forEach((node) => {
-    if (node.classList) node.classList.toggle("on", node.textContent === (church && church.name));
+    if (node.classList) node.classList.toggle("on", node.dataset && node.dataset.id === id);
   });
   const [glossary, settings, sessionIndex] = await Promise.all([
     LI.db.get(`churches/${id}/glossary`),
@@ -134,6 +146,16 @@ async function openChurch(id) {
   document.getElementById("glossary").value = typeof glossary === "string" && glossary.trim()
     ? glossary
     : LI.catalog.defaultGlossary(church ? church.name : id);
+  const activeValue = await LI.db.get(`churches/${id}/active`);
+  const active = LI.catalog.churchIsActive(activeValue);
+  if (church && church.active !== active) {
+    church.active = active;
+    await LI.db.update(`churchIndex/${id}`, { active });
+    await loadChurches();
+  } else if (church) {
+    church.active = active;
+  }
+  renderActiveControl(active);
   fillStyle(settings);
   renderSessions(id, sessionIndex);
   const url = new URL(location.href);
@@ -215,6 +237,25 @@ function watchTexts(id, folder, meta) {
   });
 }
 
+function renderActiveControl(active) {
+  const button = document.getElementById("toggleActive");
+  const state = document.getElementById("activeState");
+  button.textContent = active ? "비활성화" : "활성화";
+  button.classList.toggle("ghost", active);
+  state.textContent = active
+    ? "활성 · 방송 앱 목록에 나옵니다."
+    : "비활성 · 방송 앱에 없고, 성도 자막과 OBS는 실시간으로 열리지 않습니다.";
+}
+
+async function refreshKeyStatus() {
+  LI.db.clearChurch();
+  const value = await LI.db.get(LI.catalog.platformKeyRel);
+  const saved = LI.catalog.isPlatformKey(value);
+  document.getElementById("keyMsg").textContent = saved
+    ? "플랫폼 키가 저장되어 있습니다. 방송 앱이 이 키를 사용합니다."
+    : "아직 저장된 키가 없습니다.";
+}
+
 function downloadText(filename, text) {
   const blob = new Blob([text || ""], { type: "text/plain;charset=utf-8" });
   const link = document.createElement("a");
@@ -224,6 +265,38 @@ function downloadText(filename, text) {
   URL.revokeObjectURL(link.href);
 }
 
+document.getElementById("saveKey").addEventListener("click", async () => {
+  const input = document.getElementById("apiKey");
+  const key = input.value.trim();
+  if (!LI.catalog.isPlatformKey(key)) {
+    document.getElementById("keyMsg").textContent = "키 형식이 올바르지 않습니다.";
+    return;
+  }
+  try {
+    LI.db.clearChurch();
+    await LI.db.set(LI.catalog.platformKeyRel, key);
+    input.value = "";
+    document.getElementById("keyMsg").textContent = "키를 저장했습니다. 방송 앱이 이 키를 사용합니다.";
+  } catch (err) {
+    showError(err);
+  }
+});
+
+document.getElementById("toggleActive").addEventListener("click", async () => {
+  if (!currentId) return;
+  const row = churches.find((item) => item.id === currentId);
+  const next = !(row && row.active);
+  try {
+    await LI.db.update(`churches/${currentId}`, { active: next });
+    await LI.db.update(`churchIndex/${currentId}`, { active: next });
+    if (row) row.active = next;
+    renderActiveControl(next);
+    await loadChurches();
+  } catch (err) {
+    showError(err);
+  }
+});
+
 document.getElementById("addChurch").addEventListener("click", async () => {
   const name = document.getElementById("churchName").value.trim();
   if (!name) return;
@@ -232,9 +305,10 @@ document.getElementById("addChurch").addEventListener("click", async () => {
     await LI.db.set(`churches/${id}`, {
       name,
       createdAt: Date.now(),
+      active: true,
       glossary: LI.catalog.defaultGlossary(name),
     });
-    await LI.db.set(`churchIndex/${id}`, { name, createdAt: Date.now() });
+    await LI.db.set(`churchIndex/${id}`, { name, createdAt: Date.now(), active: true });
     await LI.db.set(`churches/${id}/live/settings`, LI.catalog.defaultLiveSettings());
     document.getElementById("churchName").value = "";
     await loadChurches();
@@ -299,6 +373,7 @@ document.getElementById("saveStyle").addEventListener("click", async () => {
 
 LI.db.clearChurch();
 LI.db.init()
+  .then(refreshKeyStatus)
   .then(loadChurches)
   .then(() => {
     const requested = LI.catalog.churchIdFromQuery(location.search);

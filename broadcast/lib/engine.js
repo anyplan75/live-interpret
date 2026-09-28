@@ -1,4 +1,4 @@
-const { langByCode, defaultGlossary, defaultModel, isChurchId } = require("./catalog");
+const { langByCode, defaultGlossary, defaultModel, isChurchId, redactSecrets } = require("./catalog");
 const { listInputDevices, InputCapture } = require("./audio");
 const { channelPeaks, resampleInt16, selectedChannelPcm } = require("./audio-util");
 const { SpeechSession } = require("./stt");
@@ -12,7 +12,14 @@ function cleanTargets(targets) {
 
 class Engine {
   constructor(emit) {
-    this.emit = emit || (() => {});
+    const raw = emit || (() => {});
+    this.emit = (payload) => {
+      if (payload && typeof payload.text === "string") {
+        raw({ ...payload, text: redactSecrets(payload.text) });
+        return;
+      }
+      raw(payload);
+    };
     this.capture = new InputCapture();
     this.devices = [];
     this.device = null;
@@ -111,8 +118,9 @@ class Engine {
 
   async start(opts) {
     if (this.running) throw new Error("이미 방송 중입니다.");
-    if (!opts.apiKey || !String(opts.apiKey).trim().startsWith("sk-")) {
-      throw new Error("OpenAI API 키를 입력해 주세요. sk- 로 시작해야 합니다.");
+    const apiKey = await firebase.getPlatformKey();
+    if (!apiKey) {
+      throw new Error("관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.");
     }
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
     if (!isChurchId(opts.churchId)) throw new Error("교회를 선택해 주세요.");
@@ -124,6 +132,7 @@ class Engine {
     }
     const church = await firebase.getChurch(opts.churchId);
     if (!church) throw new Error("교회를 찾지 못했습니다. 관리 페이지에서 교회를 먼저 추가해 주세요.");
+    if (!church.active) throw new Error("이 교회는 비활성 상태입니다. 관리 페이지에서 활성화해 주세요.");
     const glossary = church.glossary && church.glossary.trim()
       ? church.glossary
       : defaultGlossary(church.name);
@@ -147,7 +156,7 @@ class Engine {
       setText: (lang, text) => firebase.setSessionText(church.id, this.folderName, lang, text),
     };
     this.pipeline = new Pipeline({
-      apiKey: opts.apiKey.trim(),
+      apiKey,
       model: opts.model || defaultModel,
       targets,
       glossary,
@@ -159,7 +168,7 @@ class Engine {
     });
     this.pipeline.startTicker();
     this.speech = new SpeechSession({
-      apiKey: opts.apiKey.trim(),
+      apiKey,
       churchName: church.name,
       glossary,
       sensitivity: opts.sensitivity || "normal",
