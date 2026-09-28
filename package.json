@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "web": "node scripts/serve-web.js",
-    "test": "node --test test/*.js"
+    "test": "node --test test/*.js",
+    "pack:mac": "electron-builder --mac dir --arm64 && node scripts/name-mac-app.js"
   },
   "engines": {
     "node": ">=20"
@@ -17,6 +18,43 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
-    "electron": "^35.7.5"
+    "electron": "^35.7.5",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.anyplan.live-interpret",
+    "productName": "Live Interpret",
+    "executableName": "live-interpret",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/audify/build/Release/**"
+    ],
+    "files": [
+      "broadcast/**/*",
+      "docs/js/catalog.js",
+      "docs/js/languages.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": ["arm64"]
+        }
+      ],
+      "category": "public.app-category.music",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "설교 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
+        "CFBundleDisplayName": "실시간 통역"
+      }
+    }
   }
 }

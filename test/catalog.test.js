@@ -35,7 +35,7 @@ test("firebase paths stay under live-interpret", () => {
 
 test("source does not target cheil or jifc firebase paths", () => {
   const root = path.join(__dirname, "..");
-  const skip = new Set(["node_modules", ".git"]);
+  const skip = new Set(["node_modules", ".git", "dist", "out"]);
   const bad = [];
   function walk(dir) {
     for (const name of fs.readdirSync(dir)) {

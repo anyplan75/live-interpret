@@ -4,9 +4,11 @@ function loadAudify() {
   try {
     return require("audify");
   } catch (err) {
-    throw new Error(
-      `오디오 라이브러리를 불러오지 못했습니다. 방송 PC에서 npm install 을 다시 실행해 주세요. (${err.message})`
-    );
+    const packaged = !!(process.versions && process.versions.electron && !process.defaultApp);
+    const hint = packaged
+      ? "실시간 통역 앱을 다시 설치해 주세요."
+      : "방송 PC에서 npm install 을 다시 실행해 주세요.";
+    throw new Error(`오디오 라이브러리를 불러오지 못했습니다. ${hint} (${err.message})`);
   }
 }
 

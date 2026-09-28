@@ -6,9 +6,28 @@
 
 데이터는 기존 Firebase 데이터베이스의 `live-interpret` 경로에만 둡니다. cheil, jifc 경로는 쓰지 않습니다.
 
-## 방송 앱 설치
+## 방송 앱
 
-맥과 윈도우 모두 Node.js 20 이상이 필요합니다. [nodejs.org](https://nodejs.org)에서 설치합니다.
+맥 방송실에서는 Finder에서 `실시간 통역.app`을 더블클릭합니다. 터미널이나 `npm start`는 쓰지 않습니다.
+
+```text
+dist/mac-arm64/실시간 통역.app
+```
+
+처음 실행하면 마이크 권한을 묻습니다. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 **실시간 통역**을 허용합니다.
+
+입력 목록에는 CoreAudio 장치가 나옵니다. 장치를 고르면 채널이 나타나고, 레벨이 움직이는 채널이 설교 소리입니다. 인식은 그 채널만 사용합니다. 브라우저 기본 마이크는 쓰지 않습니다.
+
+앱을 다시 만들 때는 Node.js 20 이상이 필요합니다.
+
+```bash
+npm install
+npm run pack:mac
+```
+
+### 윈도우 교회 PC
+
+Node.js 20 이상이 필요합니다. [nodejs.org](https://nodejs.org)에서 설치합니다.
 
 ```bash
 git clone https://github.com/anyplan75/live-interpret.git
@@ -17,19 +36,9 @@ npm install
 npm start
 ```
 
-저장소를 아직 GitHub에 올리지 못한 경우에는, 받은 폴더에서 `npm install`과 `npm start`만 실행하면 됩니다.
+입력 목록에는 WASAPI 장치가 나옵니다. 그 PC에서 ASIO 드라이버를 볼 수 있으면 ASIO도 함께 나옵니다.
 
-### 맥
-
-처음 실행하면 마이크 권한을 묻습니다. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 Terminal 또는 Electron을 허용합니다.
-
-입력 목록에는 CoreAudio 장치가 나옵니다. 장치를 고르면 채널이 나타나고, 레벨이 움직이는 채널이 설교 소리입니다. 인식은 그 채널만 사용합니다. 브라우저 기본 마이크는 쓰지 않습니다.
-
-### 윈도우 교회 PC
-
-같은 방법으로 설치합니다. 입력 목록에는 WASAPI 장치가 나옵니다. 그 PC에서 ASIO 드라이버를 볼 수 있으면 ASIO도 함께 나옵니다.
-
-`npm install`이 네이티브 모듈을 받지 못하면 Windows에서는 Visual Studio Build Tools, 맥에서는 Xcode Command Line Tools가 필요합니다.
+`npm install`이 네이티브 모듈을 받지 못하면 Windows에서는 Visual Studio Build Tools가 필요합니다.
 
 ## 방송 순서
 
