@@ -1,0 +1,72 @@
+:root {
+  --bg: #0c1118;
+  --panel: rgba(20, 28, 38, 0.96);
+  --text: #f5f7fa;
+  --muted: #8b9aab;
+  --line: #2a3545;
+  --interim: #9aa8b8;
+  --latest: #fff6d6;
+  --font-size: 26px;
+  --line-height: 1.75;
+  --letter-spacing: -0.01em;
+  --word-break: keep-all;
+  --font-weight: 650;
+  --font-family: "Pretendard", "Noto Sans KR", sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(900px 420px at 50% -20%, rgba(42, 157, 117, 0.16), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-family);
+}
+
+#header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  padding: calc(10px + var(--safe-top)) 14px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.church { text-align: center; font-weight: 800; margin-bottom: 10px; }
+.controls { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+select, .size-btn {
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #0a0f15;
+  color: #fff;
+  font-weight: 700;
+}
+select { width: 100%; padding: 12px 14px; font-size: 16px; }
+.size-btn { width: 44px; height: 44px; font-size: 1.05rem; }
+
+#scriptBox {
+  margin-top: calc(118px + var(--safe-top));
+  padding: 8px 16px calc(36px + var(--safe-bottom));
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  letter-spacing: var(--letter-spacing);
+  word-break: var(--word-break);
+  font-family: var(--font-family);
+  font-weight: var(--font-weight);
+}
+
+#scriptBox p {
+  margin: 0 0 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px dashed var(--line);
+  color: #dce3eb;
+}
+
+#scriptBox p:last-child { color: var(--latest); font-weight: 800; border-bottom: none; }
+#scriptBox p.interim { color: var(--interim); font-weight: 600; }
+#scriptBox p.waiting { color: var(--muted); border: none; text-align: center; margin-top: 18vh; }

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 통역 송출</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>실시간 통역 송출</h1>
+      <p>입력 장치를 고른 다음, 소리가 들어오는 채널만 인식합니다. 음성은 저장하지 않습니다.</p>
+    </div>
+    <div id="status" class="pill">대기</div>
+  </header>
+  <main>
+    <section>
+      <div class="card">
+        <h2>교회</h2>
+        <div class="row">
+          <select id="church" class="grow"></select>
+          <button type="button" class="ghost" id="reloadChurches">새로고침</button>
+        </div>
+        <p class="hint" id="churchHint">관리 페이지에서 교회를 추가한 뒤 여기서 고릅니다.</p>
+      </div>
+
+      <div class="card">
+        <h2>OpenAI</h2>
+        <label for="apiKey">API 키</label>
+        <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off">
+        <div class="row" style="margin-top:10px;">
+          <select id="model"></select>
+          <select id="sensitivity" title="입력 감도">
+            <option value="high">감도 높음</option>
+            <option value="normal" selected>감도 보통</option>
+            <option value="low">감도 낮음</option>
+          </select>
+        </div>
+        <p class="hint">번역 모델은 기존 송출기와 같습니다. 키는 이 PC에만 저장됩니다.</p>
+      </div>
+
+      <div class="card">
+        <h2>입력 소스와 채널</h2>
+        <div class="row">
+          <select id="device" class="grow"></select>
+          <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
+        </div>
+        <div id="channels" class="channels"></div>
+        <p class="hint" id="audioHint">레벨이 움직이는 채널이 설교 소리입니다. 브라우저 마이크는 쓰지 않습니다.</p>
+      </div>
+
+      <div class="card">
+        <h2>오늘 번역할 언어</h2>
+        <div class="row">
+          <button type="button" class="ghost" id="pickDefault">추천만</button>
+          <button type="button" class="ghost" id="pickAll">전체</button>
+          <button type="button" class="ghost" id="pickNone">번역 없음</button>
+        </div>
+        <div id="langs" class="langs" style="margin-top:10px;"></div>
+        <p class="hint" id="langCount"></p>
+      </div>
+
+      <div class="card">
+        <h2>저장 폴더</h2>
+        <div class="row">
+          <button type="button" class="warn" id="pickFolder">폴더 선택</button>
+          <button type="button" id="start">방송 시작</button>
+          <button type="button" class="danger" id="stop" disabled>방송 종료</button>
+        </div>
+        <p class="hint" id="folderHint">교회 이름 / 날짜_시각 / 언어.txt 로 저장됩니다.</p>
+        <p class="hint"><button type="button" class="ghost" id="showSession" disabled>저장 폴더 열기</button></p>
+      </div>
+    </section>
+
+    <section>
+      <div class="card">
+        <h2>지금 듣는 한국어</h2>
+        <div id="live" class="live">대기 중...</div>
+        <div id="cards" class="grid"></div>
+        <div id="log" class="log"></div>
+      </div>
+    </section>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

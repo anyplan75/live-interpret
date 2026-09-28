@@ -1,0 +1,22 @@
+{
+  "name": "live-interpret",
+  "version": "0.1.0",
+  "private": true,
+  "description": "여러 교회의 예배를 입력 채널로 받아 실시간 통역 자막을 보내는 방송실 앱",
+  "main": "broadcast/main.js",
+  "scripts": {
+    "start": "electron .",
+    "web": "node scripts/serve-web.js",
+    "test": "node --test test/*.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "audify": "1.10.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "electron": "^35.7.5"
+  }
+}

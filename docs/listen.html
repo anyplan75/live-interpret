@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0c1118">
+  <title>나의 통역</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;600;700;800&family=Noto+Sans+SC:wght@500;600;700&family=Noto+Sans+TC:wght@500;600;700&family=Noto+Sans+JP:wght@500;600;700&family=Noto+Sans+KR:wght@500;600;700;800&family=Noto+Sans+Devanagari:wght@500;600;700&family=Noto+Sans+Thai:wght@500;600;700&family=Noto+Sans+Khmer:wght@500;600;700&family=Noto+Sans+Myanmar:wght@500;600;700&family=Noto+Sans+Bengali:wght@500;600;700&family=Noto+Sans+Sinhala:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+  <link rel="stylesheet" href="css/listen.css">
+</head>
+<body>
+  <div id="header">
+    <div class="church" id="churchName">나의 통역</div>
+    <div class="controls">
+      <select id="langSelect" aria-label="언어 선택"></select>
+      <div>
+        <button type="button" class="size-btn" id="fontDown" aria-label="글자 작게">A-</button>
+        <button type="button" class="size-btn" id="fontUp" aria-label="글자 크게">A+</button>
+      </div>
+    </div>
+  </div>
+  <div id="scriptBox"><p class="waiting">자막을 준비하고 있습니다.</p></div>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <script src="js/languages.js"></script>
+  <script src="js/catalog.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/viewer.js"></script>
+  <script>
+    const churchId = LI.catalog.churchIdFromQuery(location.search);
+    const select = document.getElementById("langSelect");
+    const scriptBox = document.getElementById("scriptBox");
+    const root = document.documentElement;
+    const MIN_FONT = 16;
+    const MAX_FONT = 44;
+    const DEFAULT_READABILITY = {
+      fontSize: 26, lineHeight: 1.75, letterSpacing: "-0.01em",
+      wordBreak: "keep-all", fontWeight: 650,
+      fontFamily: '"Pretendard", "Noto Sans KR", sans-serif',
+    };
+
+    if (!churchId) {
+      scriptBox.innerHTML = '<p class="waiting">교회 링크가 없습니다.<br>관리자에게 주소를 요청해 주세요.</p>';
+    } else {
+      const storageKey = `live_interpret_listen_${churchId}`;
+      const saved = localStorage.getItem(storageKey);
+      const initial = new URLSearchParams(location.search).get("lang") || saved || "en";
+
+      function fontKey(code) { return `${storageKey}_font_${code}`; }
+      function getDelta(code) {
+        const n = parseInt(localStorage.getItem(fontKey(code)) || "0", 10);
+        return Number.isNaN(n) ? 0 : n;
+      }
+      function readabilityFor(code) {
+        const meta = LI.catalog.langByCode[code];
+        return Object.assign({}, DEFAULT_READABILITY, (meta && meta.readability) || {});
+      }
+      function applyReadability(code) {
+        const profile = readabilityFor(code);
+        const size = Math.min(MAX_FONT, Math.max(MIN_FONT, profile.fontSize + getDelta(code)));
+        root.style.setProperty("--font-size", `${size}px`);
+        root.style.setProperty("--line-height", String(profile.lineHeight));
+        root.style.setProperty("--letter-spacing", profile.letterSpacing);
+        root.style.setProperty("--word-break", profile.wordBreak);
+        root.style.setProperty("--font-weight", String(profile.fontWeight));
+        root.style.setProperty("--font-family", profile.fontFamily);
+        document.body.lang = code;
+        scriptBox.lang = code;
+      }
+      function applyLangChoice(code) {
+        localStorage.setItem(storageKey, code);
+        const url = new URL(location.href);
+        url.searchParams.set("church", churchId);
+        url.searchParams.set("lang", code);
+        history.replaceState(null, "", url);
+        applyReadability(code);
+      }
+      function rebuild(allowed, preferred) {
+        const before = select.value;
+        const chosen = LI.viewer.fillLangSelect(select, preferred || select.value || initial, allowed);
+        applyLangChoice(chosen);
+        if (chosen !== before) select.dispatchEvent(new Event("change"));
+      }
+
+      LI.db.useChurch(churchId);
+      rebuild(["ko", ...LI.catalog.defaultSelectedTargets()], initial);
+      select.addEventListener("change", () => applyLangChoice(select.value));
+      document.getElementById("fontUp").addEventListener("click", () => bump(2));
+      document.getElementById("fontDown").addEventListener("click", () => bump(-2));
+      function bump(step) {
+        const code = select.value;
+        const profile = readabilityFor(code);
+        const size = Math.min(MAX_FONT, Math.max(MIN_FONT, profile.fontSize + getDelta(code) + step));
+        localStorage.setItem(fontKey(code), String(size - profile.fontSize));
+        applyReadability(code);
+      }
+      if (navigator.wakeLock) {
+        const lock = () => navigator.wakeLock.request("screen").catch(() => {});
+        lock();
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") lock();
+        });
+      }
+      LI.viewer.startPrompter({ langSelect: select, scriptBox, maxLines: 40 });
+      LI.db.init().then(async () => {
+        const name = await LI.db.get(`churches/${churchId}/name`);
+        if (name) {
+          document.getElementById("churchName").textContent = `${name} · 나의 통역`;
+          document.title = `${name} 나의 통역`;
+        }
+        LI.db.onValue("settings", (settings) => {
+          rebuild(LI.viewer.activeLangCodesFromSettings(settings), select.value || initial);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
