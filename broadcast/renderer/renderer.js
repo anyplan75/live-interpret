@@ -19,6 +19,7 @@ const state = {
   devices: [],
   audio: null,
   running: false,
+  signedIn: false,
   lines: {},
   targets: [],
 };
@@ -258,6 +259,20 @@ async function chooseDevice() {
   }
 }
 
+function setSignedIn(auth) {
+  state.signedIn = !!(auth && auth.signedIn);
+  document.getElementById("signInCard").hidden = state.signedIn;
+  if (state.signedIn && auth.email) {
+    document.getElementById("signInMsg").textContent = "";
+  }
+}
+
+async function afterSignIn() {
+  setSignedIn({ signedIn: true });
+  await refreshKeyHint();
+  await reloadChurches();
+}
+
 async function boot() {
   state.catalog = await window.broadcast.catalog();
   state.settings = await window.broadcast.getSettings();
@@ -272,8 +287,10 @@ async function boot() {
   modelEl.value = state.settings.model || state.catalog.defaultModel;
   if (state.settings.folder) folderHint.textContent = state.settings.folder;
   await renderLangs(state.settings.targets || state.catalog.defaultTargets);
+  const auth = await window.broadcast.authStatus();
+  setSignedIn(auth);
   await refreshKeyHint();
-  await reloadChurches();
+  if (state.signedIn) await reloadChurches();
   await reloadDevices();
   window.broadcast.onEvent((event) => {
     if (event.type === "levels") applyLevels(event.peaks || []);
@@ -301,10 +318,14 @@ async function boot() {
 
 async function refreshKeyHint() {
   const hint = document.getElementById("keyHint");
+  if (!state.signedIn) {
+    hint.textContent = "한 번 로그인하면 번역 키를 이 컴퓨터에 저장하고 다시 묻지 않습니다.";
+    return;
+  }
   try {
     const status = await window.broadcast.keyStatus();
     hint.textContent = status && status.configured
-      ? "관리 페이지에 저장된 키로 번역합니다."
+      ? "이 컴퓨터에 저장된 키로 번역합니다."
       : "관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.";
   } catch (err) {
     hint.textContent = "키 상태를 확인하지 못했습니다.";
@@ -313,6 +334,12 @@ async function refreshKeyHint() {
 }
 
 async function reloadChurches() {
+  if (!state.signedIn) {
+    state.churches = [];
+    renderChurches();
+    document.getElementById("churchHint").textContent = "로그인하면 활성화된 교회가 나옵니다.";
+    return;
+  }
   try {
     state.churches = await window.broadcast.listChurches();
     renderChurches();
@@ -337,6 +364,22 @@ async function reloadDevices() {
   if (deviceEl.value) await chooseDevice();
 }
 
+document.getElementById("adminSignIn").addEventListener("click", async () => {
+  const email = document.getElementById("adminEmail").value.trim();
+  const password = document.getElementById("adminPassword").value;
+  const msg = document.getElementById("signInMsg");
+  msg.textContent = "";
+  try {
+    const auth = await window.broadcast.signIn(email, password);
+    document.getElementById("adminPassword").value = "";
+    setSignedIn(auth);
+    msg.textContent = "";
+    await afterSignIn();
+    log("로그인했습니다. 번역 키는 이 컴퓨터에만 저장됩니다.");
+  } catch (err) {
+    msg.textContent = err.message || String(err);
+  }
+});
 document.getElementById("reloadChurches").addEventListener("click", reloadChurches);
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 churchEl.addEventListener("change", async () => {

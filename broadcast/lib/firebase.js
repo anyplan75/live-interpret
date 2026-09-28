@@ -1,6 +1,18 @@
 const { firebase, underRoot, isChurchId, churchIsActive, isPlatformKey, redactSecrets, platformKeyRel } = require("./catalog");
 const { isSessionFolder: folderOk } = require("./paths");
 
+let idToken = "";
+
+function setIdToken(token) {
+  idToken = typeof token === "string" ? token : "";
+}
+
+function withAuth(url) {
+  if (!idToken) return url;
+  const join = url.includes("?") ? "&" : "?";
+  return `${url}${join}auth=${encodeURIComponent(idToken)}`;
+}
+
 function assertChurch(id) {
   if (!isChurchId(id)) throw new Error("교회 아이디가 올바르지 않습니다.");
 }
@@ -11,7 +23,7 @@ function assertFolder(folder) {
 
 async function request(method, rel, body) {
   const full = underRoot(rel);
-  const url = `${firebase.databaseURL.replace(/\/$/, "")}/${full}.json`;
+  const url = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${full}.json`);
   const res = await fetch(url, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
@@ -64,7 +76,7 @@ async function listChurches() {
   const index = await get("churchIndex");
   const known = rowsFromIndex(index);
   if (known.length) return known.filter((row) => row.active);
-  const shallowUrl = `${firebase.databaseURL.replace(/\/$/, "")}/${underRoot("churches")}.json?shallow=true`;
+  const shallowUrl = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${underRoot("churches")}.json?shallow=true`);
   const res = await fetch(shallowUrl);
   const text = await res.text();
   if (!res.ok) throw new Error(`Firebase ${res.status}: ${redactSecrets(text).slice(0, 180)}`);
@@ -126,6 +138,8 @@ async function setSessionMeta(churchId, folder, meta) {
 }
 
 module.exports = {
+  setIdToken,
+  withAuth,
   get,
   set,
   update,

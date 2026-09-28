@@ -31,7 +31,13 @@
   const langByCode = Object.fromEntries(languages.map((lang) => [lang.code, lang]));
 
   const firebase = {
+    apiKey: "AIzaSyBaTVqnnRtefy-sE3NyAEhqL-u_IphWlec",
+    authDomain: "overlay-lab.firebaseapp.com",
     databaseURL: "https://overlay-lab-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "overlay-lab",
+    storageBucket: "overlay-lab.firebasestorage.app",
+    messagingSenderId: "1053036442548",
+    appId: "1:1053036442548:web:67aad27d013e95d71b78e1",
     rootPath: "live-interpret",
   };
   const pagesBase = "https://anyplan75.github.io/live-interpret";
@@ -51,6 +57,7 @@
 
   const BANNED_SEGMENTS = new Set(["cheil", "jifc"]);
   const platformKeyRel = "platform/openaiKey";
+  const adminUidRel = "admin/uid";
 
   function targetLangCodes() {
     return languages.map((lang) => lang.code).filter((code) => code !== "ko");
@@ -226,6 +233,50 @@
     return String(text == null ? "" : text).replace(/sk-[A-Za-z0-9_-]{4,}/g, "[redacted]");
   }
 
+  function canClaimAdmin(existingUid) {
+    return existingUid == null || existingUid === "";
+  }
+
+  function isCurrentAdmin(existingUid, uid) {
+    return typeof existingUid === "string" && !!existingUid && existingUid === uid;
+  }
+
+  function validAdminEmail(email) {
+    return typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }
+
+  function validAdminPassword(password) {
+    return typeof password === "string" && password.length >= 6 && password.length <= 200;
+  }
+
+  function authErrorMessage(err) {
+    const code = err && err.code ? String(err.code) : "";
+    const message = err && err.message ? String(err.message) : String(err || "");
+    const text = redactSecrets(`${code} ${message}`);
+    if (/unauthorized-domain/i.test(text)) {
+      return "이 주소는 Firebase 로그인 허용 도메인에 없습니다. Authentication → Settings → Authorized domains 에 anyplan75.github.io 를 추가해 주세요.";
+    }
+    if (/configuration-not-found|CONFIGURATION_NOT_FOUND/i.test(text)) {
+      return "Firebase 이메일 로그인이 아직 꺼져 있습니다. 콘솔에서 Authentication 을 켜 주세요.";
+    }
+    if (/operation-not-allowed/i.test(text)) {
+      return "이메일 로그인이 꺼져 있습니다. 콘솔에서 이메일/비밀번호를 켜 주세요.";
+    }
+    if (/email-already-in-use/i.test(text)) {
+      return "이미 등록된 이메일입니다. 로그인하세요.";
+    }
+    if (/weak-password|PASSWORD_DOES_NOT_MEET/i.test(text)) {
+      return "비밀번호는 6자 이상이어야 합니다.";
+    }
+    if (/invalid-credential|wrong-password|user-not-found|INVALID_PASSWORD|EMAIL_NOT_FOUND|INVALID_LOGIN/i.test(text)) {
+      return "이메일 또는 비밀번호가 올바르지 않습니다.";
+    }
+    if (/network-request-failed|Failed to fetch|NetworkError/i.test(text)) {
+      return "네트워크에 연결하지 못했습니다.";
+    }
+    return redactSecrets(message || code || "로그인에 실패했습니다.");
+  }
+
   return {
     languages,
     langByCode,
@@ -249,8 +300,14 @@
     homeLink,
     adminLink,
     platformKeyRel,
+    adminUidRel,
     churchIsActive,
     isPlatformKey,
     redactSecrets,
+    canClaimAdmin,
+    isCurrentAdmin,
+    validAdminEmail,
+    validAdminPassword,
+    authErrorMessage,
   };
 });

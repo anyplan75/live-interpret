@@ -11,9 +11,31 @@
   <div class="container">
     <header class="brand">
       <div class="church">통역 관리</div>
-      <div class="sub">키를 한 번 넣고, 교회를 켜거나 끈 다음, 방송이 끝난 뒤 언어별 텍스트를 보고 받습니다.</div>
+      <div class="sub">로그인한 관리자만 키, 교회, 용어집, 자막 기록을 보거나 바꿉니다.</div>
     </header>
     <p id="banner" class="error"></p>
+
+    <section class="card stack" id="gate">
+      <h2 id="gateTitle">관리자 로그인</h2>
+      <p id="gateHint" class="hint">계정을 확인하고 있습니다.</p>
+      <label for="email">이메일</label>
+      <input id="email" type="email" autocomplete="username" required>
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div id="confirmWrap" hidden>
+        <label for="confirm">비밀번호 확인</label>
+        <input id="confirm" type="password" autocomplete="new-password">
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <button type="button" id="gateSubmit">로그인</button>
+      </div>
+      <p id="gateMsg" class="msg"></p>
+    </section>
+
+    <div id="adminApp" hidden>
+    <div class="row" style="justify-content:flex-end;">
+      <button type="button" class="ghost" id="signOut">로그아웃</button>
+    </div>
 
     <section class="card">
       <h2>OpenAI 키</h2>
@@ -85,12 +107,15 @@
       <div id="sessions" class="session-list"></div>
       <div id="texts"></div>
     </section>
+    </div>
   </div>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
   <script src="js/languages.js"></script>
   <script src="js/catalog.js"></script>
   <script src="js/db.js"></script>
+  <script src="js/auth.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

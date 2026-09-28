@@ -102,6 +102,7 @@
       let prompter = null;
       let wakeHeld = false;
       let latestSettings = null;
+      let settingsUnsub = null;
       function holdWake() {
         if (wakeHeld || !navigator.wakeLock) return;
         wakeHeld = true;
@@ -112,6 +113,10 @@
         });
       }
       function showInactive() {
+        if (settingsUnsub) {
+          settingsUnsub();
+          settingsUnsub = null;
+        }
         if (prompter) {
           prompter.stop();
           prompter = null;
@@ -122,6 +127,13 @@
         if (prompter) return;
         scriptBox.innerHTML = '<p class="waiting">자막을 준비하고 있습니다.</p>';
         prompter = LI.viewer.startPrompter({ langSelect: select, scriptBox, maxLines: 40 });
+        if (!settingsUnsub) {
+          settingsUnsub = LI.db.onValue("settings", (settings) => {
+            latestSettings = settings;
+            if (!prompter) return;
+            rebuild(LI.viewer.activeLangCodesFromSettings(settings), select.value || initial);
+          });
+        }
         if (latestSettings) {
           rebuild(LI.viewer.activeLangCodesFromSettings(latestSettings), select.value || initial);
         }
@@ -133,11 +145,6 @@
           document.getElementById("churchName").textContent = `${name} · 나의 통역`;
           document.title = `${name} 나의 통역`;
         }
-        LI.db.onValue("settings", (settings) => {
-          latestSettings = settings;
-          if (!prompter) return;
-          rebuild(LI.viewer.activeLangCodesFromSettings(settings), select.value || initial);
-        });
         LI.db.onValue(`churches/${churchId}/active`, (value) => {
           if (LI.catalog.churchIsActive(value)) ensureLive();
           else showInactive();

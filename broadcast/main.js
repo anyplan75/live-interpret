@@ -3,12 +3,61 @@ const fs = require("fs");
 const path = require("path");
 const catalog = require("./lib/catalog");
 const { Engine } = require("./lib/engine");
+const firebase = require("./lib/firebase");
+const secrets = require("./lib/secrets");
+const googleAuth = require("./lib/google-auth");
 
 app.setName("live-interpret");
 
 let win = null;
 let engine = null;
 let quitting = false;
+let idToken = "";
+let tokenExpiresAt = 0;
+
+function userDir() {
+  return app.getPath("userData");
+}
+
+async function ensureAuth() {
+  const session = secrets.readSession(userDir());
+  if (!session) {
+    idToken = "";
+    firebase.setIdToken("");
+    return "";
+  }
+  if (idToken && Date.now() < tokenExpiresAt - 60000) {
+    firebase.setIdToken(idToken);
+    return idToken;
+  }
+  try {
+    const next = await googleAuth.refresh(session.refreshToken);
+    idToken = next.idToken;
+    tokenExpiresAt = Date.now() + next.expiresIn * 1000;
+    secrets.writeSession(userDir(), {
+      refreshToken: next.refreshToken,
+      email: session.email,
+      localId: next.localId || session.localId,
+    });
+    firebase.setIdToken(idToken);
+    return idToken;
+  } catch (err) {
+    idToken = "";
+    firebase.setIdToken("");
+    secrets.clearSession(userDir());
+    throw err;
+  }
+}
+
+async function resolveKey() {
+  const local = secrets.readKey(userDir());
+  if (local) return local;
+  const token = await ensureAuth();
+  if (!token) return "";
+  const remote = await firebase.getPlatformKey();
+  if (remote) secrets.writeKey(userDir(), remote);
+  return remote || "";
+}
 
 function settingsFile() {
   return path.join(app.getPath("userData"), "settings.json");
@@ -83,10 +132,69 @@ function registerIpc() {
     pagesBase: catalog.pagesBase,
     defaultTargets: catalog.defaultSelectedTargets(),
   }));
-  ipcMain.handle("churches:list", () => require("./lib/firebase").listChurches());
+  ipcMain.handle("auth:status", async () => {
+    let signedIn = false;
+    let email = "";
+    const saved = secrets.readSession(userDir());
+    if (saved) {
+      email = saved.email;
+      try {
+        signedIn = Boolean(await ensureAuth());
+      } catch (err) {
+        signedIn = false;
+        email = "";
+      }
+    }
+    return {
+      signedIn,
+      email,
+      keyReady: Boolean(secrets.readKey(userDir())),
+    };
+  });
+  ipcMain.handle("auth:signIn", async (_event, email, password) => {
+    if (!catalog.validAdminEmail(email) || !catalog.validAdminPassword(password)) {
+      throw new Error("이메일과 비밀번호를 확인해 주세요. 비밀번호는 6자 이상입니다.");
+    }
+    const session = await googleAuth.signIn(String(email).trim(), password);
+    idToken = session.idToken;
+    tokenExpiresAt = Date.now() + session.expiresIn * 1000;
+    firebase.setIdToken(idToken);
+    secrets.writeSession(userDir(), {
+      refreshToken: session.refreshToken,
+      email: session.email,
+      localId: session.localId,
+    });
+    let keyReady = Boolean(secrets.readKey(userDir()));
+    try {
+      const remote = await firebase.getPlatformKey();
+      if (remote) {
+        secrets.writeKey(userDir(), remote);
+        keyReady = true;
+      }
+    } catch (_) {
+      /* 키가 아직 없으면 로그인만 유지합니다 */
+    }
+    return { signedIn: true, email: session.email, keyReady };
+  });
+  ipcMain.handle("churches:list", async () => {
+    const token = await ensureAuth();
+    if (!token) return [];
+    return firebase.listChurches();
+  });
   ipcMain.handle("platform:keyStatus", async () => {
-    const key = await require("./lib/firebase").getPlatformKey();
-    return { configured: Boolean(key) };
+    if (secrets.readKey(userDir())) return { configured: true };
+    try {
+      const token = await ensureAuth();
+      if (!token) return { configured: false };
+      const key = await firebase.getPlatformKey();
+      if (key) {
+        secrets.writeKey(userDir(), key);
+        return { configured: true };
+      }
+    } catch (_) {
+      return { configured: false };
+    }
+    return { configured: false };
   });
   ipcMain.handle("devices:list", () => {
     try {
@@ -108,6 +216,8 @@ function registerIpc() {
   ipcMain.handle("targets:set", async (_event, churchId, targets) => {
     if (churchId && !catalog.isChurchId(churchId)) throw new Error("교회가 올바르지 않습니다.");
     if (!churchId) return engine.setTargets("", targets);
+    const token = await ensureAuth();
+    if (!token) throw new Error("로그인이 필요합니다.");
     return engine.setTargets(churchId, targets);
   });
   ipcMain.handle("links", (_event, churchId, targets) => {
@@ -119,7 +229,12 @@ function registerIpc() {
       items: catalog.buildLinks(catalog.pagesBase, churchId, codes),
     };
   });
-  ipcMain.handle("broadcast:start", (_event, opts) => engine.start(opts || {}));
+  ipcMain.handle("broadcast:start", async (_event, opts) => {
+    const token = await ensureAuth();
+    if (!token) throw new Error("로그인이 필요합니다.");
+    const apiKey = await resolveKey();
+    return engine.start({ ...(opts || {}), apiKey });
+  });
   ipcMain.handle("broadcast:stop", () => engine.stop());
   ipcMain.handle("copy", (_event, text) => {
     clipboard.writeText(String(text || ""));

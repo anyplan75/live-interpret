@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("broadcast", {
   catalog: () => ipcRenderer.invoke("catalog"),
   listChurches: () => ipcRenderer.invoke("churches:list"),
   keyStatus: () => ipcRenderer.invoke("platform:keyStatus"),
+  authStatus: () => ipcRenderer.invoke("auth:status"),
+  signIn: (email, password) => ipcRenderer.invoke("auth:signIn", email, password),
   listDevices: () => ipcRenderer.invoke("devices:list"),
   pickFolder: () => ipcRenderer.invoke("dialog:folder"),
   monitor: (deviceKey, channel) => ipcRenderer.invoke("audio:monitor", deviceKey, channel),

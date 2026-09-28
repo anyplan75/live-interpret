@@ -118,7 +118,7 @@ class Engine {
 
   async start(opts) {
     if (this.running) throw new Error("이미 방송 중입니다.");
-    const apiKey = await firebase.getPlatformKey();
+    const apiKey = opts.apiKey || await firebase.getPlatformKey();
     if (!apiKey) {
       throw new Error("관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.");
     }

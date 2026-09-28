@@ -22,7 +22,16 @@ LI.db = (() => {
       return Promise.reject(new Error("Firebase SDK가 로드되지 않았습니다."));
     }
     if (!firebase.apps.length) {
-      firebase.initializeApp({ databaseURL: LI.catalog.firebase.databaseURL });
+      const cfg = LI.catalog.firebase;
+      firebase.initializeApp({
+        apiKey: cfg.apiKey,
+        authDomain: cfg.authDomain,
+        databaseURL: cfg.databaseURL,
+        projectId: cfg.projectId,
+        storageBucket: cfg.storageBucket,
+        messagingSenderId: cfg.messagingSenderId,
+        appId: cfg.appId,
+      });
     }
     database = firebase.database();
     return Promise.resolve();
@@ -58,5 +67,11 @@ LI.db = (() => {
       return ref(rel).update(value);
     },
     onValue,
+    transaction(rel, updater) {
+      return ref(rel).transaction(updater).then((result) => ({
+        committed: result.committed,
+        value: result.snapshot.val(),
+      }));
+    },
   };
 })();

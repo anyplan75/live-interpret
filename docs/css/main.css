@@ -103,6 +103,8 @@ pre.transcript {
   overflow: auto;
 }
 
+.stack label { display: block; font-weight: 700; margin: 10px 0 6px; }
+.stack input { width: 100%; }
 .msg { min-height: 1.2em; color: #7dcea0; }
 .error { color: #ffb4b4; }
 

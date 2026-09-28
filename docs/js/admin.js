@@ -7,6 +7,12 @@ const textsEl = document.getElementById("texts");
 let churches = [];
 let currentId = "";
 let textUnsub = null;
+let signedIn = false;
+let creatingAdmin = false;
+
+function requireAdmin() {
+  if (!signedIn) throw new Error("로그인이 필요합니다.");
+}
 
 function showError(err) {
   const raw = err && err.message ? err.message : String(err || "");
@@ -58,6 +64,7 @@ function formatFolder(name) {
 }
 
 async function loadChurches() {
+  requireAdmin();
   LI.db.clearChurch();
   const index = await LI.db.get("churchIndex");
   churches = !index || typeof index !== "object" ? [] : Object.entries(index)
@@ -126,6 +133,7 @@ function renderLinks(church) {
 }
 
 async function openChurch(id) {
+  requireAdmin();
   currentId = id;
   if (textUnsub) textUnsub();
   textUnsub = null;
@@ -248,6 +256,7 @@ function renderActiveControl(active) {
 }
 
 async function refreshKeyStatus() {
+  requireAdmin();
   LI.db.clearChurch();
   const value = await LI.db.get(LI.catalog.platformKeyRel);
   const saved = LI.catalog.isPlatformKey(value);
@@ -266,6 +275,7 @@ function downloadText(filename, text) {
 }
 
 document.getElementById("saveKey").addEventListener("click", async () => {
+  if (!signedIn) return;
   const input = document.getElementById("apiKey");
   const key = input.value.trim();
   if (!LI.catalog.isPlatformKey(key)) {
@@ -283,7 +293,7 @@ document.getElementById("saveKey").addEventListener("click", async () => {
 });
 
 document.getElementById("toggleActive").addEventListener("click", async () => {
-  if (!currentId) return;
+  if (!signedIn || !currentId) return;
   const row = churches.find((item) => item.id === currentId);
   const next = !(row && row.active);
   try {
@@ -298,6 +308,7 @@ document.getElementById("toggleActive").addEventListener("click", async () => {
 });
 
 document.getElementById("addChurch").addEventListener("click", async () => {
+  if (!signedIn) return;
   const name = document.getElementById("churchName").value.trim();
   if (!name) return;
   const id = LI.catalog.makeChurchId(name);
@@ -319,7 +330,7 @@ document.getElementById("addChurch").addEventListener("click", async () => {
 });
 
 document.getElementById("saveGlossary").addEventListener("click", async () => {
-  if (!currentId) return;
+  if (!signedIn || !currentId) return;
   const name = document.getElementById("editName").value.trim();
   if (!name) return;
   try {
@@ -342,7 +353,7 @@ document.getElementById("resetGlossary").addEventListener("click", () => {
 });
 
 document.getElementById("saveStyle").addEventListener("click", async () => {
-  if (!currentId) return;
+  if (!signedIn || !currentId) return;
   try {
     const existing = (await LI.db.get(`churches/${currentId}/live/settings`)) || {};
     const next = {
@@ -371,13 +382,96 @@ document.getElementById("saveStyle").addEventListener("click", async () => {
   }
 });
 
+function showGate(mode) {
+  signedIn = false;
+  creatingAdmin = mode === "create";
+  document.getElementById("adminApp").hidden = true;
+  document.getElementById("gate").hidden = false;
+  document.getElementById("confirmWrap").hidden = !creatingAdmin;
+  document.getElementById("gateTitle").textContent = creatingAdmin ? "관리자 계정 만들기" : "관리자 로그인";
+  document.getElementById("gateSubmit").textContent = creatingAdmin ? "계정 만들기" : "로그인";
+  document.getElementById("password").autocomplete = creatingAdmin ? "new-password" : "current-password";
+  document.getElementById("gateHint").textContent = creatingAdmin
+    ? "처음 한 번만 이메일과 비밀번호를 정합니다. 계정이 생긴 뒤에는 새 가입은 되지 않습니다."
+    : "등록된 관리자 계정으로 로그인합니다.";
+}
+
+function showApp(email) {
+  signedIn = true;
+  document.getElementById("gate").hidden = true;
+  document.getElementById("adminApp").hidden = false;
+  document.getElementById("password").value = "";
+  document.getElementById("confirm").value = "";
+  const sub = document.querySelector(".brand .sub");
+  if (sub && email) sub.textContent = `${email} 로 로그인했습니다. 키, 교회, 용어집, 자막 기록을 관리합니다.`;
+}
+
+async function enterApp(user) {
+  if (signedIn) return;
+  showApp(user.email || "");
+  await refreshKeyStatus();
+  await loadChurches();
+  const requested = LI.catalog.churchIdFromQuery(location.search);
+  if (requested) await openChurch(requested);
+}
+
+document.getElementById("gateSubmit").addEventListener("click", async () => {
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const confirm = document.getElementById("confirm").value;
+  const msg = document.getElementById("gateMsg");
+  msg.textContent = "";
+  if (creatingAdmin && password !== confirm) {
+    msg.textContent = "비밀번호가 서로 다릅니다.";
+    return;
+  }
+  try {
+    const user = creatingAdmin
+      ? await LI.auth.signUp(email, password)
+      : await LI.auth.signIn(email, password);
+    document.getElementById("password").value = "";
+    document.getElementById("confirm").value = "";
+    await enterApp(user);
+  } catch (err) {
+    msg.textContent = LI.catalog.authErrorMessage(err);
+  }
+});
+
+document.getElementById("signOut").addEventListener("click", async () => {
+  if (textUnsub) textUnsub();
+  textUnsub = null;
+  currentId = "";
+  churches = [];
+  try {
+    await LI.auth.signOut();
+  } catch (err) {
+    showError(err);
+  }
+});
+
 LI.db.clearChurch();
 LI.db.init()
-  .then(refreshKeyStatus)
-  .then(loadChurches)
-  .then(() => {
-    const requested = LI.catalog.churchIdFromQuery(location.search);
-    if (requested) return openChurch(requested);
-    return null;
+  .then(() => LI.auth.status())
+  .then((state) => {
+    showGate(state.hasAdmin ? "login" : "create");
+    LI.auth.onUser(async (user) => {
+      if (LI.auth.isBusy()) return;
+      if (!user) {
+        const next = await LI.auth.status().catch(() => ({ hasAdmin: true }));
+        showGate(next.hasAdmin ? "login" : "create");
+        return;
+      }
+      try {
+        const uid = await LI.auth.existingUid();
+        if (!LI.catalog.isCurrentAdmin(uid, user.uid)) {
+          await LI.auth.signOut();
+          document.getElementById("gateMsg").textContent = "이 계정은 관리자가 아닙니다.";
+          return;
+        }
+        if (!signedIn) await enterApp(user);
+      } catch (err) {
+        showError(err);
+      }
+    });
   })
   .catch(showError);
