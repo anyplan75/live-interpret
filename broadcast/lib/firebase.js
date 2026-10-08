@@ -1,4 +1,5 @@
 const { firebase, underRoot, isChurchId, isPreacherId, churchIsActive, isPlatformKey, isModelId, redactSecrets, platformKeyRel, defaultModel } = require("./catalog");
+const { netFetch } = require("./net-fetch");
 const { isSessionFolder: folderOk } = require("./paths");
 
 let idToken = "";
@@ -24,7 +25,7 @@ function assertFolder(folder) {
 async function request(method, rel, body) {
   const full = underRoot(rel);
   const url = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${full}.json`);
-  const res = await fetch(url, {
+  const res = await netFetch(url, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -77,7 +78,7 @@ async function listChurches() {
   const known = rowsFromIndex(index);
   if (known.length) return known.filter((row) => row.active);
   const shallowUrl = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${underRoot("churches")}.json?shallow=true`);
-  const res = await fetch(shallowUrl);
+  const res = await netFetch(shallowUrl);
   const text = await res.text();
   if (!res.ok) throw new Error(`Firebase ${res.status}: ${redactSecrets(text).slice(0, 180)}`);
   const keys = text && text !== "null" ? JSON.parse(text) : null;

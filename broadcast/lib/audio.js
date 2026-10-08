@@ -197,7 +197,8 @@ class InputCapture {
             null,
             0,
             (_type, message) => {
-              if (this.onError) this.onError(message || "오디오 오류");
+              if (!message || /no open stream to close/i.test(message)) return;
+              if (this.onError) this.onError(message);
             }
           );
           rt.start();

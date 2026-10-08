@@ -1,7 +1,8 @@
 const { firebase, redactSecrets, authErrorMessage } = require("./catalog");
+const { netFetch } = require("./net-fetch");
 
 async function postJson(url, body) {
-  const res = await fetch(url, {
+  const res = await netFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -10,10 +11,10 @@ async function postJson(url, body) {
 }
 
 async function postForm(url, params) {
-  const res = await fetch(url, {
+  const res = await netFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(params),
+    body: new URLSearchParams(params).toString(),
   });
   return readAuthResponse(res);
 }
