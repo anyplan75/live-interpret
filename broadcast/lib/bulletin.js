@@ -86,7 +86,7 @@ function writeExtractionFile(dir, imageRef, extracted) {
 async function analyzeBulletinImage(opts) {
   const imagePath = opts.imagePath;
   const apiKey = opts.apiKey;
-  if (!apiKey) throw new Error("이 컴퓨터에 번역 키가 없습니다. 교회 계정은 관리 페이지의 OpenAI 키를 읽지 못합니다.");
+  if (!apiKey) throw new Error("관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.");
   const ext = assertImage(imagePath);
   const bytes = fs.readFileSync(imagePath);
   const mime = mimeFor(ext);

@@ -145,7 +145,7 @@ class Engine {
     if (this.running) throw new Error("이미 방송 중입니다.");
     const apiKey = opts.apiKey || "";
     if (!apiKey) {
-      throw new Error("이 컴퓨터에 번역 키가 없습니다. 교회 계정은 관리 페이지의 OpenAI 키를 읽지 못합니다.");
+      throw new Error("관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.");
     }
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
     if (!isChurchId(opts.churchId)) throw new Error("교회를 선택해 주세요.");

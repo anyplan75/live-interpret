@@ -8,7 +8,7 @@
     },
     "platform": {
       "openaiKey": {
-        ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+        ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || root.child('live-interpret/accounts').child(auth.uid).exists())",
         ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
       }
     },

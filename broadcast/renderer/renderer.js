@@ -381,7 +381,7 @@ async function refreshKeyHint() {
     const status = await window.broadcast.keyStatus();
     hint.textContent = status && status.configured
       ? "이 컴퓨터에 저장된 키로 인식, 번역, 주보 분석을 합니다."
-      : "이 컴퓨터에 번역 키가 없습니다. 교회 계정은 관리 페이지의 키를 읽지 못합니다.";
+      : "관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.";
   } catch (err) {
     hint.textContent = "키 상태를 확인하지 못했습니다.";
     log(err.message || String(err), "error");

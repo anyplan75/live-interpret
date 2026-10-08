@@ -335,7 +335,7 @@ async function refreshKeyStatus() {
   const value = await LI.db.get(LI.catalog.platformKeyRel);
   const saved = LI.catalog.isPlatformKey(value);
   document.getElementById("keyMsg").textContent = saved
-    ? "플랫폼 키가 저장되어 있습니다. 교회 계정은 이 키를 읽지 못합니다."
+    ? "플랫폼 키가 저장되어 있습니다. 방송 앱이 이 키로 번역하고, 화면에는 키를 보이지 않습니다."
     : "아직 저장된 키가 없습니다.";
 }
 
@@ -360,7 +360,7 @@ document.getElementById("saveKey").addEventListener("click", async () => {
     LI.db.clearChurch();
     await LI.db.set(LI.catalog.platformKeyRel, key);
     input.value = "";
-    document.getElementById("keyMsg").textContent = "키를 저장했습니다. 교회 계정은 이 키를 읽지 못합니다.";
+    document.getElementById("keyMsg").textContent = "키를 저장했습니다. 방송 앱이 이 키로 번역합니다.";
   } catch (err) {
     showError(err);
   }

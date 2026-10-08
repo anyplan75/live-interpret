@@ -54,6 +54,14 @@ function resolveKey() {
   return secrets.readKey(userDir());
 }
 
+async function cachePlatformKey() {
+  try {
+    const remote = await firebase.getPlatformKey();
+    if (remote) secrets.writeKey(userDir(), remote);
+  } catch (_) { /* 규칙을 아직 안 바꿨으면 이 PC에 있는 키를 씁니다 */ }
+  return resolveKey();
+}
+
 function bulletinDir(churchId) {
   return path.join(userDir(), "bulletins", churchId);
 }
@@ -177,7 +185,7 @@ function registerIpc() {
         signedIn: true,
         email: saved.email,
         church: publicChurch(church),
-        keyReady: Boolean(resolveKey()),
+        keyReady: Boolean(await cachePlatformKey()),
       };
     } catch (err) {
       const message = err && err.message ? err.message : "";
@@ -209,7 +217,7 @@ function registerIpc() {
         signedIn: true,
         email: session.email,
         church: publicChurch(church),
-        keyReady: Boolean(resolveKey()),
+        keyReady: Boolean(await cachePlatformKey()),
       };
     } catch (err) {
       idToken = "";
@@ -236,7 +244,7 @@ function registerIpc() {
       style: catalog.styleFromSettings(settings),
       preachers: await firebase.listPreachers(church.id),
       bulletin: staged ? { fileName: staged.fileName, extracted: staged.extracted } : null,
-      keyReady: Boolean(resolveKey()),
+      keyReady: Boolean(await cachePlatformKey()),
     };
   });
   ipcMain.handle("style:set", async (_event, style) => {
@@ -272,7 +280,7 @@ function registerIpc() {
       path: stored.absolutePath,
       fileName: stored.fileName,
     }));
-    const key = resolveKey();
+    const key = await cachePlatformKey();
     if (!key) {
       return {
         fileName: stored.fileName,
@@ -328,7 +336,7 @@ function registerIpc() {
     const requested = opts && opts.preacherId;
     const started = await engine.start({
       ...(opts || {}),
-      apiKey: resolveKey(),
+      apiKey: await cachePlatformKey(),
       churchId: church.id,
       preacherId: requested,
       bulletinPath: staged ? staged.path : "",

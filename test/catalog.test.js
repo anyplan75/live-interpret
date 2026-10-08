@@ -100,7 +100,7 @@ test("owner and church logins split the controls", () => {
   assert.match(renderer, /saveStyle/);
   assert.match(renderer, /pickBulletin/);
   assert.match(renderer, /savePreacher/);
-  assert.doesNotMatch(main, /getPlatformKey/);
+  assert.match(main, /getPlatformKey/);
   assert.doesNotMatch(listen, /type="password"|gateSubmit|signUp/);
   assert.doesNotMatch(overlay, /type="password"|gateSubmit|signUp/);
   assert.match(listen, /churchIsActive/);
