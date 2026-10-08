@@ -21,6 +21,11 @@ test("prompt carries the church glossary and correction rules", () => {
   assert.match(prompt, /"en":/);
   const fixed = buildPrompt("교정문", ["ja"], { glossary, koFixed: true });
   assert.match(fixed, /이미 교정된 문장/);
+  const withService = buildPrompt("아멘", ["en"], {
+    glossary,
+    sessionContext: "찬양·찬송 제목: 만복의 근원 하나님",
+  });
+  assert.match(withService, /만복의 근원 하나님/);
 });
 
 test("translation batches languages and retries a bad JSON response", async () => {

@@ -16,6 +16,8 @@ class Pipeline {
     this.model = opts.model;
     this.targets = (opts.targets || []).filter((code) => code !== "ko" && langByCode[code]);
     this.glossary = opts.glossary || "";
+    this.sessionContext = opts.sessionContext || "";
+    this.lessons = [];
     this.files = opts.files;
     this.cloud = opts.cloud;
     this.onLive = opts.onLive || (() => {});
@@ -117,8 +119,13 @@ class Pipeline {
         model: this.model,
         targetCodes: this.targets,
         previousContext: this.recentContext.join("\n"),
+        sessionContext: this.sessionContext,
         glossary: this.glossary,
       });
+      if (result.ko != null && String(result.ko).trim() && String(result.ko).trim() !== koreanText) {
+        this.lessons.push({ heard: koreanText, corrected: String(result.ko).trim() });
+        if (this.lessons.length > 40) this.lessons.shift();
+      }
       if (result.ko != null && !String(result.ko).trim()) {
         this.onLine({ lang: "ko", text: "", raw: koreanText, isFinal: true, id, skipped: true });
         return;

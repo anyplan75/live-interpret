@@ -12,37 +12,71 @@
         ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
       }
     },
+    "accounts": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || auth.uid === root.child('live-interpret/admin/uid').val())",
+        ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+        "churchId": {
+          ".validate": "newData.isString() && newData.val().length > 0"
+        }
+      }
+    },
     "churchIndex": {
       ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
       ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
     },
     "churches": {
       "$churchId": {
-        ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+        ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
         "name": {
-          ".read": true
+          ".read": true,
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
         },
         "active": {
-          ".read": true
+          ".read": true,
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
         },
         "createdAt": {
-          ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+          ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
         },
         "glossary": {
-          ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+        },
+        "model": {
+          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+        },
+        "account": {
+          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+        },
+        "preachers": {
+          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val()"
         },
         "sessionIndex": {
-          ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false"
         },
         "sessions": {
-          ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false",
+          "$folder": {
+            "bulletin": {
+              ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false"
+            }
+          }
         },
         "live": {
           "settings": {
-            ".read": "root.child('live-interpret/churches').child($churchId).child('active').val() !== false"
+            ".read": "root.child('live-interpret/churches').child($churchId).child('active').val() !== false || (auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val()))",
+            ".write": "(auth != null && auth.uid === root.child('live-interpret/admin/uid').val() && !data.exists()) || (auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())"
           },
           "subtitles": {
-            ".read": "root.child('live-interpret/churches').child($churchId).child('active').val() !== false"
+            ".read": "root.child('live-interpret/churches').child($churchId).child('active').val() !== false",
+            ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false"
           }
         }
       }

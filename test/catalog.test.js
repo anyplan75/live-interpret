@@ -57,46 +57,74 @@ test("one platform key and church activation", () => {
   assert.deepEqual(visible.map((row) => row.name), ["감마", "알파"]);
 });
 
-test("admin holds the key and broadcast does not ask for one", () => {
+test("owner and church logins split the controls", () => {
   const root = path.join(__dirname, "..");
   const admin = fs.readFileSync(path.join(root, "docs/admin.html"), "utf8");
   const adminJs = fs.readFileSync(path.join(root, "docs/js/admin.js"), "utf8");
   const broadcast = fs.readFileSync(path.join(root, "broadcast/renderer/index.html"), "utf8");
   const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
+  const main = fs.readFileSync(path.join(root, "broadcast/main.js"), "utf8");
   const listen = fs.readFileSync(path.join(root, "docs/listen.html"), "utf8");
   const overlay = fs.readFileSync(path.join(root, "docs/overlay.html"), "utf8");
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   const authJs = fs.readFileSync(path.join(root, "docs/js/auth.js"), "utf8");
   const rules = JSON.parse(fs.readFileSync(path.join(root, "firebase/live-interpret.rules.json"), "utf8"));
+  const church = rules["live-interpret"].churches.$churchId;
   assert.match(admin, /id="apiKey"/);
   assert.match(admin, /id="toggleActive"/);
   assert.match(admin, /id="saveKey"/);
+  assert.match(admin, /id="churchModel"/);
+  assert.match(admin, /id="churchEmail"/);
+  assert.match(admin, /id="saveAccount"/);
+  assert.match(admin, /id="preachers"/);
   assert.match(admin, /id="gate"/);
   assert.match(admin, /id="adminApp" hidden/);
   assert.match(admin, /firebase-auth-compat/);
+  assert.doesNotMatch(admin, /id="layout"|id="color"|id="fontRows"|id="saveStyle"|주보 사진/);
   assert.match(adminJs, /platformKeyRel/);
-  assert.match(adminJs, /toggleActive/);
-  assert.match(adminJs, /signUp/);
+  assert.match(adminJs, /accounts:signUp|identity\.signUp|LI\.identity/);
+  assert.doesNotMatch(adminJs, /createUserWithEmailAndPassword/);
   assert.match(authJs, /canClaimAdmin/);
   assert.match(authJs, /createUserWithEmailAndPassword/);
-  assert.doesNotMatch(broadcast, /apiKey|API 키|sk-/);
-  assert.match(broadcast, /id="adminEmail"/);
-  assert.match(broadcast, /id="adminPassword"/);
-  assert.match(broadcast, /한 번만 로그인/);
-  assert.doesNotMatch(renderer, /apiKey/);
+  assert.doesNotMatch(broadcast, /apiKey|API 키|sk-|id="model"|<select id="church"/);
+  assert.match(broadcast, /id="churchEmail"/);
+  assert.match(broadcast, /id="churchPassword"/);
+  assert.match(broadcast, /id="layout"/);
+  assert.match(broadcast, /id="color"/);
+  assert.match(broadcast, /id="fontRows"/);
+  assert.match(broadcast, /주보/);
+  assert.match(broadcast, /설교자/);
+  assert.match(broadcast, /다른 교회는 고를 수 없습니다/);
+  assert.doesNotMatch(renderer, /apiKey|listChurches|modelEl/);
   assert.match(renderer, /signIn/);
+  assert.match(renderer, /saveStyle/);
+  assert.match(renderer, /pickBulletin/);
+  assert.match(renderer, /savePreacher/);
+  assert.doesNotMatch(main, /getPlatformKey/);
   assert.doesNotMatch(listen, /type="password"|gateSubmit|signUp/);
   assert.doesNotMatch(overlay, /type="password"|gateSubmit|signUp/);
   assert.match(listen, /churchIsActive/);
   assert.match(overlay, /churchIsActive/);
-  assert.match(listen, /startPrompter/);
-  assert.match(overlay, /startOverlay/);
+  assert.match(readme, /두 가지 로그인/);
+  assert.match(readme, /교회 계정/);
   assert.deepEqual(Object.keys(rules), ["live-interpret"]);
-  assert.match(rules["live-interpret"].platform.openaiKey[".read"], /auth\.uid/);
-  assert.match(rules["live-interpret"].platform.openaiKey[".write"], /auth\.uid/);
-  assert.doesNotMatch(JSON.stringify(rules), /cheil|jifc/);
   const keyRule = rules["live-interpret"].platform.openaiKey[".read"];
+  assert.match(keyRule, /admin\/uid/);
+  assert.doesNotMatch(keyRule, /account\/uid/);
   assert.equal(keyRule === true || keyRule === "true", false);
+  assert.match(church.preachers[".write"], /\$churchId/);
+  assert.match(church.preachers[".write"], /account\/uid/);
+  assert.match(church.sessions[".write"], /account\/uid/);
+  assert.match(church.sessions.$folder.bulletin[".write"], /account\/uid/);
+  assert.match(church.live.settings[".write"], /account\/uid/);
+  assert.match(church.glossary[".write"], /admin\/uid/);
+  assert.doesNotMatch(church.glossary[".write"], /account\/uid/);
+  assert.match(church.model[".write"], /admin\/uid/);
+  assert.doesNotMatch(church.model[".write"], /account\/uid/);
+  assert.match(church.active[".write"], /admin\/uid/);
+  assert.doesNotMatch(church.active[".write"], /account\/uid/);
+  assert.equal(church[".write"], undefined);
+  assert.doesNotMatch(JSON.stringify(rules), /cheil|jifc/);
   assert.equal(/sk-[A-Za-z0-9_-]{8,}/.test(readme), false);
   assert.equal(/sk-[A-Za-z0-9_-]{8,}/.test(admin), false);
   assert.equal(/sk-[A-Za-z0-9_-]{8,}/.test(broadcast), false);
@@ -111,6 +139,19 @@ test("firebase paths stay under live-interpret", () => {
   assert.equal(catalog.isChurchId("cheil"), false);
   assert.equal(catalog.isChurchId("jifc"), false);
   assert.equal(catalog.isChurchId(catalog.makeChurchId("새 교회")), true);
+  assert.equal(catalog.isPreacherId(catalog.makePreacherId("김 목사")), true);
+  assert.equal(catalog.isModelId("gpt-4o-mini"), true);
+  assert.equal(catalog.isModelId("other"), false);
+  const context = catalog.sessionContextText({
+    bulletin: { hymnNumbers: ["123"], songTitles: ["만복의 근원 하나님"], scripture: "요한복음 3:16", sermonTitle: "사랑", preacherName: "김목사" },
+    preacher: { name: "김목사", traits: "천천히", corrections: "수여 → 수요", terms: "이른비" },
+  });
+  assert.match(context, /만복의 근원 하나님/);
+  assert.match(context, /이른비/);
+  const style = catalog.sanitizeStyle({ layout: "nope", color: "red", bgOpacity: 2, fonts: {} });
+  assert.equal(style.global.layout, "bottom");
+  assert.equal(style.global.color, "#ffffff");
+  assert.equal(style.global.bgOpacity, 1);
 });
 
 test("source does not target cheil or jifc firebase paths", () => {

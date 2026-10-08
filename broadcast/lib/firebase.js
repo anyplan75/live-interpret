@@ -1,4 +1,4 @@
-const { firebase, underRoot, isChurchId, churchIsActive, isPlatformKey, redactSecrets, platformKeyRel } = require("./catalog");
+const { firebase, underRoot, isChurchId, isPreacherId, churchIsActive, isPlatformKey, isModelId, redactSecrets, platformKeyRel, defaultModel } = require("./catalog");
 const { isSessionFolder: folderOk } = require("./paths");
 
 let idToken = "";
@@ -106,22 +106,82 @@ async function getPlatformKey() {
   return value.trim();
 }
 
+async function getAccountLink(uid) {
+  if (typeof uid !== "string" || !/^[A-Za-z0-9]{6,128}$/.test(uid)) return null;
+  const row = await get(`accounts/${uid}`);
+  if (!row || typeof row !== "object" || !isChurchId(row.churchId)) return null;
+  return { churchId: row.churchId };
+}
+
 async function getChurch(id) {
   assertChurch(id);
-  const [name, glossary, createdAt, active] = await Promise.all([
+  const [name, glossary, createdAt, active, model, account] = await Promise.all([
     get(`churches/${id}/name`),
     get(`churches/${id}/glossary`),
     get(`churches/${id}/createdAt`),
     get(`churches/${id}/active`),
+    get(`churches/${id}/model`),
+    get(`churches/${id}/account`),
   ]);
   if (typeof name !== "string" || !name.trim()) return null;
+  const accountUid = account && typeof account.uid === "string" ? account.uid : "";
+  const accountEmail = account && typeof account.email === "string" ? account.email : "";
   return {
     id,
     name: name.trim(),
     createdAt: createdAt || 0,
     glossary: typeof glossary === "string" ? glossary : "",
+    model: isModelId(model) ? model : defaultModel,
+    accountUid,
+    accountEmail,
     active: churchIsActive(active),
   };
+}
+
+function preacherRows(raw) {
+  if (!raw || typeof raw !== "object") return [];
+  return Object.entries(raw)
+    .filter(([id, row]) => isPreacherId(id) && row && typeof row === "object")
+    .map(([id, row]) => ({
+      id,
+      name: typeof row.name === "string" ? row.name.trim() : id,
+      traits: typeof row.traits === "string" ? row.traits : "",
+      corrections: typeof row.corrections === "string" ? row.corrections : "",
+      terms: typeof row.terms === "string" ? row.terms : "",
+      sermonCount: typeof row.sermonCount === "number" ? row.sermonCount : 0,
+      createdAt: typeof row.createdAt === "number" ? row.createdAt : 0,
+      updatedAt: typeof row.updatedAt === "number" ? row.updatedAt : 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+}
+
+async function listPreachers(churchId) {
+  assertChurch(churchId);
+  return preacherRows(await get(`churches/${churchId}/preachers`));
+}
+
+async function savePreacher(churchId, preacherId, profile) {
+  assertChurch(churchId);
+  if (!isPreacherId(preacherId)) throw new Error("설교자 아이디가 올바르지 않습니다.");
+  const name = profile && typeof profile.name === "string" ? profile.name.trim() : "";
+  if (!name) throw new Error("설교자 이름이 없습니다.");
+  const next = {
+    name,
+    traits: profile.traits || "",
+    corrections: profile.corrections || "",
+    terms: profile.terms || "",
+    sermonCount: Number(profile.sermonCount) || 0,
+    createdAt: Number(profile.createdAt) || Date.now(),
+    updatedAt: Date.now(),
+  };
+  await set(`churches/${churchId}/preachers/${preacherId}`, next);
+  return { id: preacherId, ...next };
+}
+
+async function saveBulletin(churchId, folder, record) {
+  assertChurch(churchId);
+  assertFolder(folder);
+  await set(`churches/${churchId}/sessions/${folder}/bulletin`, record);
 }
 
 async function setSessionText(churchId, folder, lang, text) {
@@ -154,7 +214,11 @@ module.exports = {
   listChurches,
   activeChurchesFromIndex,
   getPlatformKey,
+  getAccountLink,
   getChurch,
+  listPreachers,
+  savePreacher,
+  saveBulletin,
   setSessionText,
   appendSessionSentence,
   setSessionMeta,

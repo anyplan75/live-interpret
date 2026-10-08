@@ -6,6 +6,7 @@ const { Engine } = require("./lib/engine");
 const firebase = require("./lib/firebase");
 const secrets = require("./lib/secrets");
 const googleAuth = require("./lib/google-auth");
+const bulletinLib = require("./lib/bulletin");
 
 app.setName("live-interpret");
 
@@ -49,14 +50,51 @@ async function ensureAuth() {
   }
 }
 
-async function resolveKey() {
-  const local = secrets.readKey(userDir());
-  if (local) return local;
+function resolveKey() {
+  return secrets.readKey(userDir());
+}
+
+function bulletinDir(churchId) {
+  return path.join(userDir(), "bulletins", churchId);
+}
+
+function stageSummary(churchId) {
+  const dir = bulletinDir(churchId);
+  const manifestPath = path.join(dir, "manifest.json");
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    if (!manifest || typeof manifest.path !== "string" || !fs.existsSync(manifest.path)) return null;
+    return {
+      path: manifest.path,
+      fileName: manifest.fileName || path.basename(manifest.path),
+      extracted: bulletinLib.readStagedExtraction(dir),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+function publicChurch(church) {
+  return {
+    id: church.id,
+    name: church.name,
+    active: !!church.active,
+    email: church.accountEmail || "",
+  };
+}
+
+async function requireChurch() {
   const token = await ensureAuth();
-  if (!token) return "";
-  const remote = await firebase.getPlatformKey();
-  if (remote) secrets.writeKey(userDir(), remote);
-  return remote || "";
+  if (!token) throw new Error("로그인이 필요합니다.");
+  const session = secrets.readSession(userDir());
+  if (!session || !session.localId) throw new Error("교회 로그인 정보가 없습니다. 다시 로그인해 주세요.");
+  const link = await firebase.getAccountLink(session.localId);
+  if (!link) throw new Error("이 계정에 연결된 교회가 없습니다. 방송 앱은 교회 계정으로 로그인합니다.");
+  const church = await firebase.getChurch(link.churchId);
+  if (!church || church.accountUid !== session.localId) {
+    throw new Error("교회 계정이 이 교회와 맞지 않습니다.");
+  }
+  return church;
 }
 
 function settingsFile() {
@@ -81,6 +119,7 @@ function readSettings() {
 function writeSettings(next) {
   const merged = { ...readSettings(), ...(next || {}) };
   delete merged.apiKey;
+  delete merged.model;
   fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
   fs.writeFileSync(settingsFile(), JSON.stringify(merged, null, 2));
   return merged;
@@ -114,7 +153,6 @@ function registerIpc() {
     if (!Array.isArray(saved.targets) || !saved.targets.length) {
       saved.targets = catalog.defaultSelectedTargets();
     }
-    if (!saved.model) saved.model = catalog.defaultModel;
     if (!saved.sensitivity) saved.sensitivity = "normal";
     return saved;
   });
@@ -127,29 +165,30 @@ function registerIpc() {
       flag: lang.flag,
       defaultSelected: !!lang.defaultSelected,
     })),
-    models: catalog.models,
-    defaultModel: catalog.defaultModel,
     pagesBase: catalog.pagesBase,
     defaultTargets: catalog.defaultSelectedTargets(),
   }));
   ipcMain.handle("auth:status", async () => {
-    let signedIn = false;
-    let email = "";
     const saved = secrets.readSession(userDir());
-    if (saved) {
-      email = saved.email;
-      try {
-        signedIn = Boolean(await ensureAuth());
-      } catch (err) {
-        signedIn = false;
-        email = "";
+    if (!saved) return { signedIn: false, email: "", church: null, keyReady: Boolean(resolveKey()) };
+    try {
+      const church = await requireChurch();
+      return {
+        signedIn: true,
+        email: saved.email,
+        church: publicChurch(church),
+        keyReady: Boolean(resolveKey()),
+      };
+    } catch (err) {
+      const message = err && err.message ? err.message : "";
+      if (/연결된 교회|교회 계정|다시 로그인/.test(message)) {
+        idToken = "";
+        tokenExpiresAt = 0;
+        firebase.setIdToken("");
+        secrets.clearSession(userDir());
       }
+      return { signedIn: false, email: "", church: null, keyReady: Boolean(resolveKey()) };
     }
-    return {
-      signedIn,
-      email,
-      keyReady: Boolean(secrets.readKey(userDir())),
-    };
   });
   ipcMain.handle("auth:signIn", async (_event, email, password) => {
     if (!catalog.validAdminEmail(email) || !catalog.validAdminPassword(password)) {
@@ -164,38 +203,96 @@ function registerIpc() {
       email: session.email,
       localId: session.localId,
     });
-    let keyReady = Boolean(secrets.readKey(userDir()));
     try {
-      const remote = await firebase.getPlatformKey();
-      if (remote) {
-        secrets.writeKey(userDir(), remote);
-        keyReady = true;
-      }
-    } catch (_) {
-      /* 키가 아직 없으면 로그인만 유지합니다 */
+      const church = await requireChurch();
+      return {
+        signedIn: true,
+        email: session.email,
+        church: publicChurch(church),
+        keyReady: Boolean(resolveKey()),
+      };
+    } catch (err) {
+      idToken = "";
+      tokenExpiresAt = 0;
+      firebase.setIdToken("");
+      secrets.clearSession(userDir());
+      throw err;
     }
-    return { signedIn: true, email: session.email, keyReady };
   });
-  ipcMain.handle("churches:list", async () => {
-    const token = await ensureAuth();
-    if (!token) return [];
-    return firebase.listChurches();
+  ipcMain.handle("auth:signOut", async () => {
+    if (engine && engine.running) throw new Error("방송을 종료한 다음 로그아웃해 주세요.");
+    idToken = "";
+    tokenExpiresAt = 0;
+    firebase.setIdToken("");
+    secrets.clearSession(userDir());
+    return { signedIn: false };
   });
-  ipcMain.handle("platform:keyStatus", async () => {
-    if (secrets.readKey(userDir())) return { configured: true };
+  ipcMain.handle("church:current", async () => {
+    const church = await requireChurch();
+    const settings = await firebase.get(`churches/${church.id}/live/settings`);
+    const staged = stageSummary(church.id);
+    return {
+      church: publicChurch(church),
+      style: catalog.styleFromSettings(settings),
+      preachers: await firebase.listPreachers(church.id),
+      bulletin: staged ? { fileName: staged.fileName, extracted: staged.extracted } : null,
+      keyReady: Boolean(resolveKey()),
+    };
+  });
+  ipcMain.handle("style:set", async (_event, style) => {
+    const church = await requireChurch();
+    return engine.saveStyle(church.id, style || {});
+  });
+  ipcMain.handle("preachers:save", async (_event, payload) => {
+    const church = await requireChurch();
+    const name = payload && typeof payload.name === "string" ? payload.name.trim() : "";
+    if (!name) throw new Error("설교자 이름을 입력해 주세요.");
+    const id = payload && catalog.isPreacherId(payload.id) ? payload.id : catalog.makePreacherId(name);
+    const existing = (await firebase.listPreachers(church.id)).find((item) => item.id === id);
+    return firebase.savePreacher(church.id, id, {
+      name,
+      traits: payload && typeof payload.traits === "string" ? payload.traits : "",
+      corrections: payload && typeof payload.corrections === "string" ? payload.corrections : "",
+      terms: payload && typeof payload.terms === "string" ? payload.terms : "",
+      sermonCount: existing ? existing.sermonCount : 0,
+      createdAt: existing && existing.createdAt ? existing.createdAt : Date.now(),
+    });
+  });
+  ipcMain.handle("bulletin:pick", async () => {
+    const church = await requireChurch();
+    const picked = await dialog.showOpenDialog(win, {
+      title: "이번 예배 주보 사진",
+      properties: ["openFile"],
+      filters: [{ name: "이미지", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+    });
+    if (picked.canceled || !picked.filePaths[0]) return null;
+    const dir = bulletinDir(church.id);
+    const stored = bulletinLib.stageBulletin(dir, picked.filePaths[0]);
+    fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({
+      path: stored.absolutePath,
+      fileName: stored.fileName,
+    }));
+    const key = resolveKey();
+    if (!key) {
+      return {
+        fileName: stored.fileName,
+        extracted: null,
+        error: "이 컴퓨터에 번역 키가 없어 주보를 아직 분석하지 못했습니다. 사진은 이 PC에 저장했습니다.",
+      };
+    }
     try {
-      const token = await ensureAuth();
-      if (!token) return { configured: false };
-      const key = await firebase.getPlatformKey();
-      if (key) {
-        secrets.writeKey(userDir(), key);
-        return { configured: true };
-      }
-    } catch (_) {
-      return { configured: false };
+      const extracted = await bulletinLib.analyzeBulletinImage({
+        apiKey: key,
+        model: church.model,
+        imagePath: stored.absolutePath,
+      });
+      bulletinLib.writeExtractionFile(dir, stored.fileName, extracted);
+      return { fileName: stored.fileName, extracted };
+    } catch (err) {
+      return { fileName: stored.fileName, extracted: null, error: catalog.redactSecrets(err.message || String(err)) };
     }
-    return { configured: false };
   });
+  ipcMain.handle("platform:keyStatus", async () => ({ configured: Boolean(resolveKey()) }));
   ipcMain.handle("devices:list", () => {
     try {
       return engine.listDevices();
@@ -213,27 +310,35 @@ function registerIpc() {
   });
   ipcMain.handle("audio:monitor", (_event, deviceKey, channel) => engine.monitor(deviceKey, channel));
   ipcMain.handle("audio:channel", (_event, index) => engine.setChannel(index));
-  ipcMain.handle("targets:set", async (_event, churchId, targets) => {
-    if (churchId && !catalog.isChurchId(churchId)) throw new Error("교회가 올바르지 않습니다.");
-    if (!churchId) return engine.setTargets("", targets);
-    const token = await ensureAuth();
-    if (!token) throw new Error("로그인이 필요합니다.");
-    return engine.setTargets(churchId, targets);
+  ipcMain.handle("targets:set", async (_event, _churchId, targets) => {
+    const church = await requireChurch();
+    return engine.setTargets(church.id, targets);
   });
-  ipcMain.handle("links", (_event, churchId, targets) => {
-    if (!catalog.isChurchId(churchId)) throw new Error("교회가 올바르지 않습니다.");
+  ipcMain.handle("links", async (_event, _churchId, targets) => {
+    const church = await requireChurch();
     const codes = ["ko", ...(targets || []).filter((code) => code !== "ko" && catalog.langByCode[code])];
     return {
-      home: catalog.homeLink(catalog.pagesBase, churchId),
-      admin: catalog.adminLink(catalog.pagesBase, churchId),
-      items: catalog.buildLinks(catalog.pagesBase, churchId, codes),
+      home: catalog.homeLink(catalog.pagesBase, church.id),
+      items: catalog.buildLinks(catalog.pagesBase, church.id, codes),
     };
   });
   ipcMain.handle("broadcast:start", async (_event, opts) => {
-    const token = await ensureAuth();
-    if (!token) throw new Error("로그인이 필요합니다.");
-    const apiKey = await resolveKey();
-    return engine.start({ ...(opts || {}), apiKey });
+    const church = await requireChurch();
+    const staged = stageSummary(church.id);
+    const requested = opts && opts.preacherId;
+    const started = await engine.start({
+      ...(opts || {}),
+      apiKey: resolveKey(),
+      churchId: church.id,
+      preacherId: requested,
+      bulletinPath: staged ? staged.path : "",
+      bulletinExtracted: staged ? staged.extracted : null,
+    });
+    return {
+      folderName: started.folderName,
+      dir: started.dir,
+      targets: started.targets,
+    };
   });
   ipcMain.handle("broadcast:stop", () => engine.stop());
   ipcMain.handle("copy", (_event, text) => {

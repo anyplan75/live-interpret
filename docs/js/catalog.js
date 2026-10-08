@@ -58,6 +58,7 @@
   const BANNED_SEGMENTS = new Set(["cheil", "jifc"]);
   const platformKeyRel = "platform/openaiKey";
   const adminUidRel = "admin/uid";
+  const accountsRel = "accounts";
 
   function targetLangCodes() {
     return languages.map((lang) => lang.code).filter((code) => code !== "ko");
@@ -69,11 +70,19 @@
       .map((lang) => lang.code);
   }
 
-  function isChurchId(id) {
+  function isRecordId(id) {
     if (typeof id !== "string") return false;
     if (!/^[\p{L}\p{N}_-]{1,64}$/u.test(id)) return false;
     if (BANNED_SEGMENTS.has(id.toLowerCase())) return false;
     return true;
+  }
+
+  function isChurchId(id) {
+    return isRecordId(id);
+  }
+
+  function isPreacherId(id) {
+    return isRecordId(id);
   }
 
   function makeChurchId(name) {
@@ -87,6 +96,20 @@
     const rand = Math.random().toString(36).slice(2, 8);
     let id = `${slug || "church"}-${rand}`;
     if (!isChurchId(id)) id = `church-${rand}`;
+    return id;
+  }
+
+  function makePreacherId(name) {
+    const slug = String(name || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[.#$[\]/]/g, "")
+      .replace(/[^\p{L}\p{N}_-]/gu, "")
+      .slice(0, 40);
+    const rand = Math.random().toString(36).slice(2, 8);
+    let id = `${slug || "preacher"}-${rand}`;
+    if (!isPreacherId(id)) id = `preacher-${rand}`;
     return id;
   }
 
@@ -138,7 +161,7 @@
     ].join("\n");
   }
 
-  function keywordsFromGlossary(glossary, churchName) {
+  function keywordsFromGlossary(glossary, churchName, extras) {
     const out = [];
     const push = (value) => {
       const text = String(value || "")
@@ -148,6 +171,7 @@
       if (!text || text.length > 40 || out.includes(text)) return;
       out.push(text);
     };
+    (Array.isArray(extras) ? extras : []).forEach(push);
     push(churchName);
     String(glossary || "")
       .split("\n")
@@ -159,11 +183,121 @@
     return out.slice(0, 30);
   }
 
-  function sttPrompt(churchName) {
+  function sttPrompt(churchName, extra) {
     const name = String(churchName || "교회")
       .replace(/[<>\r\n]/g, " ")
       .trim();
-    return `한국 교회 예배입니다. 설교, 기도, 찬송, 광고를 한국어로 받아씁니다. 교회 이름은 ${name}입니다.`;
+    const base = `한국 교회 예배입니다. 설교, 기도, 찬송, 광고를 한국어로 받아씁니다. 교회 이름은 ${name}입니다.`;
+    const more = String(extra || "").replace(/\s+$/g, "").trim();
+    return more ? `${base}\n${more}` : base;
+  }
+
+  function isModelId(id) {
+    return models.some((model) => model.id === id);
+  }
+
+  function clipLine(value, max) {
+    const text = String(value || "").replace(/[<>]/g, " ").replace(/\s+/g, " ").trim();
+    if (text.length <= max) return text;
+    return text.slice(0, max);
+  }
+
+  function sessionContextText(parts) {
+    const bulletin = parts && parts.bulletin ? parts.bulletin : null;
+    const preacher = parts && parts.preacher ? parts.preacher : null;
+    const lines = [];
+    if (preacher && preacher.name) lines.push(`설교자: ${clipLine(preacher.name, 80)}`);
+    if (preacher && preacher.traits) lines.push(`말투: ${clipLine(preacher.traits, 400)}`);
+    if (preacher && preacher.corrections) lines.push(`교정: ${clipLine(preacher.corrections, 500)}`);
+    if (preacher && preacher.terms) lines.push(`용어: ${clipLine(preacher.terms, 500)}`);
+    if (bulletin) {
+      const hymns = [].concat(bulletin.hymnNumbers || []).map((item) => clipLine(item, 40)).filter(Boolean);
+      const songs = [].concat(bulletin.songTitles || []).map((item) => clipLine(item, 80)).filter(Boolean);
+      if (hymns.length) lines.push(`찬송 번호: ${hymns.join(", ")}`);
+      if (songs.length) lines.push(`찬양·찬송 제목: ${songs.join(", ")}`);
+      if (bulletin.scripture) lines.push(`성경: ${clipLine(bulletin.scripture, 300)}`);
+      if (bulletin.sermonTitle) lines.push(`설교 제목: ${clipLine(bulletin.sermonTitle, 200)}`);
+      if (bulletin.preacherName) lines.push(`주보의 설교자: ${clipLine(bulletin.preacherName, 80)}`);
+      if (bulletin.extractedText) lines.push(`주보 본문: ${clipLine(bulletin.extractedText, 800)}`);
+    }
+    return lines.join("\n").slice(0, 2500);
+  }
+
+  function contextKeywords(bulletin, preacher) {
+    const words = [];
+    if (bulletin) {
+      [].concat(bulletin.songTitles || []).forEach((item) => words.push(item));
+      [].concat(bulletin.hymnNumbers || []).forEach((item) => words.push(item));
+      if (bulletin.sermonTitle) words.push(bulletin.sermonTitle);
+      if (bulletin.preacherName) words.push(bulletin.preacherName);
+      if (bulletin.scripture) words.push(bulletin.scripture);
+    }
+    if (preacher && preacher.name) words.push(preacher.name);
+    if (preacher && preacher.terms) String(preacher.terms).split("\n").forEach((line) => words.push(line));
+    return words;
+  }
+
+  function sanitizeStyle(input) {
+    const src = input && typeof input === "object" ? input : {};
+    const layouts = new Set(["bottom", "top", "left", "right"]);
+    const aligns = new Set(["left", "center", "right"]);
+    const color = (value, fallback) => (/^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value) : fallback);
+    const num = (value, fallback, min, max) => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return fallback;
+      return Math.min(max, Math.max(min, parsed));
+    };
+    const fonts = {};
+    languages.forEach((lang) => {
+      const row = src.fonts && src.fonts[lang.code] ? src.fonts[lang.code] : {};
+      fonts[lang.code] = {
+        fontSize: num(row.fontSize, lang.defaultSize, 8, 240),
+        letterSpacing: num(row.letterSpacing, lang.defaultSpacing, -20, 80),
+      };
+    });
+    return {
+      global: {
+        layout: layouts.has(src.layout) ? src.layout : "bottom",
+        align: aligns.has(src.align) ? src.align : "center",
+        color: color(src.color, "#ffffff"),
+        bgColor: color(src.bgColor, "#000000"),
+        bgOpacity: num(src.bgOpacity, 0.7, 0, 1),
+      },
+      fonts,
+    };
+  }
+
+  function styleFromSettings(settings) {
+    const global = (settings && settings.global) || {};
+    const fonts = {};
+    languages.forEach((lang) => {
+      const row = (settings && settings[lang.code]) || {};
+      fonts[lang.code] = {
+        fontSize: row.fontSize,
+        letterSpacing: row.letterSpacing,
+      };
+    });
+    return sanitizeStyle({
+      layout: global.layout,
+      align: global.align,
+      color: global.color,
+      bgColor: global.bgColor,
+      bgOpacity: global.bgOpacity,
+      fonts,
+    });
+  }
+
+  function applyStyleToSettings(existing, style) {
+    const clean = sanitizeStyle(style);
+    const next = existing && typeof existing === "object" && !Array.isArray(existing)
+      ? { ...existing }
+      : defaultLiveSettings();
+    next._timestamp = Date.now();
+    next.global = { ...(next.global || {}), ...clean.global };
+    Object.entries(clean.fonts).forEach(([code, font]) => {
+      next[code] = { ...(next[code] || {}), ...font };
+    });
+    return next;
   }
 
   function defaultLiveSettings() {
@@ -265,7 +399,7 @@
     if (/email-already-in-use/i.test(text)) {
       return "이미 등록된 이메일입니다. 로그인하세요.";
     }
-    if (/weak-password|PASSWORD_DOES_NOT_MEET/i.test(text)) {
+    if (/weak-password|WEAK_PASSWORD|PASSWORD_DOES_NOT_MEET/i.test(text)) {
       return "비밀번호는 6자 이상이어야 합니다.";
     }
     if (/invalid-credential|wrong-password|user-not-found|INVALID_PASSWORD|EMAIL_NOT_FOUND|INVALID_LOGIN/i.test(text)) {
@@ -301,6 +435,15 @@
     adminLink,
     platformKeyRel,
     adminUidRel,
+    accountsRel,
+    isPreacherId,
+    makePreacherId,
+    isModelId,
+    sessionContextText,
+    contextKeywords,
+    sanitizeStyle,
+    styleFromSettings,
+    applyStyleToSettings,
     churchIsActive,
     isPlatformKey,
     redactSecrets,

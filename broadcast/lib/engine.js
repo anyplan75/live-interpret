@@ -1,4 +1,18 @@
-const { langByCode, defaultGlossary, defaultModel, isChurchId, redactSecrets } = require("./catalog");
+const {
+  langByCode,
+  defaultGlossary,
+  defaultModel,
+  isChurchId,
+  isPreacherId,
+  isModelId,
+  redactSecrets,
+  sessionContextText,
+  contextKeywords,
+  applyStyleToSettings,
+  styleFromSettings,
+} = require("./catalog");
+const bulletin = require("./bulletin");
+const preacherLib = require("./preacher");
 const { listInputDevices, InputCapture } = require("./audio");
 const { channelPeaks, resampleInt16, selectedChannelPcm } = require("./audio-util");
 const { SpeechSession } = require("./stt");
@@ -32,6 +46,9 @@ class Engine {
     this.lastLevelAt = 0;
     this.sessionDir = "";
     this.folderName = "";
+    this.sessionApiKey = "";
+    this.sessionModel = defaultModel;
+    this.preacherId = "";
   }
 
   listDevices() {
@@ -109,6 +126,14 @@ class Engine {
     return next;
   }
 
+  async saveStyle(churchId, style) {
+    if (!isChurchId(churchId)) throw new Error("교회가 올바르지 않습니다.");
+    const existing = (await firebase.get(`churches/${churchId}/live/settings`)) || {};
+    const next = applyStyleToSettings(existing, style);
+    await firebase.set(`churches/${churchId}/live/settings`, next);
+    return styleFromSettings(next);
+  }
+
   async setTargets(churchId, targets) {
     this.targets = cleanTargets(targets);
     if (this.pipeline) this.pipeline.targets = this.targets;
@@ -118,12 +143,13 @@ class Engine {
 
   async start(opts) {
     if (this.running) throw new Error("이미 방송 중입니다.");
-    const apiKey = opts.apiKey || await firebase.getPlatformKey();
+    const apiKey = opts.apiKey || "";
     if (!apiKey) {
-      throw new Error("관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.");
+      throw new Error("이 컴퓨터에 번역 키가 없습니다. 교회 계정은 관리 페이지의 OpenAI 키를 읽지 못합니다.");
     }
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
     if (!isChurchId(opts.churchId)) throw new Error("교회를 선택해 주세요.");
+    if (!isPreacherId(opts.preacherId)) throw new Error("설교자를 등록하고 선택해 주세요.");
     const targets = cleanTargets(opts.targets);
     if (!targets.length) throw new Error("번역할 언어를 하나 이상 선택해 주세요. 한국어는 항상 포함됩니다.");
     if (!this.capture.opened) {
@@ -136,18 +162,57 @@ class Engine {
     const glossary = church.glossary && church.glossary.trim()
       ? church.glossary
       : defaultGlossary(church.name);
+    const model = isModelId(church.model) ? church.model : defaultModel;
+    const preachers = await firebase.listPreachers(church.id);
+    let selected = preachers.find((item) => item.id === opts.preacherId) || null;
+    if (!selected) throw new Error("이 교회에 등록된 설교자를 선택해 주세요.");
 
     this.writer = createSessionWriter(opts.folder, church.name, opts.now || new Date());
     this.sessionDir = this.writer.dir;
     this.folderName = this.writer.folderName;
     this.church = church;
     this.targets = targets;
+    this.sessionApiKey = apiKey;
+    this.sessionModel = model;
+    this.preacherId = selected.id;
+
+    let extracted = null;
+    if (opts.bulletinPath) {
+      const stored = bulletin.persistBulletinImage(this.writer.dir, opts.bulletinPath);
+      const staged = opts.bulletinExtracted && typeof opts.bulletinExtracted === "object"
+        ? bulletin.normalizeBulletin(opts.bulletinExtracted)
+        : null;
+      extracted = staged && (staged.songTitles.length || staged.hymnNumbers.length || staged.scripture || staged.sermonTitle || staged.extractedText)
+        ? staged
+        : await bulletin.analyzeBulletinImage({
+          apiKey,
+          model,
+          imagePath: stored.absolutePath,
+          fetchImpl: opts.fetchImpl,
+        });
+      const record = bulletin.bulletinRecord(stored.imageRef, extracted);
+      bulletin.writeExtractionFile(this.writer.dir, stored.imageRef, extracted);
+      await firebase.saveBulletin(church.id, this.folderName, record);
+      extracted = record;
+      if (!opts.preacherId) {
+        /* 선택한 설교자가 항상 우선입니다 */
+      }
+      const named = preacherLib.matchPreacher(preachers, extracted.preacherName);
+      if (named && named.id === selected.id) {
+        this.emit({ type: "log", level: "info", text: `주보의 설교자 ${named.name} 과 선택한 설교자가 같습니다.` });
+      }
+    }
+
+    const sessionContext = sessionContextText({ bulletin: extracted, preacher: selected });
+    const extraKeywords = contextKeywords(extracted, selected);
     await this.syncSettings(church.id, targets);
     await firebase.setSessionMeta(church.id, this.folderName, {
       churchName: church.name,
       startedAt: Date.now(),
       folderName: this.folderName,
       languages: ["ko", ...targets],
+      preacherId: selected.id,
+      preacherName: selected.name,
       endedAt: null,
     });
 
@@ -158,9 +223,10 @@ class Engine {
     };
     this.pipeline = new Pipeline({
       apiKey,
-      model: opts.model || defaultModel,
+      model,
       targets,
       glossary,
+      sessionContext,
       files: this.writer,
       cloud,
       onLive: (text) => this.emit({ type: "live", text }),
@@ -172,6 +238,8 @@ class Engine {
       apiKey,
       churchName: church.name,
       glossary,
+      sessionContext,
+      extraKeywords,
       sensitivity: opts.sensitivity || "normal",
       onInterim: (text) => this.pipeline && this.pipeline.onInterim(text),
       onFinal: (text) => this.pipeline && this.pipeline.onFinalChunk(text),
@@ -205,6 +273,25 @@ class Engine {
     this.speech = null;
     if (speech) await speech.stop();
     if (pipeline) await pipeline.stop();
+    if (this.church && this.preacherId && pipeline) {
+      try {
+        const lesson = preacherLib.lessonFromLines(pipeline.lessons || []);
+        const current = (await firebase.listPreachers(this.church.id)).find((item) => item.id === this.preacherId);
+        if (current) {
+          const next = await preacherLib.refineProfile({
+            apiKey: this.sessionApiKey,
+            model: this.sessionModel,
+            profile: current,
+            lesson,
+          });
+          await firebase.savePreacher(this.church.id, this.preacherId, next);
+          this.emit({ type: "log", level: "info", text: `${current.name} 설교자 프로필에 오늘 배운 표현을 반영했습니다.` });
+        }
+      } catch (err) {
+        this.emit({ type: "log", level: "error", text: `설교자 프로필 갱신 실패: ${err.message || err}` });
+      }
+    }
+    this.sessionApiKey = "";
     this.pipeline = null;
     if (this.church && this.folderName) {
       try {

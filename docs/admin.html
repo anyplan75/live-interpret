@@ -11,7 +11,7 @@
   <div class="container">
     <header class="brand">
       <div class="church">통역 관리</div>
-      <div class="sub">로그인한 관리자만 키, 교회, 용어집, 자막 기록을 보거나 바꿉니다.</div>
+      <div class="sub">전체 관리자 로그인입니다. 교회 계정, 키, 모델, 용어집, 자막 기록을 다룹니다.</div>
     </header>
     <p id="banner" class="error"></p>
 
@@ -39,7 +39,7 @@
 
     <section class="card">
       <h2>OpenAI 키</h2>
-      <p class="hint">교회마다 키를 두지 않습니다. 여기에 한 번 저장하면 방송 앱이 그 키로 번역합니다.</p>
+      <p class="hint">키는 이 페이지만 읽고 씁니다. 교회 계정은 서버의 키를 읽지 못합니다.</p>
       <label for="apiKey">API 키</label>
       <input id="apiKey" type="password" autocomplete="off" placeholder="한 번만 입력">
       <div class="row" style="margin-top:8px;">
@@ -48,13 +48,21 @@
       <p id="keyMsg" class="msg"></p>
     </section>
 
-    <section class="card">
+    <section class="card stack">
       <h2>교회 추가</h2>
-      <div class="row">
-        <input id="churchName" type="text" placeholder="교회 이름" maxlength="80">
-        <button type="button" id="addChurch">추가</button>
+      <label for="churchName">교회 이름</label>
+      <input id="churchName" type="text" placeholder="교회 이름" maxlength="80">
+      <label for="churchEmail">교회 로그인 이메일</label>
+      <input id="churchEmail" type="email" autocomplete="off">
+      <label for="churchPassword">교회 로그인 비밀번호</label>
+      <input id="churchPassword" type="password" autocomplete="new-password">
+      <label for="churchPassword2">비밀번호 확인</label>
+      <input id="churchPassword2" type="password" autocomplete="new-password">
+      <div class="row" style="margin-top:12px;">
+        <button type="button" id="addChurch">교회와 계정 추가</button>
       </div>
-      <p class="hint">추가하면 성도 페이지, 자막, OBS 링크가 만들어집니다. 방송실 PC에서는 송출 앱을 설치하고 이 교회를 고릅니다.</p>
+      <p class="hint">방송 앱은 이 이메일로 로그인하면 이 교회만 열립니다. 계정을 만들어도 관리자 로그인은 유지됩니다.</p>
+      <p id="addMsg" class="msg"></p>
     </section>
 
     <section class="card">
@@ -71,6 +79,27 @@
         <span id="activeState" class="hint"></span>
       </div>
       <div id="links"></div>
+
+      <h2 style="margin-top:22px;">번역 모델</h2>
+      <label for="churchModel">이 교회 모델</label>
+      <select id="churchModel"></select>
+      <div class="row" style="margin-top:8px;">
+        <button type="button" id="saveModel">모델 저장</button>
+      </div>
+
+      <h2 style="margin-top:22px;">교회 계정</h2>
+      <p id="accountEmail" class="hint">계정이 없습니다.</p>
+      <label for="currentPassword">현재 비밀번호</label>
+      <input id="currentPassword" type="password" autocomplete="new-password">
+      <label for="newEmail">새 이메일</label>
+      <input id="newEmail" type="email" autocomplete="off">
+      <label for="newPassword">새 비밀번호</label>
+      <input id="newPassword" type="password" autocomplete="new-password">
+      <div class="row" style="margin-top:8px;">
+        <button type="button" id="saveAccount">계정 저장</button>
+      </div>
+      <p class="hint">이메일이나 비밀번호를 바꿀 때 현재 비밀번호가 필요합니다. 관리자 로그인 상태는 바뀌지 않습니다.</p>
+
       <label for="glossary" style="margin-top:16px;">예배 용어집</label>
       <textarea id="glossary"></textarea>
       <div class="row" style="margin-top:8px;">
@@ -79,29 +108,9 @@
       </div>
       <p id="saveMsg" class="msg"></p>
 
-      <h2 style="margin-top:22px;">OBS 글자</h2>
-      <div class="settings-grid">
-        <label>배치
-          <select id="layout">
-            <option value="bottom">아래</option>
-            <option value="top">위</option>
-            <option value="left">왼쪽</option>
-            <option value="right">오른쪽</option>
-          </select>
-        </label>
-        <label>정렬
-          <select id="align">
-            <option value="left">왼쪽</option>
-            <option value="center">가운데</option>
-            <option value="right">오른쪽</option>
-          </select>
-        </label>
-        <label>글자색 <input id="color" type="color" value="#ffffff"></label>
-        <label>배경색 <input id="bgColor" type="color" value="#000000"></label>
-        <label>투명도 <input id="opacity" type="number" min="0" max="1" step="0.1" value="0.7"></label>
-      </div>
-      <div id="fontRows"></div>
-      <button type="button" id="saveStyle" style="margin-top:10px;">자막 모양 저장</button>
+      <h2 style="margin-top:22px;">설교자 프로필</h2>
+      <p class="hint">방송 앱의 교회 계정이 설교자를 등록하고 프로필을 쌓습니다. 여기서는 보기만 합니다.</p>
+      <div id="preachers"></div>
 
       <h2 style="margin-top:22px;">저장된 방송</h2>
       <div id="sessions" class="session-list"></div>
@@ -116,6 +125,7 @@
   <script src="js/catalog.js"></script>
   <script src="js/db.js"></script>
   <script src="js/auth.js"></script>
+  <script src="js/identity.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

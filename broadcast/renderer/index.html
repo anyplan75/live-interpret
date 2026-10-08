@@ -11,77 +11,127 @@
   <header>
     <div>
       <h1>실시간 통역 송출</h1>
-      <p>입력 장치를 고른 다음, 소리가 들어오는 채널만 인식합니다. 음성은 저장하지 않습니다.</p>
+      <p id="churchLine">교회 계정으로 로그인하면 그 교회만 열립니다.</p>
     </div>
     <div id="status" class="pill">대기</div>
   </header>
   <main>
     <section>
       <div class="card" id="signInCard">
-        <h2>관리자 로그인</h2>
-        <p class="hint">웹 관리와 같은 계정으로 이 PC에서 한 번만 로그인합니다. 번역 키는 이 컴퓨터에만 저장되고 다시 묻지 않습니다.</p>
-        <label for="adminEmail">이메일</label>
-        <input id="adminEmail" type="email" autocomplete="username">
-        <label for="adminPassword">비밀번호</label>
-        <input id="adminPassword" type="password" autocomplete="current-password">
+        <h2>교회 로그인</h2>
+        <p class="hint">관리자가 만든 이 교회의 이메일과 비밀번호로 로그인합니다. 다른 교회는 고를 수 없습니다.</p>
+        <label for="churchEmail">이메일</label>
+        <input id="churchEmail" type="email" autocomplete="username">
+        <label for="churchPassword">비밀번호</label>
+        <input id="churchPassword" type="password" autocomplete="current-password">
         <div class="row" style="margin-top:10px;">
-          <button type="button" id="adminSignIn">로그인</button>
+          <button type="button" id="churchSignIn">로그인</button>
         </div>
         <p class="hint" id="signInMsg"></p>
       </div>
 
-      <div class="card">
-        <h2>교회</h2>
-        <div class="row">
-          <select id="church" class="grow"></select>
-          <button type="button" class="ghost" id="reloadChurches">새로고침</button>
+      <div id="studio" hidden>
+        <div class="card">
+          <h2 id="churchName">교회</h2>
+          <p class="hint" id="churchHint"></p>
+          <button type="button" class="ghost" id="signOut">로그아웃</button>
         </div>
-        <p class="hint" id="churchHint">관리 페이지에서 활성화한 교회만 고릅니다.</p>
-      </div>
 
-      <div class="card">
-        <h2>번역</h2>
-        <div class="row">
-          <select id="model"></select>
+        <div class="card">
+          <h2>자막 위치와 글자</h2>
+          <div class="style-grid">
+            <label>위치
+              <select id="layout">
+                <option value="bottom">아래</option>
+                <option value="top">위</option>
+                <option value="left">왼쪽</option>
+                <option value="right">오른쪽</option>
+              </select>
+            </label>
+            <label>정렬
+              <select id="align">
+                <option value="left">왼쪽</option>
+                <option value="center">가운데</option>
+                <option value="right">오른쪽</option>
+              </select>
+            </label>
+            <label>글자색 <input id="color" type="color" value="#ffffff"></label>
+            <label>배경색 <input id="bgColor" type="color" value="#000000"></label>
+            <label>투명도 <input id="opacity" type="number" min="0" max="1" step="0.1" value="0.7"></label>
+          </div>
+          <div id="fontRows"></div>
+          <button type="button" id="saveStyle" style="margin-top:10px;">자막 모양 저장</button>
+          <p class="hint" id="styleMsg"></p>
+        </div>
+
+        <div class="card">
+          <h2>이번 예배 주보</h2>
+          <p class="hint">사진을 올리면 이 컴퓨터와 이번 방송 기록에 남깁니다. 찬송 번호, 곡 제목, 성경, 설교 제목, 설교자 이름을 뽑아 인식과 번역에 넣습니다.</p>
+          <button type="button" class="warn" id="pickBulletin">주보 사진 올리기</button>
+          <p class="hint" id="bulletinMsg">아직 올린 주보가 없습니다.</p>
+          <pre id="bulletinText" class="extract" hidden></pre>
+        </div>
+
+        <div class="card">
+          <h2>설교자</h2>
+          <p class="hint">이 교회 설교자만 등록합니다. 방송마다 한 명을 고르고, 끝난 뒤 말투와 교정, 용어가 다음 설교에 반영됩니다.</p>
+          <select id="preacher"></select>
+          <label for="preacherName">이름</label>
+          <input id="preacherName" type="text" maxlength="80">
+          <label for="traits">말투</label>
+          <textarea id="traits"></textarea>
+          <label for="corrections">교정</label>
+          <textarea id="corrections"></textarea>
+          <label for="terms">용어</label>
+          <textarea id="terms"></textarea>
+          <div class="row" style="margin-top:8px;">
+            <button type="button" id="addPreacher">새 설교자</button>
+            <button type="button" class="ghost" id="savePreacher">프로필 저장</button>
+          </div>
+          <p class="hint" id="preacherMsg"></p>
+        </div>
+
+        <div class="card">
+          <h2>인식 감도</h2>
           <select id="sensitivity" title="입력 감도">
             <option value="high">감도 높음</option>
             <option value="normal" selected>감도 보통</option>
             <option value="low">감도 낮음</option>
           </select>
+          <p class="hint" id="keyHint">번역 키는 관리 페이지에 있습니다. 교회 계정은 그 키를 읽지 않습니다.</p>
         </div>
-        <p class="hint" id="keyHint">번역 키는 관리 페이지에 한 번 저장됩니다.</p>
-      </div>
 
-      <div class="card">
-        <h2>입력 소스와 채널</h2>
-        <div class="row">
-          <select id="device" class="grow"></select>
-          <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
+        <div class="card">
+          <h2>입력 소스와 채널</h2>
+          <div class="row">
+            <select id="device" class="grow"></select>
+            <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
+          </div>
+          <div id="channels" class="channels"></div>
+          <p class="hint" id="audioHint">레벨이 움직이는 채널이 설교 소리입니다. 브라우저 마이크는 쓰지 않습니다.</p>
         </div>
-        <div id="channels" class="channels"></div>
-        <p class="hint" id="audioHint">레벨이 움직이는 채널이 설교 소리입니다. 브라우저 마이크는 쓰지 않습니다.</p>
-      </div>
 
-      <div class="card">
-        <h2>오늘 번역할 언어</h2>
-        <div class="row">
-          <button type="button" class="ghost" id="pickDefault">추천만</button>
-          <button type="button" class="ghost" id="pickAll">전체</button>
-          <button type="button" class="ghost" id="pickNone">번역 없음</button>
+        <div class="card">
+          <h2>오늘 번역할 언어</h2>
+          <div class="row">
+            <button type="button" class="ghost" id="pickDefault">추천만</button>
+            <button type="button" class="ghost" id="pickAll">전체</button>
+            <button type="button" class="ghost" id="pickNone">번역 없음</button>
+          </div>
+          <div id="langs" class="langs" style="margin-top:10px;"></div>
+          <p class="hint" id="langCount"></p>
         </div>
-        <div id="langs" class="langs" style="margin-top:10px;"></div>
-        <p class="hint" id="langCount"></p>
-      </div>
 
-      <div class="card">
-        <h2>저장 폴더</h2>
-        <div class="row">
-          <button type="button" class="warn" id="pickFolder">폴더 선택</button>
-          <button type="button" id="start">방송 시작</button>
-          <button type="button" class="danger" id="stop" disabled>방송 종료</button>
+        <div class="card">
+          <h2>저장 폴더</h2>
+          <div class="row">
+            <button type="button" class="warn" id="pickFolder">폴더 선택</button>
+            <button type="button" id="start">방송 시작</button>
+            <button type="button" class="danger" id="stop" disabled>방송 종료</button>
+          </div>
+          <p class="hint" id="folderHint">교회 이름 / 날짜_시각 / 언어.txt 로 저장됩니다.</p>
+          <p class="hint"><button type="button" class="ghost" id="showSession" disabled>저장 폴더 열기</button></p>
         </div>
-        <p class="hint" id="folderHint">교회 이름 / 날짜_시각 / 언어.txt 로 저장됩니다.</p>
-        <p class="hint"><button type="button" class="ghost" id="showSession" disabled>저장 폴더 열기</button></p>
       </div>
     </section>
 

@@ -106,7 +106,7 @@ function renderLinks(church) {
   );
   const note = document.createElement("p");
   note.className = "hint";
-  note.textContent = `방송실에서는 송출 앱을 열고 「${church.name}」을 선택합니다. 아래는 언어별 성도 자막과 OBS 주소입니다.`;
+  note.textContent = `방송실 앱은 「${church.name}」 계정으로 로그인합니다. 다른 교회는 고르지 않습니다. 아래는 언어별 성도 자막과 OBS 주소입니다.`;
   linksEl.append(note);
   const picker = document.createElement("select");
   LI.catalog.languages.forEach((lang) => {
@@ -146,10 +146,12 @@ async function openChurch(id) {
   [...listEl.children].forEach((node) => {
     if (node.classList) node.classList.toggle("on", node.dataset && node.dataset.id === id);
   });
-  const [glossary, settings, sessionIndex] = await Promise.all([
+  const [glossary, sessionIndex, model, account, preachers] = await Promise.all([
     LI.db.get(`churches/${id}/glossary`),
-    LI.db.get(`churches/${id}/live/settings`),
     LI.db.get(`churches/${id}/sessionIndex`),
+    LI.db.get(`churches/${id}/model`),
+    LI.db.get(`churches/${id}/account`),
+    LI.db.get(`churches/${id}/preachers`),
   ]);
   document.getElementById("glossary").value = typeof glossary === "string" && glossary.trim()
     ? glossary
@@ -164,28 +166,63 @@ async function openChurch(id) {
     church.active = active;
   }
   renderActiveControl(active);
-  fillStyle(settings);
+  fillModel(model);
+  renderAccount(account);
+  renderPreachers(preachers);
   renderSessions(id, sessionIndex);
   const url = new URL(location.href);
   url.searchParams.set("church", id);
   history.replaceState(null, "", url);
 }
 
-function fillStyle(settings) {
-  const global = (settings && settings.global) || {};
-  document.getElementById("layout").value = global.layout || "bottom";
-  document.getElementById("align").value = global.align || "center";
-  document.getElementById("color").value = global.color || "#ffffff";
-  document.getElementById("bgColor").value = global.bgColor || "#000000";
-  document.getElementById("opacity").value = global.bgOpacity !== undefined ? global.bgOpacity : 0.7;
-  const rows = document.getElementById("fontRows");
-  rows.innerHTML = "";
-  LI.catalog.languages.forEach((lang) => {
-    const prev = (settings && settings[lang.code]) || {};
-    const row = document.createElement("div");
-    row.className = "lang-row";
-    row.innerHTML = `<span>${lang.flag} ${lang.name}</span><span>크기 <input data-size="${lang.code}" type="number" value="${prev.fontSize || lang.defaultSize}" style="width:76px;"> 자간 <input data-space="${lang.code}" type="number" step="0.5" value="${prev.letterSpacing !== undefined ? prev.letterSpacing : lang.defaultSpacing}" style="width:76px;"></span>`;
-    rows.append(row);
+function fillModel(model) {
+  const select = document.getElementById("churchModel");
+  select.innerHTML = "";
+  LI.catalog.models.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.label;
+    select.append(option);
+  });
+  select.value = LI.catalog.isModelId(model) ? model : LI.catalog.defaultModel;
+}
+
+function renderAccount(account) {
+  const email = account && typeof account.email === "string" ? account.email : "";
+  const uid = account && typeof account.uid === "string" ? account.uid : "";
+  document.getElementById("accountEmail").textContent = email
+    ? `로그인 이메일: ${email}`
+    : "아직 연결된 교회 계정이 없습니다.";
+  document.getElementById("accountEmail").dataset.uid = uid;
+  document.getElementById("accountEmail").dataset.email = email;
+  document.getElementById("currentPassword").value = "";
+  document.getElementById("newEmail").value = "";
+  document.getElementById("newPassword").value = "";
+}
+
+function renderPreachers(raw) {
+  const box = document.getElementById("preachers");
+  box.innerHTML = "";
+  const rows = !raw || typeof raw !== "object" ? [] : Object.values(raw).filter((row) => row && row.name);
+  if (!rows.length) {
+    box.innerHTML = '<p class="hint">아직 등록된 설교자가 없습니다.</p>';
+    return;
+  }
+  rows.sort((a, b) => String(a.name).localeCompare(String(b.name), "ko")).forEach((row) => {
+    const card = document.createElement("div");
+    card.className = "link-box";
+    card.style.display = "block";
+    const title = document.createElement("strong");
+    title.textContent = `${row.name} · 설교 ${row.sermonCount || 0}회`;
+    const body = document.createElement("pre");
+    body.className = "transcript";
+    body.textContent = [
+      row.traits ? `말투\n${row.traits}` : "",
+      row.corrections ? `교정\n${row.corrections}` : "",
+      row.terms ? `용어\n${row.terms}` : "",
+    ].filter(Boolean).join("\n\n") || "아직 쌓인 프로필이 없습니다.";
+    card.append(title, body);
+    box.append(card);
   });
 }
 
@@ -243,6 +280,23 @@ async function watchTexts(id, folder, meta) {
     blocks[lang] = pre;
   });
 
+  const bulletin = await LI.db.get(`churches/${id}/sessions/${folder}/bulletin`);
+  if (bulletin && typeof bulletin === "object") {
+    const info = document.createElement("pre");
+    info.className = "transcript";
+    const hymns = Array.isArray(bulletin.hymnNumbers) ? bulletin.hymnNumbers.join(", ") : "";
+    const songs = Array.isArray(bulletin.songTitles) ? bulletin.songTitles.join(", ") : "";
+    info.textContent = [
+      bulletin.imageRef ? `주보 파일: ${bulletin.imageRef}` : "",
+      hymns ? `찬송 번호: ${hymns}` : "",
+      songs ? `곡: ${songs}` : "",
+      bulletin.scripture ? `성경: ${bulletin.scripture}` : "",
+      bulletin.sermonTitle ? `설교: ${bulletin.sermonTitle}` : "",
+      bulletin.preacherName ? `설교자: ${bulletin.preacherName}` : "",
+      bulletin.extractedText || "",
+    ].filter(Boolean).join("\n");
+    textsEl.append(info);
+  }
   const texts = await LI.db.get(`churches/${id}/sessions/${folder}/texts`);
   activeLangs.forEach(lang => {
     if (texts && texts[lang]) {
@@ -271,8 +325,8 @@ function renderActiveControl(active) {
   button.textContent = active ? "비활성화" : "활성화";
   button.classList.toggle("ghost", active);
   state.textContent = active
-    ? "활성 · 방송 앱 목록에 나옵니다."
-    : "비활성 · 방송 앱에 없고, 성도 자막과 OBS는 실시간으로 열리지 않습니다.";
+    ? "활성 · 이 교회 계정으로 방송할 수 있습니다."
+    : "비활성 · 방송은 막히고, 성도 자막과 OBS는 실시간으로 열리지 않습니다.";
 }
 
 async function refreshKeyStatus() {
@@ -281,7 +335,7 @@ async function refreshKeyStatus() {
   const value = await LI.db.get(LI.catalog.platformKeyRel);
   const saved = LI.catalog.isPlatformKey(value);
   document.getElementById("keyMsg").textContent = saved
-    ? "플랫폼 키가 저장되어 있습니다. 방송 앱이 이 키를 사용합니다."
+    ? "플랫폼 키가 저장되어 있습니다. 교회 계정은 이 키를 읽지 못합니다."
     : "아직 저장된 키가 없습니다.";
 }
 
@@ -306,7 +360,7 @@ document.getElementById("saveKey").addEventListener("click", async () => {
     LI.db.clearChurch();
     await LI.db.set(LI.catalog.platformKeyRel, key);
     input.value = "";
-    document.getElementById("keyMsg").textContent = "키를 저장했습니다. 방송 앱이 이 키를 사용합니다.";
+    document.getElementById("keyMsg").textContent = "키를 저장했습니다. 교회 계정은 이 키를 읽지 못합니다.";
   } catch (err) {
     showError(err);
   }
@@ -317,7 +371,7 @@ document.getElementById("toggleActive").addEventListener("click", async () => {
   const row = churches.find((item) => item.id === currentId);
   const next = !(row && row.active);
   try {
-    await LI.db.update(`churches/${currentId}`, { active: next });
+    await LI.db.set(`churches/${currentId}/active`, next);
     await LI.db.update(`churchIndex/${currentId}`, { active: next });
     if (row) row.active = next;
     renderActiveControl(next);
@@ -330,22 +384,121 @@ document.getElementById("toggleActive").addEventListener("click", async () => {
 document.getElementById("addChurch").addEventListener("click", async () => {
   if (!signedIn) return;
   const name = document.getElementById("churchName").value.trim();
-  if (!name) return;
+  const email = document.getElementById("churchEmail").value.trim();
+  const password = document.getElementById("churchPassword").value;
+  const confirm = document.getElementById("churchPassword2").value;
+  const msg = document.getElementById("addMsg");
+  msg.textContent = "";
+  if (!name) {
+    msg.textContent = "교회 이름을 입력해 주세요.";
+    return;
+  }
+  if (!LI.catalog.validAdminEmail(email) || !LI.catalog.validAdminPassword(password)) {
+    msg.textContent = "이메일과 비밀번호를 확인해 주세요. 비밀번호는 6자 이상입니다.";
+    return;
+  }
+  if (password !== confirm) {
+    msg.textContent = "비밀번호가 서로 다릅니다.";
+    return;
+  }
   const id = LI.catalog.makeChurchId(name);
+  const identity = LI.identity.createClient({ apiKey: LI.catalog.firebase.apiKey });
+  let created = null;
   try {
-    await LI.db.set(`churches/${id}`, {
-      name,
-      createdAt: Date.now(),
-      active: true,
-      glossary: LI.catalog.defaultGlossary(name),
-    });
-    await LI.db.set(`churchIndex/${id}`, { name, createdAt: Date.now(), active: true });
+    created = await identity.signUp(email, password);
+    const createdAt = Date.now();
+    const glossary = LI.catalog.defaultGlossary(name);
+    await LI.db.set(`churches/${id}/name`, name);
+    await LI.db.set(`churches/${id}/createdAt`, createdAt);
+    await LI.db.set(`churches/${id}/active`, true);
+    await LI.db.set(`churches/${id}/glossary`, glossary);
+    await LI.db.set(`churches/${id}/model`, LI.catalog.defaultModel);
+    await LI.db.set(`churches/${id}/account`, { uid: created.localId, email: created.email });
     await LI.db.set(`churches/${id}/live/settings`, LI.catalog.defaultLiveSettings());
+    await LI.db.set(`churchIndex/${id}`, { name, createdAt, active: true });
+    await LI.db.set(`accounts/${created.localId}`, { churchId: id });
     document.getElementById("churchName").value = "";
+    document.getElementById("churchEmail").value = "";
+    document.getElementById("churchPassword").value = "";
+    document.getElementById("churchPassword2").value = "";
     await loadChurches();
     await openChurch(id);
+    msg.textContent = "교회와 로그인 계정을 만들었습니다. 관리자 로그인은 그대로입니다.";
+  } catch (err) {
+    if (created && created.idToken) {
+      try { await identity.deleteAccount(created.idToken); } catch (_) { /* 이미 지운 계정은 무시합니다 */ }
+      const leftovers = [
+        `churches/${id}/name`,
+        `churches/${id}/createdAt`,
+        `churches/${id}/active`,
+        `churches/${id}/glossary`,
+        `churches/${id}/model`,
+        `churches/${id}/account`,
+        `churches/${id}/live/settings`,
+        `churchIndex/${id}`,
+        `accounts/${created.localId}`,
+      ];
+      for (const rel of leftovers) {
+        try { await LI.db.set(rel, null); } catch (_) { /* 아직 없는 값은 무시합니다 */ }
+      }
+    }
+    msg.textContent = LI.catalog.authErrorMessage(err);
+  }
+});
+
+document.getElementById("saveModel").addEventListener("click", async () => {
+  if (!signedIn || !currentId) return;
+  const model = document.getElementById("churchModel").value;
+  if (!LI.catalog.isModelId(model)) return;
+  try {
+    await LI.db.set(`churches/${currentId}/model`, model);
+    document.getElementById("saveMsg").textContent = "모델을 저장했습니다.";
   } catch (err) {
     showError(err);
+  }
+});
+
+document.getElementById("saveAccount").addEventListener("click", async () => {
+  if (!signedIn || !currentId) return;
+  const holder = document.getElementById("accountEmail");
+  const currentEmail = holder.dataset.email || "";
+  const uid = holder.dataset.uid || "";
+  const currentPassword = document.getElementById("currentPassword").value;
+  const newEmail = document.getElementById("newEmail").value.trim();
+  const newPassword = document.getElementById("newPassword").value;
+  if (!currentEmail || !uid) {
+    document.getElementById("saveMsg").textContent = "연결된 교회 계정이 없습니다.";
+    return;
+  }
+  if (!currentPassword) {
+    document.getElementById("saveMsg").textContent = "현재 비밀번호를 입력해 주세요.";
+    return;
+  }
+  if (!newEmail && !newPassword) {
+    document.getElementById("saveMsg").textContent = "새 이메일 또는 새 비밀번호를 입력해 주세요.";
+    return;
+  }
+  if (newEmail && !LI.catalog.validAdminEmail(newEmail)) {
+    document.getElementById("saveMsg").textContent = "새 이메일 형식을 확인해 주세요.";
+    return;
+  }
+  if (newPassword && !LI.catalog.validAdminPassword(newPassword)) {
+    document.getElementById("saveMsg").textContent = "새 비밀번호는 6자 이상입니다.";
+    return;
+  }
+  const identity = LI.identity.createClient({ apiKey: LI.catalog.firebase.apiKey });
+  try {
+    const signed = await identity.signIn(currentEmail, currentPassword);
+    const patch = {};
+    if (newEmail && newEmail !== currentEmail) patch.email = newEmail;
+    if (newPassword) patch.password = newPassword;
+    const updated = await identity.updateAccount(signed.idToken, patch);
+    const email = updated.email || newEmail || currentEmail;
+    await LI.db.set(`churches/${currentId}/account`, { uid, email });
+    renderAccount({ uid, email });
+    document.getElementById("saveMsg").textContent = "교회 계정을 저장했습니다. 관리자 로그인은 그대로입니다.";
+  } catch (err) {
+    document.getElementById("saveMsg").textContent = LI.catalog.authErrorMessage(err);
   }
 });
 
@@ -354,10 +507,8 @@ document.getElementById("saveGlossary").addEventListener("click", async () => {
   const name = document.getElementById("editName").value.trim();
   if (!name) return;
   try {
-    await LI.db.update(`churches/${currentId}`, {
-      glossary: document.getElementById("glossary").value,
-      name,
-    });
+    await LI.db.set(`churches/${currentId}/name`, name);
+    await LI.db.set(`churches/${currentId}/glossary`, document.getElementById("glossary").value);
     await LI.db.update(`churchIndex/${currentId}`, { name });
     document.getElementById("saveMsg").textContent = "저장했습니다.";
     await loadChurches();
@@ -370,36 +521,6 @@ document.getElementById("saveGlossary").addEventListener("click", async () => {
 document.getElementById("resetGlossary").addEventListener("click", () => {
   const church = churches.find((item) => item.id === currentId);
   document.getElementById("glossary").value = LI.catalog.defaultGlossary(church ? church.name : "");
-});
-
-document.getElementById("saveStyle").addEventListener("click", async () => {
-  if (!signedIn || !currentId) return;
-  try {
-    const existing = (await LI.db.get(`churches/${currentId}/live/settings`)) || {};
-    const next = {
-      ...existing,
-      _timestamp: Date.now(),
-      global: {
-        layout: document.getElementById("layout").value,
-        align: document.getElementById("align").value,
-        color: document.getElementById("color").value,
-        bgColor: document.getElementById("bgColor").value,
-        bgOpacity: parseFloat(document.getElementById("opacity").value),
-      },
-    };
-    LI.catalog.languages.forEach((lang) => {
-      const prev = existing[lang.code] || {};
-      next[lang.code] = {
-        ...prev,
-        fontSize: parseFloat(document.querySelector(`[data-size="${lang.code}"]`).value),
-        letterSpacing: parseFloat(document.querySelector(`[data-space="${lang.code}"]`).value),
-      };
-    });
-    await LI.db.set(`churches/${currentId}/live/settings`, next);
-    document.getElementById("saveMsg").textContent = "자막 모양을 저장했습니다.";
-  } catch (err) {
-    showError(err);
-  }
 });
 
 function showGate(mode) {
@@ -423,7 +544,7 @@ function showApp(email) {
   document.getElementById("password").value = "";
   document.getElementById("confirm").value = "";
   const sub = document.querySelector(".brand .sub");
-  if (sub && email) sub.textContent = `${email} 로 로그인했습니다. 키, 교회, 용어집, 자막 기록을 관리합니다.`;
+  if (sub && email) sub.textContent = `${email} 전체 관리자입니다. 교회 계정, 키, 모델, 용어집, 자막 기록을 관리합니다.`;
 }
 
 async function enterApp(user) {

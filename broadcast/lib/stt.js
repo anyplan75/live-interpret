@@ -20,6 +20,8 @@ class SpeechSession {
     this.apiKey = opts.apiKey;
     this.churchName = opts.churchName || "";
     this.glossary = opts.glossary || "";
+    this.sessionContext = opts.sessionContext || "";
+    this.extraKeywords = Array.isArray(opts.extraKeywords) ? opts.extraKeywords : [];
     this.onInterim = opts.onInterim || (() => {});
     this.onFinal = opts.onFinal || (() => {});
     this.onStatus = opts.onStatus || (() => {});
@@ -91,7 +93,7 @@ class SpeechSession {
   }
 
   sendSession() {
-    const keywords = keywordsFromGlossary(this.glossary, this.churchName);
+    const keywords = keywordsFromGlossary(this.glossary, this.churchName, this.extraKeywords);
     this.send({
       type: "session.update",
       session: {
@@ -101,7 +103,7 @@ class SpeechSession {
             format: { type: "audio/pcm", rate: 24000 },
             transcription: {
               model: "gpt-live-transcribe",
-              prompt: sttPrompt(this.churchName),
+              prompt: sttPrompt(this.churchName, this.sessionContext),
               keywords,
               languages: ["ko"],
               delay: "low",
@@ -248,7 +250,7 @@ class SpeechSession {
   async postFile(pcm) {
     if (!pcm || pcm.length < 4800) return "";
     const wav = wavFromPcm16(pcm, 24000);
-    const prompt = sttPrompt(this.churchName);
+    const prompt = sttPrompt(this.churchName, this.sessionContext);
     const models = ["gpt-4o-mini-transcribe", "whisper-1"];
     let lastError = null;
     for (const model of models) {

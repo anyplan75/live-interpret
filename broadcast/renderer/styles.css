@@ -73,7 +73,7 @@ label { display: block; font-weight: 700; margin-bottom: 6px; }
 
 input, select, button { font: inherit; }
 
-input[type="text"], input[type="password"], select {
+input[type="text"], input[type="password"], input[type="email"], input[type="number"], select, textarea {
   width: 100%;
   padding: 10px 12px;
   border-radius: 10px;
@@ -104,6 +104,13 @@ button.danger { background: var(--danger); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .hint { color: var(--muted); font-size: 0.86rem; margin: 8px 0 0; }
+.style-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.style-grid label { font-size: 0.86rem; }
+textarea { min-height: 68px; resize: vertical; }
+input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d1218; border: 1px solid var(--line); border-radius: 10px; }
+.font-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.font-row input { width: 76px; }
+.extract { white-space: pre-wrap; background: #0d1218; border-radius: 10px; padding: 10px; max-height: 180px; overflow: auto; }
 
 .langs {
   display: grid;

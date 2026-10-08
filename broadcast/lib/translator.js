@@ -13,6 +13,8 @@ function buildPrompt(koreanText, targetCodes, opts) {
   })];
   const schemaKeys = ["ko", ...targetCodes].map((code) => `  "${code}": "..."`).join(",\n");
   const contextBlock = opts.previousContext ? `\n[직전 문맥]\n${opts.previousContext}\n` : "";
+  const sessionContext = String(opts.sessionContext || "").trim();
+  const sessionBlock = sessionContext ? `\n[이번 예배·설교자]\n${sessionContext}\n` : "";
   const glossary = String(opts.glossary || "").trim();
   const koMode = opts.koFixed
     ? "한국어(ko)는 이미 교정된 문장이다. 의미 변경 없이 그대로 ko에 넣고, 지정 언어만 번역하라."
@@ -27,6 +29,7 @@ ${koMode}
 6) JSON 문자열 값 안의 따옴표는 반드시 이스케이프하라.
 
 ${glossary}
+${sessionBlock}
 ${contextBlock}
 반드시 아래 JSON 형식으로만 응답 (키: ${langLines.join(", ")}):
 {
@@ -100,6 +103,7 @@ async function translate(koreanText, opts) {
     apiKey,
     model,
     previousContext: opts.previousContext || "",
+    sessionContext: opts.sessionContext || "",
     glossary: opts.glossary || "",
     koFixed: false,
     fetchImpl: opts.fetchImpl,
