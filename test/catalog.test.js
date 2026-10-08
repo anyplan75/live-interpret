@@ -12,6 +12,12 @@ test("language list matches the worship set", () => {
   assert.equal(catalog.firebase.rootPath, "live-interpret");
 });
 
+test("the recognition prompt is not treated as heard speech", () => {
+  const prompt = catalog.sttPrompt("서귀포제일교회", "설교자: 이종찬\n말투: 차분함");
+  assert.equal(catalog.isGuidanceEcho(prompt), true);
+  assert.equal(catalog.isGuidanceEcho("영어는 한 번에 되는데 왜 한국어는 여러 번 말을 하게 나오지?"), false);
+});
+
 test("glossary keeps the worship correction pattern", () => {
   const text = catalog.defaultGlossary("서귀포제일교회");
   ["서귀포제일교회", "항존직", "이른비", "열방", "여짜오되", "수요 기도회"].forEach((term) => {

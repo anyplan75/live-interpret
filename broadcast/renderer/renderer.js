@@ -6,6 +6,7 @@ const langsEl = document.getElementById("langs");
 const folderHint = document.getElementById("folderHint");
 const audioHint = document.getElementById("audioHint");
 const liveEl = document.getElementById("live");
+const koStackEl = document.getElementById("koStack");
 const cardsEl = document.getElementById("cards");
 const logEl = document.getElementById("log");
 const langCount = document.getElementById("langCount");
@@ -28,6 +29,33 @@ const state = {
 function setStatus(text, kind) {
   statusEl.textContent = text;
   statusEl.className = `pill${kind ? ` ${kind}` : ""}`;
+}
+
+function appendKoreanLine(raw, corrected) {
+  const heard = String(raw || "").trim();
+  const fixed = String(corrected || "").trim();
+  if (!fixed) return;
+  const block = document.createElement("article");
+  block.className = "ko-line";
+  if (heard && heard !== fixed) {
+    const heardLine = document.createElement("p");
+    heardLine.className = "heard";
+    const heardTag = document.createElement("span");
+    heardTag.className = "tag";
+    heardTag.textContent = "듣는 말";
+    heardLine.append(heardTag, document.createTextNode(heard));
+    block.append(heardLine);
+  }
+  const correctedLine = document.createElement("p");
+  correctedLine.className = "corrected";
+  const correctedTag = document.createElement("span");
+  correctedTag.className = "tag";
+  correctedTag.textContent = "교정";
+  correctedLine.append(correctedTag, document.createTextNode(fixed));
+  block.append(correctedLine);
+  koStackEl.append(block);
+  koStackEl.scrollTop = koStackEl.scrollHeight;
+  liveEl.textContent = "대기 중...";
 }
 
 function log(text, level) {
@@ -429,6 +457,7 @@ async function boot() {
       state.lines[event.lang] = event.text || "";
       const card = cardsEl.querySelector(`[data-lang="${event.lang}"] .text`);
       if (card) card.textContent = event.text || "대기 중...";
+      if (event.lang === "ko" && event.isFinal && event.text) appendKoreanLine(event.raw, event.text);
     }
     if (event.type === "log") log(event.text, event.level);
     if (event.type === "audio" && event.audio) {
@@ -436,6 +465,7 @@ async function boot() {
       renderChannels(event.audio.deviceChannels, event.audio.deviceChannel);
     }
     if (event.type === "session") {
+      if (event.running) koStackEl.replaceChildren();
       setRunning(!!event.running);
       if (event.dir) {
         folderHint.textContent = event.dir;

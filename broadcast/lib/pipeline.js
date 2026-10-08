@@ -1,6 +1,6 @@
 const sentence = require("./sentence");
 const { translate } = require("./translator");
-const { timing, langByCode } = require("./catalog");
+const { timing, langByCode, isGuidanceEcho } = require("./catalog");
 
 function joinSpace(left, right) {
   return `${left || ""} ${right || ""}`.replace(/\s+/g, " ").trim();
@@ -52,8 +52,14 @@ class Pipeline {
 
   onInterim(text) {
     if (this.stopped) return;
+    const value = String(text || "").trim();
+    if (isGuidanceEcho(value)) {
+      this.interim = "";
+      this.pushLive(true);
+      return;
+    }
     this.noteSpeech();
-    this.interim = String(text || "").trim();
+    this.interim = value;
     this.pushLive(false);
   }
 
@@ -62,6 +68,10 @@ class Pipeline {
     this.noteSpeech();
     this.interim = "";
     const chunk = String(text || "").trim();
+    if (isGuidanceEcho(chunk)) {
+      this.pushLive(true);
+      return;
+    }
     if (!chunk || sentence.isNoise(chunk)) return;
     this.notePause(chunk);
     this.unprocessed = joinSpace(this.unprocessed, chunk);
@@ -136,7 +146,7 @@ class Pipeline {
   }
 
   async publish(koreanText, id) {
-    if (!koreanText || sentence.isNoise(koreanText)) return;
+    if (!koreanText || sentence.isNoise(koreanText) || isGuidanceEcho(koreanText)) return;
     try {
       const result = await this.translateImpl(koreanText, {
         apiKey: this.apiKey,
@@ -154,12 +164,13 @@ class Pipeline {
         this.onLine({ lang: "ko", text: "", raw: koreanText, isFinal: true, id, skipped: true });
         return;
       }
+      result._raw = koreanText;
       this.remember(result.ko);
       this.noteSample(result);
       await this.writeLanguages(result, id, ["ko", ...this.targets]);
     } catch (err) {
       this.onLog(`번역 실패, 한국어 원문을 남깁니다: ${err.message || err}`);
-      await this.writeLanguages({ ko: koreanText }, id, ["ko"]);
+      await this.writeLanguages({ ko: koreanText, _raw: koreanText }, id, ["ko"]);
     }
   }
 

@@ -183,6 +183,12 @@
     return out.slice(0, 30);
   }
 
+  function isGuidanceEcho(text) {
+    const value = String(text || "").replace(/\s+/g, " ").trim();
+    if (!value) return false;
+    return value.includes("한국 교회 예배입니다") && value.includes("받아씁니다");
+  }
+
   function sttPrompt(churchName, extra) {
     const name = String(churchName || "교회")
       .replace(/[<>\r\n]/g, " ")
@@ -439,6 +445,7 @@
     defaultGlossary,
     keywordsFromGlossary,
     sttPrompt,
+    isGuidanceEcho,
     defaultLiveSettings,
     buildLinks,
     homeLink,
