@@ -31,13 +31,13 @@
   const langByCode = Object.fromEntries(languages.map((lang) => [lang.code, lang]));
 
   const firebase = {
-    apiKey: "AIzaSyBaTVqnnRtefy-sE3NyAEhqL-u_IphWlec",
+    apiKey: "AIzaSyByY1aoKxRjNUUOnQvwyYLpPRvNy0WLRUM",
     authDomain: "live-interpret-db65e.firebaseapp.com",
     databaseURL: "https://live-interpret-db65e-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "live-interpret-db65e",
     storageBucket: "live-interpret-db65e.firebasestorage.app",
-    messagingSenderId: "1053036442548",
-    appId: "1:1053036442548:web:67aad27d013e95d71b78e1",
+    messagingSenderId: "638772209952",
+    appId: "1:638772209952:web:d56749b35c04b395904f45",
     rootPath: "live-interpret",
   };
   const pagesBase = "https://anyplan75.github.io/live-interpret";
