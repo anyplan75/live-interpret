@@ -31,7 +31,7 @@
   const langByCode = Object.fromEntries(languages.map((lang) => [lang.code, lang]));
 
   const firebase = {
-    apiKey: "AIzaSyByY1aoKxRjNUUOnQvwyYLpPRvNy0WLRUM",
+    apiKey: "AIzaSyDsYIaoKxRjNUUOnQvwyYLpPRvNy0WLRUM",
     authDomain: "live-interpret-db65e.firebaseapp.com",
     databaseURL: "https://live-interpret-db65e-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "live-interpret-db65e",
