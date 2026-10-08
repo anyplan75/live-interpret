@@ -32,10 +32,10 @@
 
   const firebase = {
     apiKey: "AIzaSyBaTVqnnRtefy-sE3NyAEhqL-u_IphWlec",
-    authDomain: "overlay-lab.firebaseapp.com",
-    databaseURL: "https://overlay-lab-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "overlay-lab",
-    storageBucket: "overlay-lab.firebasestorage.app",
+    authDomain: "live-interpret-db65e.firebaseapp.com",
+    databaseURL: "https://live-interpret-db65e-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "live-interpret-db65e",
+    storageBucket: "live-interpret-db65e.firebasestorage.app",
     messagingSenderId: "1053036442548",
     appId: "1:1053036442548:web:67aad27d013e95d71b78e1",
     rootPath: "live-interpret",

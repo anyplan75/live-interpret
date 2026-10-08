@@ -106,7 +106,7 @@ https://anyplan75.github.io/live-interpret/overlay.html?church=교회아이디&l
 
 공개 주소는 GitHub Pages 입니다. 저장소 Settings → Pages → Branch `main`, folder `/docs` 입니다. 성도 자막, OBS, 관리 페이지가 이 주소로 열립니다. 송출 앱이 복사하는 링크도 이 주소입니다.
 
-Firebase Authentication 에서 이메일/비밀번호 로그인을 켜고, Authorized domains 에 `anyplan75.github.io` 가 있어야 관리 페이지 로그인이 됩니다. 프로젝트는 `overlay-lab` 입니다.
+Firebase Authentication 에서 이메일/비밀번호 로그인을 켜고, Authorized domains 에 `anyplan75.github.io` 가 있어야 관리 페이지 로그인이 됩니다. 프로젝트는 `live-interpret-db65e` 입니다.
 
 ## 개발 확인
 

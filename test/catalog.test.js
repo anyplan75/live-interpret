@@ -38,8 +38,8 @@ test("one platform key and church activation", () => {
   assert.equal(catalog.validAdminPassword("12345"), false);
   assert.equal(catalog.validAdminPassword("123456"), true);
   assert.match(catalog.authErrorMessage({ code: "auth/unauthorized-domain" }), /anyplan75\.github\.io/);
-  assert.equal(catalog.firebase.projectId, "overlay-lab");
-  assert.equal(catalog.firebase.authDomain, "overlay-lab.firebaseapp.com");
+  assert.equal(catalog.firebase.projectId, "live-interpret-db65e");
+  assert.equal(catalog.firebase.authDomain, "live-interpret-db65e.firebaseapp.com");
   assert.match(catalog.firebase.apiKey, /^AIza/);
   assert.equal(catalog.isPlatformKey(sample), true);
   assert.equal(catalog.isPlatformKey("short"), false);
