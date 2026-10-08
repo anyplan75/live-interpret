@@ -210,6 +210,9 @@
     if (preacher && preacher.traits) lines.push(`말투: ${clipLine(preacher.traits, 400)}`);
     if (preacher && preacher.corrections) lines.push(`교정: ${clipLine(preacher.corrections, 500)}`);
     if (preacher && preacher.terms) lines.push(`용어: ${clipLine(preacher.terms, 500)}`);
+    if (preacher && preacher.pausePoints) lines.push(`말 끊는 위치(문장이 이어짐): ${clipLine(preacher.pausePoints, 300)}`);
+    if (preacher && preacher.accuracy) lines.push(`정확도 교정: ${clipLine(preacher.accuracy, 450)}`);
+    if (preacher && preacher.naturalness) lines.push(`자연스러움 교정: ${clipLine(preacher.naturalness, 450)}`);
     if (bulletin) {
       const hymns = [].concat(bulletin.hymnNumbers || []).map((item) => clipLine(item, 40)).filter(Boolean);
       const songs = [].concat(bulletin.songTitles || []).map((item) => clipLine(item, 80)).filter(Boolean);
@@ -220,7 +223,7 @@
       if (bulletin.preacherName) lines.push(`주보의 설교자: ${clipLine(bulletin.preacherName, 80)}`);
       if (bulletin.extractedText) lines.push(`주보 본문: ${clipLine(bulletin.extractedText, 800)}`);
     }
-    return lines.join("\n").slice(0, 2500);
+    return lines.join("\n").slice(0, 3600);
   }
 
   function contextKeywords(bulletin, preacher) {
@@ -234,6 +237,13 @@
     }
     if (preacher && preacher.name) words.push(preacher.name);
     if (preacher && preacher.terms) String(preacher.terms).split("\n").forEach((line) => words.push(line));
+    if (preacher && preacher.accuracy) {
+      String(preacher.accuracy).split("\n").forEach((line) => {
+        const parts = line.split(/\s*(?:→|->)\s*/);
+        const right = parts.length === 2 ? parts[1].replace(/\([^)]*\)\s*$/, "").replace(/["'“”]/g, "").trim() : "";
+        if (right && right.length <= 20 && /[가-힣]/.test(right)) words.push(right);
+      });
+    }
     return words;
   }
 

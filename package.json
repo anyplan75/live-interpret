@@ -4,17 +4,28 @@
   "private": true,
   "description": "여러 교회의 예배를 입력 채널로 받아 실시간 통역 자막을 보내는 방송실 앱",
   "main": "broadcast/main.js",
+  "author": "anyplan75",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anyplan75/live-interpret.git"
+  },
   "scripts": {
     "start": "electron .",
     "web": "node scripts/serve-web.js",
     "test": "node --test test/*.js",
-    "pack:mac": "electron-builder --mac dir --arm64 && node scripts/name-mac-app.js"
+    "pack:mac": "electron-builder --mac dir --arm64 && node scripts/name-mac-app.js",
+    "dist:mac": "electron-builder --mac --arm64 --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never"
   },
   "engines": {
     "node": ">=20"
   },
+  "liveInterpret": {
+    "macSilentUpdate": false
+  },
   "dependencies": {
     "audify": "1.10.1",
+    "electron-updater": "^6.8.9",
     "ws": "^8.18.3"
   },
   "devDependencies": {
@@ -38,13 +49,26 @@
     "directories": {
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "anyplan75",
+        "repo": "live-interpret",
+        "releaseType": "draft"
+      }
+    ],
     "mac": {
       "target": [
         {
-          "target": "dir",
+          "target": "dmg",
+          "arch": ["arm64"]
+        },
+        {
+          "target": "zip",
           "arch": ["arm64"]
         }
       ],
+      "artifactName": "live-interpret-${version}-mac-${arch}.${ext}",
       "category": "public.app-category.music",
       "identity": "-",
       "hardenedRuntime": false,
@@ -55,6 +79,25 @@
         "NSMicrophoneUsageDescription": "설교 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
         "CFBundleDisplayName": "실시간 통역"
       }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "live-interpret-setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "실시간 통역",
+      "uninstallDisplayName": "실시간 통역",
+      "deleteAppDataOnUninstall": false
     }
   }
 }

@@ -313,6 +313,12 @@ function fillPreacherForm(preacher) {
   document.getElementById("traits").value = preacher ? preacher.traits || "" : "";
   document.getElementById("corrections").value = preacher ? preacher.corrections || "" : "";
   document.getElementById("terms").value = preacher ? preacher.terms || "" : "";
+  const learned = preacher ? [
+    ["말 끊는 위치", preacher.pausePoints],
+    ["정확도 교정", preacher.accuracy],
+    ["자연스러움 교정", preacher.naturalness],
+  ].filter(([, value]) => value && String(value).trim()).map(([label, value]) => `${label}\n${String(value).trim()}`).join("\n\n") : "";
+  document.getElementById("learned").textContent = learned || "아직 없습니다. 방송을 마치면 쌓입니다.";
 }
 
 function renderPreachers() {

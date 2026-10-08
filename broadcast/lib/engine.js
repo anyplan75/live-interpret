@@ -227,6 +227,7 @@ class Engine {
       targets,
       glossary,
       sessionContext,
+      pauseTails: preacherLib.pauseTails(selected),
       files: this.writer,
       cloud,
       onLive: (text) => this.emit({ type: "live", text }),
@@ -275,15 +276,24 @@ class Engine {
     if (pipeline) await pipeline.stop();
     if (this.church && this.preacherId && pipeline) {
       try {
-        const lesson = preacherLib.lessonFromLines(pipeline.lessons || []);
+        const lesson = preacherLib.lessonFromLines(pipeline.lessons || [], {
+          pauses: pipeline.pauses,
+          samples: pipeline.samples,
+        });
         const current = (await firebase.listPreachers(this.church.id)).find((item) => item.id === this.preacherId);
         if (current) {
-          const next = await preacherLib.refineProfile({
-            apiKey: this.sessionApiKey,
-            model: this.sessionModel,
-            profile: current,
-            lesson,
-          });
+          let next;
+          try {
+            next = await preacherLib.refineProfile({
+              apiKey: this.sessionApiKey,
+              model: this.sessionModel,
+              profile: current,
+              lesson,
+            });
+          } catch (_) {
+            const { samples, ...raw } = lesson;
+            next = preacherLib.mergeProfile(current, raw);
+          }
           await firebase.savePreacher(this.church.id, this.preacherId, next);
           this.emit({ type: "log", level: "info", text: `${current.name} 설교자 프로필에 오늘 배운 표현을 반영했습니다.` });
         }

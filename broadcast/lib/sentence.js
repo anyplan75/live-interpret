@@ -2,8 +2,12 @@
  * 한국어 설교 문장 절단.
  * cheil 송출기와 같은 종결어미·조사 꼬리·침묵 flush 기준을 유지합니다.
  */
-const ENDING =
-  /(축원합니다|축원하옵나이다|하옵나이다|하겠습니다|하셨습니다|하십니다|바랍니다|할지어다|하시옵소서|하여\s*주옵소서|주옵소서|하옵소서|주시옵소서|나이다|이옵니다|아닙니까|습니까|합니까|인가요|은가요|는가요|잖아요|아닙니다|것입니다|겁니다|입니다|습니다|합니다|합시다|하십시다|십시오|세요|시죠|아멘|네요|어요|아요|예요|대요|지요|군요|죠|느냐|도다|입니까)(\s|[.,?!]|$)/g;
+const ENDINGS =
+  "축원합니다|축원하옵나이다|하옵나이다|하겠습니다|하셨습니다|하십니다|바랍니다|할지어다|하시옵소서|하여\\s*주옵소서|주옵소서|하옵소서|주시옵소서|나이다|이옵니다|아닙니까|습니까|합니까|인가요|은가요|는가요|잖아요|아닙니다|것입니다|겁니다|입니다|습니다|합니다|합시다|하십시다|십시오|세요|시죠|아멘|네요|어요|아요|예요|대요|지요|군요|죠|느냐|도다|입니까";
+
+const ENDING = new RegExp(`(${ENDINGS})(\\s|[.,?!]|$)`, "g");
+
+const ENDS_SENTENCE = new RegExp(`(?:${ENDINGS})$`);
 
 const CLAUSE = /(는데|지만|면서|니까|어서|아서|으니|도록|하며)(\s)/g;
 
@@ -11,6 +15,34 @@ const HANGING_TAIL =
   /(이|가|을|를|은|는|의|에|로|와|과|도|만|께|께서|에서|으로|라고|으며|면서|는데|지만|으니|아서|어서|하며|하고|며|고|제|내|그|저|또|및|좀|더|참|정말|우리|나의|그의|주님|하나님|예수|성령)$/;
 
 const NOISE = /^(네+|예+|음+|어+|아+|으+|그+|저+|응+|오+|어\s*어+|아\s*아+)$/;
+
+function stripTrailing(text) {
+  return String(text || "").replace(/[\s.,?!…·"'”’)\]]+$/g, "").trim();
+}
+
+function endsSentence(text) {
+  const t = stripTrailing(text);
+  if (!t) return false;
+  return ENDS_SENTENCE.test(t);
+}
+
+function lastWord(text) {
+  const words = stripTrailing(text).split(/\s+/).filter(Boolean);
+  return words.length ? words[words.length - 1] : "";
+}
+
+function firstWord(text) {
+  const words = String(text || "").replace(/^[\s.,?!…·"'“‘(\[]+/g, "").split(/\s+/).filter(Boolean);
+  return words.length ? words[0].replace(/[.,?!…]+$/g, "") : "";
+}
+
+function pauseTail(text) {
+  const word = lastWord(text);
+  if (!word) return "";
+  const hanging = word.match(HANGING_TAIL);
+  if (hanging) return hanging[0];
+  return word.length <= 3 ? word : word.slice(-2);
+}
 
 function isHangingTail(text) {
   const t = String(text || "").trim();
@@ -114,4 +146,9 @@ module.exports = {
   isHangingTail,
   isNoise,
   canSilenceFlush,
+  endsSentence,
+  stripTrailing,
+  lastWord,
+  firstWord,
+  pauseTail,
 };

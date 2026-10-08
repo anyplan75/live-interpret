@@ -74,7 +74,7 @@
 
         <div class="card">
           <h2>설교자</h2>
-          <p class="hint">이 교회 설교자만 등록합니다. 방송마다 한 명을 고르고, 끝난 뒤 말투와 교정, 용어가 다음 설교에 반영됩니다.</p>
+          <p class="hint">이 교회 설교자만 등록합니다. 방송마다 한 명을 고르고, 끝난 뒤 말투, 교정, 용어, 말 끊는 위치, 정확도·자연스러움 교정이 쌓여 다음 설교에 반영됩니다.</p>
           <select id="preacher"></select>
           <label for="preacherName">이름</label>
           <input id="preacherName" type="text" maxlength="80">
@@ -84,6 +84,8 @@
           <textarea id="corrections"></textarea>
           <label for="terms">용어</label>
           <textarea id="terms"></textarea>
+          <label for="learned">방송에서 쌓인 내용 (자동, 보기만)</label>
+          <pre id="learned" class="hint extract"></pre>
           <div class="row" style="margin-top:8px;">
             <button type="button" id="addPreacher">새 설교자</button>
             <button type="button" class="ghost" id="savePreacher">프로필 저장</button>

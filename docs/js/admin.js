@@ -213,14 +213,22 @@ function renderPreachers(raw) {
     card.className = "link-box";
     card.style.display = "block";
     const title = document.createElement("strong");
-    title.textContent = `${row.name} · 설교 ${row.sermonCount || 0}회`;
+    const updated = typeof row.updatedAt === "number" && row.updatedAt
+      ? ` · 최근 반영 ${new Date(row.updatedAt).toLocaleString("ko-KR")}`
+      : "";
+    title.textContent = `${row.name} · 설교 ${row.sermonCount || 0}회${updated}`;
     const body = document.createElement("pre");
     body.className = "transcript";
+    const text = (value) => (typeof value === "string" ? value.trim() : "");
     body.textContent = [
-      row.traits ? `말투\n${row.traits}` : "",
-      row.corrections ? `교정\n${row.corrections}` : "",
-      row.terms ? `용어\n${row.terms}` : "",
-    ].filter(Boolean).join("\n\n") || "아직 쌓인 프로필이 없습니다.";
+      ["말투", row.traits],
+      ["교정", row.corrections],
+      ["용어", row.terms],
+      ["말 끊는 위치", row.pausePoints],
+      ["정확도 교정 (더 정확한 번역)", row.accuracy],
+      ["자연스러움 교정 (더 자연스러운 번역)", row.naturalness],
+    ].filter(([, value]) => text(value)).map(([label, value]) => `${label}\n${text(value)}`).join("\n\n")
+      || "아직 쌓인 프로필이 없습니다.";
     card.append(title, body);
     box.append(card);
   });

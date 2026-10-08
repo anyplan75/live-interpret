@@ -1,0 +1,92 @@
+name: desktop
+
+# audify is a native module. Each installer is built on its own OS so the
+# audify binary inside it matches that OS. A Mac runner does not build the
+# Windows installer and a Windows runner does not build the Mac app.
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - "broadcast/**"
+      - "build/**"
+      - "docs/js/catalog.js"
+      - "docs/js/languages.js"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            os: macos-14
+            platform: mac
+            arch: arm64
+          - label: Windows x64
+            os: windows-latest
+            platform: win
+            arch: x64
+    env:
+      # No Apple Developer ID or Windows code-signing certificate yet.
+      # The Mac app stays ad-hoc signed ("identity": "-" in package.json).
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (audify native build for this OS)
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json $version"
+            exit 1
+          fi
+
+      - name: Build installer
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+
+      - name: Build installer and upload to draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-interpret-${{ matrix.platform }}-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest*.yml

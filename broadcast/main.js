@@ -7,6 +7,8 @@ const firebase = require("./lib/firebase");
 const secrets = require("./lib/secrets");
 const googleAuth = require("./lib/google-auth");
 const bulletinLib = require("./lib/bulletin");
+const consent = require("./lib/consent");
+const updater = require("./lib/updater");
 
 app.setName("live-interpret");
 
@@ -152,6 +154,12 @@ function createWindow() {
       sandbox: false,
     },
   });
+  win.webContents.once("did-finish-load", () => {
+    updater.startAutoUpdate({
+      app,
+      log: (level, text) => send({ type: "log", level, text }),
+    });
+  });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 }
 
@@ -262,6 +270,9 @@ function registerIpc() {
       traits: payload && typeof payload.traits === "string" ? payload.traits : "",
       corrections: payload && typeof payload.corrections === "string" ? payload.corrections : "",
       terms: payload && typeof payload.terms === "string" ? payload.terms : "",
+      pausePoints: existing ? existing.pausePoints : "",
+      accuracy: existing ? existing.accuracy : "",
+      naturalness: existing ? existing.naturalness : "",
       sermonCount: existing ? existing.sermonCount : 0,
       createdAt: existing && existing.createdAt ? existing.createdAt : Date.now(),
     });
@@ -376,7 +387,18 @@ if (!gotLock) {
       win.focus();
     }
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    let agreed = false;
+    try {
+      agreed = await consent.askConsent(dialog);
+    } catch (_) {
+      agreed = false;
+    }
+    if (!agreed) {
+      quitting = true;
+      app.quit();
+      return;
+    }
     engine = new Engine(send);
     registerIpc();
     createWindow();

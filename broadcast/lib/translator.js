@@ -27,6 +27,7 @@ function buildPrompt(koreanText, targetCodes, opts) {
 ${koMode}
 5) 지정 언어로 자연스럽고 예배에 어울리게 번역하라.
 6) JSON 문자열 값 안의 따옴표는 반드시 이스케이프하라.
+7) [이번 예배·설교자]에 정확도 교정이나 자연스러움 교정이 있으면 그 표현을 우선하라. 말 끊는 위치에서 끝난 발화는 다음 발화로 이어지는 문장이니 번역도 억지로 끝맺지 마라.
 
 ${glossary}
 ${sessionBlock}

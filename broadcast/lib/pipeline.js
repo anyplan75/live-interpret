@@ -18,6 +18,10 @@ class Pipeline {
     this.glossary = opts.glossary || "";
     this.sessionContext = opts.sessionContext || "";
     this.lessons = [];
+    this.pauses = [];
+    this.samples = [];
+    this.pauseTails = [...new Set((opts.pauseTails || []).map((tail) => String(tail || "").trim()).filter(Boolean))];
+    this.openChunk = "";
     this.files = opts.files;
     this.cloud = opts.cloud;
     this.onLive = opts.onLive || (() => {});
@@ -59,9 +63,28 @@ class Pipeline {
     this.interim = "";
     const chunk = String(text || "").trim();
     if (!chunk || sentence.isNoise(chunk)) return;
+    this.notePause(chunk);
     this.unprocessed = joinSpace(this.unprocessed, chunk);
     this.cut();
     this.pushLive(false);
+  }
+
+  /** 인식 조각 하나는 침묵으로 끝난 발화입니다. 앞 조각이 문장 중간에서 끝났으면 그 자리가 이 설교자가 말을 끊는 위치입니다. */
+  notePause(chunk) {
+    const previous = this.openChunk;
+    this.openChunk = sentence.endsSentence(chunk) ? "" : chunk;
+    if (!previous) return;
+    const tail = sentence.pauseTail(previous);
+    if (!tail) return;
+    this.pauses.push({ tail, before: sentence.lastWord(previous), after: sentence.firstWord(chunk) });
+    if (this.pauses.length > 400) this.pauses.shift();
+  }
+
+  endsWithPauseTail(text) {
+    if (!this.pauseTails.length) return false;
+    const t = sentence.stripTrailing(text);
+    if (!t || sentence.endsSentence(t)) return false;
+    return this.pauseTails.some((tail) => t.endsWith(tail));
   }
 
   tick() {
@@ -71,6 +94,7 @@ class Pipeline {
     const silence = Date.now() - this.lastSpeechTime;
     if (!sentence.canSilenceFlush(pending, silence, timing)) return;
     const force = silence >= timing.silenceForceFlushMs;
+    if (!force && this.endsWithPauseTail(pending)) return;
     this.unprocessed = "";
     this.enqueuePiece(pending, force);
     this.pushLive(false);
@@ -99,7 +123,7 @@ class Pipeline {
   enqueuePiece(raw, force) {
     let text = this.takeHold(raw);
     if (!text || sentence.isNoise(text)) return;
-    if (!force && sentence.isHangingTail(text) && text.length < 80) {
+    if (!force && text.length < 80 && (sentence.isHangingTail(text) || this.endsWithPauseTail(text))) {
       this.holdFragment = this.holdFragment ? joinSpace(this.holdFragment, text) : text;
       return;
     }
@@ -131,11 +155,21 @@ class Pipeline {
         return;
       }
       this.remember(result.ko);
+      this.noteSample(result);
       await this.writeLanguages(result, id, ["ko", ...this.targets]);
     } catch (err) {
       this.onLog(`번역 실패, 한국어 원문을 남깁니다: ${err.message || err}`);
       await this.writeLanguages({ ko: koreanText }, id, ["ko"]);
     }
+  }
+
+  noteSample(result) {
+    const lang = this.targets.includes("en") ? "en" : this.targets[0];
+    const ko = String(result.ko || "").trim();
+    const text = lang && result[lang] ? String(result[lang]).trim() : "";
+    if (!ko || !text) return;
+    this.samples.push({ ko, lang, text });
+    if (this.samples.length > 30) this.samples.shift();
   }
 
   remember(corrected) {
