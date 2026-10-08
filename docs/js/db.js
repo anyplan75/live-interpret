@@ -48,6 +48,13 @@ LI.db = (() => {
     return () => node.off("value", handler);
   }
 
+  function onChildAdded(rel, callback, errorCallback) {
+    const node = ref(rel);
+    const handler = (snap) => callback(snap.key, snap.val());
+    node.on("child_added", handler, errorCallback || (() => {}));
+    return () => node.off("child_added", handler);
+  }
+
   return {
     init,
     useChurch(id) {
@@ -67,6 +74,7 @@ LI.db = (() => {
       return ref(rel).update(value);
     },
     onValue,
+    onChildAdded,
     transaction(rel, updater) {
       return ref(rel).transaction(updater).then((result) => ({
         committed: result.committed,

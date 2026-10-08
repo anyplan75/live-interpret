@@ -131,6 +131,13 @@ async function setSessionText(churchId, folder, lang, text) {
   await set(`churches/${churchId}/sessions/${folder}/texts/${lang}`, text);
 }
 
+async function appendSessionSentence(churchId, folder, lang, id, text) {
+  assertChurch(churchId);
+  assertFolder(folder);
+  if (!/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(lang)) throw new Error("언어 코드가 올바르지 않습니다.");
+  await set(`churches/${churchId}/sessions/${folder}/sentences/${lang}/${id}`, text);
+}
+
 async function setSessionMeta(churchId, folder, meta) {
   assertChurch(churchId);
   assertFolder(folder);
@@ -149,5 +156,6 @@ module.exports = {
   getPlatformKey,
   getChurch,
   setSessionText,
+  appendSessionSentence,
   setSessionMeta,
 };

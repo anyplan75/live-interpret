@@ -153,9 +153,9 @@ class Pipeline {
         this.onLog(`${lang}.txt 저장 실패: ${err.message || err}`);
       }
       try {
-        if (this.cloud) await this.cloud.setText(lang, full);
+        if (this.cloud && this.cloud.appendSentence) await this.cloud.appendSentence(lang, id, out);
       } catch (err) {
-        this.onLog(`클라우드 ${lang} 저장 실패: ${err.message || err}`);
+        this.onLog(`클라우드 ${lang} 문장 추가 실패: ${err.message || err}`);
       }
       payload[lang] = { text: out, id, isFinal: true };
       this.onLine({ lang, text: out, raw: lang === "ko" ? result._raw : "", isFinal: true, id });
@@ -213,6 +213,16 @@ class Pipeline {
       this.chain = this.chain.then(() => this.publish(leftover, id));
     }
     await this.chain;
+    
+    if (this.cloud && this.cloud.setText) {
+      for (const [lang, lines] of Object.entries(this.sessionTexts)) {
+        try {
+          await this.cloud.setText(lang, lines.join("\n"));
+        } catch (err) {
+          this.onLog(`클라우드 ${lang} 전체 텍스트 저장 실패: ${err.message || err}`);
+        }
+      }
+    }
   }
 }
 

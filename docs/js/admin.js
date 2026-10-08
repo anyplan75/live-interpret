@@ -208,41 +208,61 @@ function renderSessions(id, index) {
   });
 }
 
-function watchTexts(id, folder, meta) {
+async function watchTexts(id, folder, meta) {
   if (textUnsub) textUnsub();
+  textUnsub = null;
   textsEl.innerHTML = `<h3>${formatFolder(folder)}</h3>`;
-  textUnsub = LI.db.onValue(`churches/${id}/sessions/${folder}/texts`, (texts) => {
-    const keepTitle = textsEl.querySelector("h3");
-    textsEl.innerHTML = "";
-    if (keepTitle) textsEl.append(keepTitle);
-    const langs = texts && typeof texts === "object"
-      ? Object.keys(texts)
-      : ((meta && meta.languages) || []);
-    if (!langs.length) {
-      const empty = document.createElement("p");
-      empty.className = "hint";
-      empty.textContent = "아직 저장된 문장이 없습니다.";
-      textsEl.append(empty);
-      return;
-    }
-    langs.forEach((lang) => {
-      const metaLang = LI.catalog.langByCode[lang];
-      const block = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = metaLang ? `${metaLang.flag} ${metaLang.name}` : lang;
-      const pre = document.createElement("pre");
-      pre.className = "transcript";
-      const body = texts && texts[lang] ? String(texts[lang]) : "";
-      pre.textContent = body || "아직 없습니다.";
-      const download = document.createElement("button");
-      download.type = "button";
-      download.className = "ghost";
-      download.textContent = `${lang}.txt 받기`;
-      download.addEventListener("click", () => downloadText(`${folder}_${lang}.txt`, body));
-      block.append(title, pre, download);
-      textsEl.append(block);
-    });
+  
+  const langs = (meta && meta.languages) || ["ko", ...LI.catalog.languages.map(l => l.code)];
+  const activeLangs = langs.filter(lang => lang === "ko" || LI.catalog.langByCode[lang]);
+  
+  if (!activeLangs.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "아직 저장된 문장이 없습니다.";
+    textsEl.append(empty);
+    return;
+  }
+
+  const blocks = {};
+  activeLangs.forEach((lang) => {
+    const metaLang = LI.catalog.langByCode[lang];
+    const block = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = metaLang ? `${metaLang.flag} ${metaLang.name}` : lang;
+    const pre = document.createElement("pre");
+    pre.className = "transcript";
+    pre.textContent = "불러오는 중...";
+    const download = document.createElement("button");
+    download.type = "button";
+    download.className = "ghost";
+    download.textContent = `${lang}.txt 받기`;
+    download.addEventListener("click", () => downloadText(`${folder}_${lang}.txt`, pre.textContent));
+    block.append(title, pre, download);
+    textsEl.append(block);
+    blocks[lang] = pre;
   });
+
+  const texts = await LI.db.get(`churches/${id}/sessions/${folder}/texts`);
+  activeLangs.forEach(lang => {
+    if (texts && texts[lang]) {
+      blocks[lang].textContent = String(texts[lang]);
+    } else {
+      blocks[lang].textContent = "";
+    }
+  });
+
+  const isEnded = meta && meta.endedAt;
+  if (!isEnded) {
+    const unsubs = activeLangs.map(lang => {
+      return LI.db.onChildAdded(`churches/${id}/sessions/${folder}/sentences/${lang}`, (key, text) => {
+        if (!text) return;
+        const current = blocks[lang].textContent;
+        blocks[lang].textContent = current ? `${current}\n${text}` : text;
+      });
+    });
+    textUnsub = () => unsubs.forEach(u => u());
+  }
 }
 
 function renderActiveControl(active) {

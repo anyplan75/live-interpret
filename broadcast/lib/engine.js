@@ -154,6 +154,7 @@ class Engine {
     const cloud = {
       updateSubtitles: (payload) => firebase.update(`churches/${church.id}/live/subtitles`, payload),
       setText: (lang, text) => firebase.setSessionText(church.id, this.folderName, lang, text),
+      appendSentence: (lang, id, text) => firebase.appendSessionSentence(church.id, this.folderName, lang, id, text),
     };
     this.pipeline = new Pipeline({
       apiKey,
