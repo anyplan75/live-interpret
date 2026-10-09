@@ -3,7 +3,7 @@ const { UtteranceVad } = require("./vad");
 const { wavFromPcm16 } = require("./audio-util");
 const { keywordsFromGlossary, sttPrompt } = require("./catalog");
 
-const REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-live-transcribe";
+const REALTIME_URL = "wss://api.openai.com/v1/realtime?intent=transcription";
 
 function sensitivityThreshold(level) {
   if (level === "high") return 0.008;

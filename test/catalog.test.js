@@ -16,6 +16,8 @@ test("the recognition prompt is not treated as heard speech", () => {
   const prompt = catalog.sttPrompt("서귀포제일교회", "설교자: 이종찬\n말투: 차분함");
   assert.equal(catalog.isGuidanceEcho(prompt), true);
   assert.equal(catalog.isGuidanceEcho("영어는 한 번에 되는데 왜 한국어는 여러 번 말을 하게 나오지?"), false);
+  const mixed = "한국 교회 예배입니다. 설교, 기도, 찬송, 광고를 한국어로 받아 씁니다. 조광우 내일을 김밥 싸야 되는데.";
+  assert.equal(catalog.stripGuidance(mixed), "조광우 내일을 김밥 싸야 되는데.");
 });
 
 test("glossary keeps the worship correction pattern", () => {

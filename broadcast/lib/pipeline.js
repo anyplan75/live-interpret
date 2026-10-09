@@ -1,6 +1,6 @@
 const sentence = require("./sentence");
 const { translate } = require("./translator");
-const { timing, langByCode, isGuidanceEcho } = require("./catalog");
+const { timing, langByCode, isGuidanceEcho, stripGuidance } = require("./catalog");
 
 function joinSpace(left, right) {
   return `${left || ""} ${right || ""}`.replace(/\s+/g, " ").trim();
@@ -52,8 +52,8 @@ class Pipeline {
 
   onInterim(text) {
     if (this.stopped) return;
-    const value = String(text || "").trim();
-    if (isGuidanceEcho(value)) {
+    const value = stripGuidance(text);
+    if (!value) {
       this.interim = "";
       this.pushLive(true);
       return;
@@ -67,8 +67,8 @@ class Pipeline {
     if (this.stopped) return;
     this.noteSpeech();
     this.interim = "";
-    const chunk = String(text || "").trim();
-    if (isGuidanceEcho(chunk)) {
+    const chunk = stripGuidance(text);
+    if (!chunk) {
       this.pushLive(true);
       return;
     }
@@ -146,6 +146,7 @@ class Pipeline {
   }
 
   async publish(koreanText, id) {
+    koreanText = stripGuidance(koreanText);
     if (!koreanText || sentence.isNoise(koreanText) || isGuidanceEcho(koreanText)) return;
     try {
       const result = await this.translateImpl(koreanText, {

@@ -183,10 +183,28 @@
     return out.slice(0, 30);
   }
 
+  function isGuidancePiece(text) {
+    const folded = String(text || "").replace(/\s+/g, "");
+    if (!folded) return false;
+    if (folded.includes("한국교회예배")) return true;
+    if (folded.includes("받아씁")) return true;
+    if (folded.includes("설교,기도,찬송") || folded.includes("설교기도찬송")) return true;
+    if (/^교회이름은.+입니다[.]?$/.test(folded)) return true;
+    if (folded.length < 80 && (folded.includes("설교자:") || folded.includes("말투:"))) return true;
+    return false;
+  }
+
+  function stripGuidance(text) {
+    const raw = String(text || "").replace(/\s+/g, " ").trim();
+    if (!raw) return "";
+    const parts = raw.split(/(?<=[.?!])\s+/);
+    return parts.filter((part) => !isGuidancePiece(part)).join(" ").trim();
+  }
+
   function isGuidanceEcho(text) {
-    const value = String(text || "").replace(/\s+/g, " ").trim();
-    if (!value) return false;
-    return value.includes("한국 교회 예배입니다") && value.includes("받아씁니다");
+    const raw = String(text || "").trim();
+    if (!raw) return false;
+    return stripGuidance(raw) === "";
   }
 
   function sttPrompt(churchName, extra) {
@@ -446,6 +464,7 @@
     keywordsFromGlossary,
     sttPrompt,
     isGuidanceEcho,
+    stripGuidance,
     defaultLiveSettings,
     buildLinks,
     homeLink,
