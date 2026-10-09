@@ -18,6 +18,11 @@ test("the recognition prompt is not treated as heard speech", () => {
   assert.equal(catalog.isGuidanceEcho("영어는 한 번에 되는데 왜 한국어는 여러 번 말을 하게 나오지?"), false);
   const mixed = "한국 교회 예배입니다. 설교, 기도, 찬송, 광고를 한국어로 받아 씁니다. 조광우 내일을 김밥 싸야 되는데.";
   assert.equal(catalog.stripGuidance(mixed), "조광우 내일을 김밥 싸야 되는데.");
+  assert.equal(
+    catalog.stripGuidance('그러니까 그러고 또 이제 딴 데 좀 잠사가는 거잖아. 말 끊는 위치(문장이 이어짐): "차분함" 뒤 쉼 32회 — 차분함 / 한국'),
+    "그러니까 그러고 또 이제 딴 데 좀 잠사가는 거잖아."
+  );
+  assert.equal(catalog.sttPrompt("서귀포제일교회", "말 끊는 위치: 쉼\n정확도 교정: 있나 → 있나요\n설교자: 이종찬").includes("정확도 교정"), false);
 });
 
 test("glossary keeps the worship correction pattern", () => {

@@ -191,12 +191,17 @@
     if (folded.includes("설교,기도,찬송") || folded.includes("설교기도찬송")) return true;
     if (/^교회이름은.+입니다[.]?$/.test(folded)) return true;
     if (folded.length < 80 && (folded.includes("설교자:") || folded.includes("말투:"))) return true;
+    if (folded.includes("말끊는위치")) return true;
+    if (folded.includes("정확도교정")) return true;
+    if (folded.includes("자연스러움교정")) return true;
+    if (folded.includes("뒤쉼") && folded.includes("회")) return true;
     return false;
   }
 
   function stripGuidance(text) {
-    const raw = String(text || "").replace(/\s+/g, " ").trim();
+    let raw = String(text || "").replace(/\s+/g, " ").trim();
     if (!raw) return "";
+    raw = raw.replace(/\s*(?:말 끊는 위치|정확도 교정|자연스러움 교정)[\s\S]*$/, "").trim();
     const parts = raw.split(/(?<=[.?!])\s+/);
     return parts.filter((part) => !isGuidancePiece(part)).join(" ").trim();
   }
@@ -212,8 +217,13 @@
       .replace(/[<>\r\n]/g, " ")
       .trim();
     const base = `한국 교회 예배입니다. 설교, 기도, 찬송, 광고를 한국어로 받아씁니다. 교회 이름은 ${name}입니다.`;
-    const more = String(extra || "").replace(/\s+$/g, "").trim();
-    return more ? `${base}\n${more}` : base;
+    const more = String(extra || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^(설교자:|용어:|찬송|찬양|성경:|설교 제목:|주보의 설교자:)/.test(line))
+      .join("\n");
+    const text = more ? `${base}\n${more}` : base;
+    return text.length <= 1024 ? text : text.slice(0, 1024);
   }
 
   function isModelId(id) {

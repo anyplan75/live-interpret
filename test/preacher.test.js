@@ -255,7 +255,10 @@ test("next broadcast feeds the dataset into recognition and translation", () => 
   assert.match(context, /말 끊는 위치\(문장이 이어짐\): "께서" 뒤 쉼 5회/);
   assert.match(context, /정확도 교정: 열반을 → 열방을/);
   assert.match(context, /자연스러움 교정: Let us do prayer → Let us pray/);
-  assert.match(catalog.sttPrompt("은혜교회", context), /정확도 교정/);
+  const heardPrompt = catalog.sttPrompt("은혜교회", context);
+  assert.equal(heardPrompt.length <= 1024, true);
+  assert.doesNotMatch(heardPrompt, /정확도 교정|말 끊는 위치|자연스러움 교정/);
+  assert.match(heardPrompt, /설교자: 김목사/);
   const words = catalog.contextKeywords(null, preacher);
   assert.ok(words.includes("열방을"));
   assert.ok(!words.includes("permanent office"));
