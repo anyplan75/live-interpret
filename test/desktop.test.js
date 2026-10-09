@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { EventEmitter } = require("events");
 const consent = require("../broadcast/lib/consent");
@@ -71,6 +72,89 @@ test("auto-update checks GitHub releases and installs on next launch", async () 
   assert.equal(mac.autoDownload, false, "unsigned Mac builds only announce new versions");
   assert.equal(silentUpdateAllowed("darwin", { macSilentUpdate: true }), true);
   assert.equal(silentUpdateAllowed("win32", {}), true);
+});
+
+test("missing app-update.yml and update-check failures are logged and ignored", async () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "li-update-"));
+  const withFile = fs.mkdtempSync(path.join(os.tmpdir(), "li-update-"));
+  fs.writeFileSync(path.join(withFile, "app-update.yml"), "provider: github\n");
+  const rejections = [];
+  const onRejection = (err) => rejections.push(err);
+  process.on("unhandledRejection", onRejection);
+  try {
+    const skippedLogs = [];
+    const skipped = fakeUpdater();
+    const skippedResult = startAutoUpdate({
+      app: { isPackaged: true, resourcesPath: empty },
+      platform: "darwin",
+      updater: skipped,
+      log: (level, text) => skippedLogs.push([level, text]),
+    });
+    assert.equal(skippedResult, null);
+    assert.equal(skipped.checks, 0);
+    assert.equal(skippedLogs[0][0], "error");
+    assert.match(skippedLogs[0][1], /app-update\.yml/);
+
+    const ready = fakeUpdater();
+    const started = startAutoUpdate({
+      app: { isPackaged: true, resourcesPath: withFile },
+      platform: "darwin",
+      updater: ready,
+      log: () => {},
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(started, ready);
+    assert.equal(ready.checks, 1);
+
+    const logs = [];
+    const failing = fakeUpdater();
+    failing.checkForUpdates = () => Promise.reject(new Error("ENOENT: no such file or directory, open '/tmp/app-update.yml'"));
+    const failed = startAutoUpdate({
+      app: { isPackaged: true, resourcesPath: withFile },
+      platform: "darwin",
+      updater: failing,
+      log: (level, text) => logs.push([level, text]),
+    });
+    assert.equal(failed, failing);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rejections.length, 0);
+    assert.ok(logs.some(([level, text]) => level === "error" && /업데이트 확인 실패/.test(text) && /app-update\.yml/.test(text)));
+
+    const echoed = [];
+    const echoing = fakeUpdater();
+    echoing.checkForUpdates = () => {
+      const err = new Error("network down");
+      echoing.emit("error", err);
+      return Promise.reject(err);
+    };
+    startAutoUpdate({
+      app: { isPackaged: true, resourcesPath: withFile },
+      platform: "darwin",
+      updater: echoing,
+      log: (level, text) => echoed.push([level, text]),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rejections.length, 0);
+    assert.equal(echoed.filter(([level]) => level === "error").length, 1);
+
+    const syncLogs = [];
+    const syncFail = fakeUpdater();
+    syncFail.checkForUpdates = () => { throw new Error(`sync sk-${"b".repeat(20)}`); };
+    assert.doesNotThrow(() => startAutoUpdate({
+      app: { isPackaged: true, resourcesPath: withFile },
+      platform: "darwin",
+      updater: syncFail,
+      log: (level, text) => syncLogs.push([level, text]),
+    }));
+    assert.equal(syncLogs.at(-1)[0], "error");
+    assert.match(syncLogs.at(-1)[1], /업데이트 확인 실패/);
+    assert.doesNotMatch(syncLogs.at(-1)[1], /sk-b{20}/);
+  } finally {
+    process.off("unhandledRejection", onRejection);
+    fs.rmSync(empty, { recursive: true, force: true });
+    fs.rmSync(withFile, { recursive: true, force: true });
+  }
 });
 
 test("installers build per OS and publish draft releases", () => {
