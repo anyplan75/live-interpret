@@ -36,6 +36,9 @@ class SpeechSession {
     this.ws = null;
     this.ready = false;
     this.partial = "";
+    this.partialItem = null;
+    this.pendingItem = null;
+    this.abandoned = new Set();
     this.backlog = [];
     this.paused = false;
     this.streamed = false;
@@ -43,6 +46,7 @@ class SpeechSession {
     this.closed = false;
     this.uttGen = 0;
     this.interimTimer = null;
+    this.inflight = null;
   }
 
   setSensitivity(level) {
@@ -132,19 +136,41 @@ class SpeechSession {
     if (event.type === "session.created" || event.type === "transcription_session.created") {
       return;
     }
+    if (event.type === "input_audio_buffer.committed") {
+      if (this.pendingResolve && !this.pendingItem && event.item_id) this.pendingItem = event.item_id;
+      return;
+    }
     if (event.type === "conversation.item.input_audio_transcription.delta") {
+      const item = event.item_id || null;
+      if (item && this.abandoned.has(item)) return;
+      if (item && item !== this.partialItem) {
+        this.partial = "";
+        this.partialItem = item;
+      }
       this.partial += event.delta || "";
       if (this.partial.trim()) this.onInterim(this.partial.trim());
       return;
     }
     if (event.type === "conversation.item.input_audio_transcription.completed") {
-      const text = String(event.transcript || "").trim();
-      this.partial = "";
-      if (this.pendingResolve) {
+      const item = event.item_id || null;
+      if (item && this.abandoned.has(item)) {
+        this.abandoned.delete(item);
+        return;
+      }
+      const sameItem = !item || !this.partialItem || item === this.partialItem;
+      const text = String(event.transcript || "").trim() || (sameItem ? this.partial.trim() : "");
+      if (sameItem) {
+        this.partial = "";
+        this.partialItem = null;
+      }
+      if (this.pendingResolve && (!item || !this.pendingItem || item === this.pendingItem)) {
         const resolve = this.pendingResolve;
         this.pendingResolve = null;
+        this.pendingItem = null;
         clearTimeout(this.pendingTimer);
         resolve(text);
+      } else if (text) {
+        this.onFinal(text);
       }
       return;
     }
@@ -192,19 +218,29 @@ class SpeechSession {
     }
     if (this.mode === "file" && evt.speaking && evt.current) this.scheduleFileInterim(evt.current, this.uttGen);
     if (!evt.finished) return;
+    this.uttGen += 1;
+    if (this.interimTimer) clearTimeout(this.interimTimer);
+    this.interimTimer = null;
     const audio = evt.utterance;
     const streamed = this.streamed;
     this.streamed = false;
     this.paused = true;
-    this.consume(audio, streamed)
+    const run = this.consume(audio, streamed)
       .catch((err) => this.onError(err.message || String(err)))
-      .finally(() => this.release());
+      .finally(() => {
+        if (this.inflight === run) this.inflight = null;
+        this.release();
+      });
+    this.inflight = run;
   }
 
   async consume(audio, streamed) {
-    const text = await this.recognize(audio, streamed);
-    this.onInterim("");
-    if (text && text.trim()) this.onFinal(text.trim());
+    let text = "";
+    try {
+      text = await this.recognize(audio, streamed);
+    } finally {
+      this.onFinal(String(text || "").trim());
+    }
   }
 
   async recognize(audio, streamed) {
@@ -226,9 +262,15 @@ class SpeechSession {
         reject(new Error("음성 인식 소켓이 열려 있지 않습니다."));
         return;
       }
+      this.pendingItem = null;
       this.pendingResolve = resolve;
       this.pendingTimer = setTimeout(() => {
         this.pendingResolve = null;
+        if (this.pendingItem) this.abandoned.add(this.pendingItem);
+        if (this.partialItem) this.abandoned.add(this.partialItem);
+        this.pendingItem = null;
+        this.partial = "";
+        this.partialItem = null;
         resolve("");
       }, ms);
     });
@@ -308,12 +350,12 @@ class SpeechSession {
   async stop() {
     this.closed = true;
     if (this.interimTimer) clearTimeout(this.interimTimer);
+    for (let guard = 0; this.inflight && guard < 8; guard++) await this.inflight;
     const tail = this.vad.flush();
     const streamed = this.streamed;
     if (tail) {
       try {
-        const text = await this.recognize(tail, streamed);
-        if (text && text.trim()) this.onFinal(text.trim());
+        await this.consume(tail, streamed);
       } catch (err) {
         this.onError(err.message || String(err));
       }

@@ -31,32 +31,7 @@ function setStatus(text, kind) {
   statusEl.className = `pill${kind ? ` ${kind}` : ""}`;
 }
 
-function appendKoreanLine(raw, corrected) {
-  const heard = String(raw || "").trim();
-  const fixed = String(corrected || "").trim();
-  if (!fixed) return;
-  const block = document.createElement("article");
-  block.className = "ko-line";
-  if (heard && heard !== fixed) {
-    const heardLine = document.createElement("p");
-    heardLine.className = "heard";
-    const heardTag = document.createElement("span");
-    heardTag.className = "tag";
-    heardTag.textContent = "듣는 말";
-    heardLine.append(heardTag, document.createTextNode(heard));
-    block.append(heardLine);
-  }
-  const correctedLine = document.createElement("p");
-  correctedLine.className = "corrected";
-  const correctedTag = document.createElement("span");
-  correctedTag.className = "tag";
-  correctedTag.textContent = "교정";
-  correctedLine.append(correctedTag, document.createTextNode(fixed));
-  block.append(correctedLine);
-  koStackEl.append(block);
-  koStackEl.scrollTop = koStackEl.scrollHeight;
-  liveEl.textContent = "대기 중...";
-}
+const hearing = window.Hearing.createHearing(document, liveEl, koStackEl);
 
 function log(text, level) {
   const line = document.createElement("div");
@@ -452,12 +427,13 @@ async function boot() {
   await reloadDevices();
   window.broadcast.onEvent((event) => {
     if (event.type === "levels") applyLevels(event.peaks || []);
-    if (event.type === "live") liveEl.textContent = event.text || "대기 중...";
+    if (event.type === "live") hearing.live(event.text);
+    if (event.type === "heard") hearing.heard(event.id, event.text);
     if (event.type === "line" && event.lang) {
       state.lines[event.lang] = event.text || "";
       const card = cardsEl.querySelector(`[data-lang="${event.lang}"] .text`);
       if (card) card.textContent = event.text || "대기 중...";
-      if (event.lang === "ko" && event.isFinal && event.text) appendKoreanLine(event.raw, event.text);
+      if (event.lang === "ko" && event.isFinal && event.text) hearing.corrected(event.heardId, event.raw, event.text);
     }
     if (event.type === "log") log(event.text, event.level);
     if (event.type === "audio" && event.audio) {
@@ -465,7 +441,7 @@ async function boot() {
       renderChannels(event.audio.deviceChannels, event.audio.deviceChannel);
     }
     if (event.type === "session") {
-      if (event.running) koStackEl.replaceChildren();
+      if (event.running) hearing.reset();
       setRunning(!!event.running);
       if (event.dir) {
         folderHint.textContent = event.dir;

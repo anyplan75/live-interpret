@@ -231,6 +231,7 @@ class Engine {
       files: this.writer,
       cloud,
       onLive: (text) => this.emit({ type: "live", text }),
+      onHeard: (heard) => this.emit({ type: "heard", ...heard }),
       onLine: (line) => this.emit({ type: "line", ...line }),
       onLog: (text) => this.emit({ type: "log", level: "info", text }),
     });

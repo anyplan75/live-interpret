@@ -128,6 +128,86 @@ function findCutMatch(text) {
   return null;
 }
 
+/** 번역을 시작할 목표 길이입니다. 이 글자 수 자체에서 자르지 않고, 그 근처의 경계에서 끊습니다. */
+const TRANSLATE_MAX = 140;
+/** 목표 길이의 앞뒤로 이만큼까지 자연스러운 경계를 찾습니다. */
+const TRANSLATE_WINDOW = 40;
+const SENTENCE_STOP = /[.?!。！？]+[…"'”’)\]]*(?=\s|$|[^\d.?!。！？…"'”’)\]])/g;
+const COMMA = /[,，](?=\s|$)/g;
+
+function nearTarget(end, target) {
+  return end >= target - TRANSLATE_WINDOW && end <= target + TRANSLATE_WINDOW;
+}
+
+function closestTo(ends, target) {
+  let best = 0;
+  let bestDist = Infinity;
+  for (const end of ends) {
+    const dist = Math.abs(end - target);
+    if (dist < bestDist || (dist === bestDist && end < best)) {
+      best = end;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/**
+ * 목표 길이를 넘긴 말에서 번역으로 넘길 앞부분의 끝 위치입니다. 아직 짧으면 0.
+ * 140자 근처(앞뒤 40자)에서 문장 끝, 연결 어미, 쉼표, 띄어쓰기 순으로 고르고,
+ * 같은 종류에서는 140에 가장 가까운 곳을 씁니다. 단어 한가운데는 자르지 않습니다.
+ */
+function translateBreak(text, maxLen = TRANSLATE_MAX) {
+  const t = String(text || "");
+  if (t.trim().length <= maxLen) return 0;
+  const sentences = [];
+  const clauses = [];
+  const commas = [];
+  const spaces = [];
+  let match;
+  SENTENCE_STOP.lastIndex = 0;
+  while ((match = SENTENCE_STOP.exec(t)) !== null) {
+    const end = match.index + match[0].length;
+    if (end === t.length && match[0][0] === "." && /\d$/.test(t.slice(0, match.index))) continue;
+    if (!t.slice(0, match.index).trim()) continue;
+    if (nearTarget(end, maxLen)) sentences.push(end);
+  }
+  ENDING.lastIndex = 0;
+  while ((match = ENDING.exec(t)) !== null) {
+    if (match.index < 10) continue;
+    const end = match.index + match[0].length;
+    const piece = t.slice(0, end).trim();
+    if (!piece || isHangingTail(piece) || isNoise(piece)) continue;
+    if (nearTarget(end, maxLen)) sentences.push(end);
+  }
+  const sentenceAt = closestTo(sentences, maxLen);
+  if (sentenceAt) return sentenceAt;
+
+  CLAUSE.lastIndex = 0;
+  while ((match = CLAUSE.exec(t)) !== null) {
+    const end = match.index + match[0].length;
+    if (!t.slice(0, match.index).trim()) continue;
+    if (nearTarget(end, maxLen)) clauses.push(end);
+  }
+  const clauseAt = closestTo(clauses, maxLen);
+  if (clauseAt) return clauseAt;
+
+  COMMA.lastIndex = 0;
+  while ((match = COMMA.exec(t)) !== null) {
+    const end = match.index + match[0].length;
+    if (!t.slice(0, match.index).trim()) continue;
+    if (nearTarget(end, maxLen)) commas.push(end);
+  }
+  const commaAt = closestTo(commas, maxLen);
+  if (commaAt) return commaAt;
+
+  for (let i = 1; i < t.length; i += 1) {
+    if (t[i] === " ") spaces.push(i);
+  }
+  const nearSpaces = spaces.filter((end) => nearTarget(end, maxLen));
+  return closestTo(nearSpaces.length ? nearSpaces : spaces, maxLen);
+}
+
 function canSilenceFlush(text, silenceMs, cfg) {
   const t = String(text || "").trim();
   if (!t || isNoise(t)) return false;
@@ -151,4 +231,7 @@ module.exports = {
   lastWord,
   firstWord,
   pauseTail,
+  translateBreak,
+  TRANSLATE_MAX,
+  TRANSLATE_WINDOW,
 };
