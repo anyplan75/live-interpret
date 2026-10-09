@@ -77,6 +77,15 @@
           "subtitles": {
             ".read": "root.child('live-interpret/churches').child($churchId).child('active').val() !== false",
             ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false"
+          },
+          "usage": {
+            ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false",
+            ".validate": "newData.hasChildren(['audioSeconds', 'chars', 'churchKrw', 'apiKrw', 'updatedAt']) && newData.child('audioSeconds').isNumber() && newData.child('churchKrw').isNumber() && newData.child('apiKrw').isNumber() && newData.child('updatedAt').isNumber() && !newData.child('text').exists() && !newData.child('transcript').exists() && !newData.child('rate').exists()",
+            "chars": {
+              "$lang": {
+                ".validate": "newData.isNumber()"
+              }
+            }
           }
         }
       }

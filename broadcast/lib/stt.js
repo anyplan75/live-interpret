@@ -24,6 +24,7 @@ class SpeechSession {
     this.extraKeywords = Array.isArray(opts.extraKeywords) ? opts.extraKeywords : [];
     this.onInterim = opts.onInterim || (() => {});
     this.onFinal = opts.onFinal || (() => {});
+    this.onAudio = opts.onAudio || null;
     this.onStatus = opts.onStatus || (() => {});
     this.onError = opts.onError || (() => {});
     this.fetchImpl = opts.fetchImpl || fetch;
@@ -189,6 +190,7 @@ class SpeechSession {
 
   sendAppend(pcm) {
     if (!pcm || !pcm.length) return;
+    if (this.onAudio) this.onAudio(pcm);
     this.send({ type: "input_audio_buffer.append", audio: pcm.toString("base64") });
   }
 
@@ -244,16 +246,20 @@ class SpeechSession {
   }
 
   async recognize(audio, streamed) {
+    let metered = !!streamed;
     if (this.mode === "realtime" && this.ready) {
       try {
-        if (!streamed) this.sendAppend(audio);
+        if (!streamed && audio && audio.length) {
+          this.sendAppend(audio);
+          metered = true;
+        }
         const text = await this.commitAndWait(8000);
         if (text && text.trim()) return text.trim();
       } catch (err) {
         this.switchToFile(err.message || String(err));
       }
     }
-    return this.postFile(audio);
+    return this.postFile(audio, !metered);
   }
 
   commitAndWait(ms) {
@@ -289,8 +295,9 @@ class SpeechSession {
     }, 2000);
   }
 
-  async postFile(pcm) {
+  async postFile(pcm, meter) {
     if (!pcm || pcm.length < 4800) return "";
+    if (meter && this.onAudio) this.onAudio(pcm);
     const wav = wavFromPcm16(pcm, 24000);
     const prompt = sttPrompt(this.churchName, this.sessionContext);
     const models = ["gpt-4o-mini-transcribe", "whisper-1"];

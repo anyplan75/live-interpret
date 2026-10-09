@@ -17,6 +17,7 @@ const { listInputDevices, InputCapture } = require("./audio");
 const { channelPeaks, resampleInt16, selectedChannelPcm } = require("./audio-util");
 const { SpeechSession } = require("./stt");
 const { Pipeline } = require("./pipeline");
+const { UsageMeter } = require("./usage");
 const { createSessionWriter } = require("./files");
 const firebase = require("./firebase");
 
@@ -49,6 +50,10 @@ class Engine {
     this.sessionApiKey = "";
     this.sessionModel = defaultModel;
     this.preacherId = "";
+    this.usage = null;
+    this.usageChain = Promise.resolve();
+    this.usageTimer = null;
+    this.lastUsageWrite = 0;
   }
 
   listDevices() {
@@ -216,10 +221,14 @@ class Engine {
       endedAt: null,
     });
 
+    this.usage = new UsageMeter();
+    this.usageChain = Promise.resolve();
+    this.lastUsageWrite = 0;
     const cloud = {
       updateSubtitles: (payload) => firebase.update(`churches/${church.id}/live/subtitles`, payload),
       setText: (lang, text) => firebase.setSessionText(church.id, this.folderName, lang, text),
       appendSentence: (lang, id, text) => firebase.appendSessionSentence(church.id, this.folderName, lang, id, text),
+      recordUsage: (record) => this.flushUsage(true, record),
     };
     this.pipeline = new Pipeline({
       apiKey,
@@ -229,6 +238,7 @@ class Engine {
       sessionContext,
       pauseTails: preacherLib.pauseTails(selected),
       files: this.writer,
+      usage: this.usage,
       cloud,
       onLive: (text) => this.emit({ type: "live", text }),
       onHeard: (heard) => this.emit({ type: "heard", ...heard }),
@@ -247,8 +257,14 @@ class Engine {
       onFinal: (text) => this.pipeline && this.pipeline.onFinalChunk(text),
       onStatus: (text) => this.emit({ type: "log", level: "info", text }),
       onError: (text) => this.emit({ type: "log", level: "error", text }),
+      onAudio: (pcm) => {
+        if (!this.usage || !pcm) return;
+        this.usage.addPcm16(pcm.length, 24000);
+        this.flushUsage(false);
+      },
     });
     await this.speech.start();
+    this.flushUsage(true);
     this.running = true;
     this.emit({
       type: "session",
@@ -267,6 +283,52 @@ class Engine {
     };
   }
 
+  flushUsage(force, preset) {
+    if (!this.usage || !this.church) return null;
+    const record = preset || this.usage.record(this.sessionModel);
+    const now = Date.now();
+    if (!force && now - this.lastUsageWrite < 1000) {
+      if (!this.usageTimer) {
+        this.usageTimer = setTimeout(() => {
+          this.usageTimer = null;
+          this.flushUsage(true);
+        }, 1000);
+      }
+      return record;
+    }
+    if (this.usageTimer) {
+      clearTimeout(this.usageTimer);
+      this.usageTimer = null;
+    }
+    this.lastUsageWrite = now;
+    this.emit({ type: "cost", churchKrw: record.churchKrw });
+    const churchId = this.church.id;
+    this.usageChain = this.usageChain
+      .then(() => firebase.set(`churches/${churchId}/live/usage`, record))
+      .catch((err) => this.emit({ type: "log", level: "error", text: `요금 기록 실패: ${err.message || err}` }));
+    return record;
+  }
+
+  async finishUsage() {
+    if (this.usageTimer) {
+      clearTimeout(this.usageTimer);
+      this.usageTimer = null;
+    }
+    if (!this.usage || !this.church || !this.folderName) return null;
+    const record = this.usage.record(this.sessionModel);
+    this.emit({ type: "cost", churchKrw: record.churchKrw });
+    const churchId = this.church.id;
+    const folder = this.folderName;
+    try {
+      await this.usageChain;
+      await firebase.set(`churches/${churchId}/live/usage`, record);
+      await firebase.set(`churches/${churchId}/sessions/${folder}/usage`, record);
+    } catch (err) {
+      this.emit({ type: "log", level: "error", text: `요금 마감 실패: ${err.message || err}` });
+    }
+    return record;
+  }
+
   async stop() {
     if (!this.running) return { stopped: true };
     this.running = false;
@@ -275,6 +337,7 @@ class Engine {
     this.speech = null;
     if (speech) await speech.stop();
     if (pipeline) await pipeline.stop();
+    const usageRecord = await this.finishUsage();
     if (this.church && this.preacherId && pipeline) {
       try {
         const lesson = preacherLib.lessonFromLines(pipeline.lessons || [], {
@@ -308,6 +371,8 @@ class Engine {
       try {
         await firebase.update(`churches/${this.church.id}/sessionIndex/${this.folderName}`, {
           endedAt: Date.now(),
+          churchKrw: usageRecord ? usageRecord.churchKrw : 0,
+          apiKrw: usageRecord ? usageRecord.apiKrw : 0,
         });
       } catch (err) {
         this.emit({ type: "log", level: "error", text: `세션 종료 기록 실패: ${err.message}` });

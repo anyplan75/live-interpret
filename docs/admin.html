@@ -66,12 +66,26 @@
     </section>
 
     <section class="card">
+      <h2>통역 요금</h2>
+      <pre id="rateCardBody" class="hint rate-card"></pre>
+    </section>
+
+    <section class="card">
+      <h2>교회별 방송 요금</h2>
+      <p class="hint">방송 중 Firebase의 사용량만 받아 교회 요금과 API 원가를 갱신합니다. 문장 전체는 다시 받지 않습니다.</p>
+      <div id="costList" class="cost-list"></div>
+    </section>
+
+    <section class="card">
       <h2>교회</h2>
       <div id="churchList" class="church-list"></div>
     </section>
 
     <section class="card" id="detail" hidden>
       <h2 id="detailTitle">교회</h2>
+      <p id="detailChurchCost" class="cost-figure">0원</p>
+      <p id="detailApiCost" class="hint">API 원가 0원</p>
+      <p class="hint">교회 방송 앱에는 교회 요금만 나갑니다. 단가는 이 화면에서도 바꾸지 않습니다.</p>
       <label for="editName">교회 이름</label>
       <input id="editName" type="text" maxlength="80">
       <div class="row" style="margin-top:12px;">
@@ -123,6 +137,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
   <script src="js/languages.js"></script>
   <script src="js/catalog.js"></script>
+  <script src="js/cost.js"></script>
   <script src="js/db.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/identity.js"></script>

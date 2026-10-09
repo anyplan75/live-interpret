@@ -342,6 +342,18 @@ function renderPreachers() {
   fillPreacherForm(current);
 }
 
+function formatKrw(value) {
+  const n = Math.round(Number(value) || 0);
+  const sign = n < 0 ? "-" : "";
+  const body = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}${body}원`;
+}
+
+function showChurchCost(value) {
+  const node = document.getElementById("churchCost");
+  if (node) node.textContent = formatKrw(value);
+}
+
 function showChurch(church) {
   state.church = church;
   document.getElementById("churchName").textContent = church.name;
@@ -440,8 +452,12 @@ async function boot() {
       state.audio = event.audio;
       renderChannels(event.audio.deviceChannels, event.audio.deviceChannel);
     }
+    if (event.type === "cost") showChurchCost(event.churchKrw);
     if (event.type === "session") {
-      if (event.running) hearing.reset();
+      if (event.running) {
+        hearing.reset();
+        showChurchCost(0);
+      }
       setRunning(!!event.running);
       if (event.dir) {
         folderHint.textContent = event.dir;

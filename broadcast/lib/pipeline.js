@@ -53,6 +53,7 @@ class Pipeline {
     this.openChunk = "";
     this.files = opts.files;
     this.cloud = opts.cloud;
+    this.usage = opts.usage || null;
     this.onLive = opts.onLive || (() => {});
     this.onHeard = opts.onHeard || (() => {});
     this.onLine = opts.onLine || (() => {});
@@ -264,9 +265,22 @@ class Pipeline {
       .catch((err) => this.onLog(`번역 대기 오류: ${err.message || err}`));
   }
 
+  /** 번역으로 넘긴 글자 수만 더합니다. 문장 전체는 요금 기록에 다시 쓰지 않습니다. */
+  meterTranslation(text) {
+    if (!this.usage) return;
+    this.usage.addTranslation(text, this.targets);
+    const record = this.usage.record(this.model);
+    if (this.cloud && this.cloud.recordUsage) {
+      Promise.resolve(this.cloud.recordUsage(record)).catch((err) => {
+        this.onLog(`요금 기록 실패: ${err.message || err}`);
+      });
+    }
+  }
+
   async publish(koreanText, id, heardId) {
     koreanText = stripGuidance(koreanText);
     if (!koreanText || sentence.isNoise(koreanText) || isGuidanceEcho(koreanText)) return;
+    this.meterTranslation(koreanText);
     try {
       const result = await this.translateImpl(koreanText, {
         apiKey: this.apiKey,

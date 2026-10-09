@@ -7,6 +7,8 @@ const textsEl = document.getElementById("texts");
 let churches = [];
 let currentId = "";
 let textUnsub = null;
+let usageUnsubs = [];
+let usageById = {};
 let signedIn = false;
 let creatingAdmin = false;
 
@@ -79,6 +81,7 @@ async function loadChurches() {
   listEl.innerHTML = "";
   if (!churches.length) {
     listEl.innerHTML = '<p class="hint">아직 교회가 없습니다.</p>';
+    subscribeUsage();
     return;
   }
   churches.forEach((church) => {
@@ -91,11 +94,84 @@ async function loadChurches() {
     const state = document.createElement("span");
     state.className = "state";
     state.textContent = church.active ? "활성" : "비활성";
-    button.append(name, state);
+    const cost = document.createElement("span");
+    cost.className = "church-cost";
+    cost.dataset.cost = church.id;
+    cost.textContent = "0원";
+    button.append(name, state, cost);
     button.addEventListener("click", () => openChurch(church.id));
     listEl.append(button);
   });
+  subscribeUsage();
 }
+
+function clearUsageWatch() {
+  usageUnsubs.forEach((stop) => stop());
+  usageUnsubs = [];
+}
+
+function ensureCostRow(church) {
+  const board = document.getElementById("costList");
+  let row = board.querySelector(`[data-board-cost="${church.id}"]`);
+  if (row) return row;
+  row = document.createElement("div");
+  row.className = "cost-row";
+  row.dataset.boardCost = church.id;
+  const name = document.createElement("strong");
+  name.className = "name";
+  name.textContent = church.name;
+  const churchCost = document.createElement("span");
+  churchCost.className = "church";
+  churchCost.textContent = "0원";
+  const api = document.createElement("span");
+  api.className = "api hint";
+  api.textContent = "API 원가 0원";
+  row.append(name, churchCost, api);
+  board.append(row);
+  return row;
+}
+
+function paintUsage(id, usage) {
+  const view = LI.cost.present(usage);
+  usageById[id] = view;
+  const label = LI.cost.formatKrw(view.churchKrw);
+  const apiLabel = `API 원가 ${LI.cost.formatKrw(view.apiKrw)}`;
+  const inline = listEl.querySelector(`[data-cost="${id}"]`);
+  if (inline) inline.textContent = label;
+  const row = document.querySelector(`[data-board-cost="${id}"]`);
+  if (row) {
+    const churchCost = row.querySelector(".church");
+    const api = row.querySelector(".api");
+    if (churchCost) churchCost.textContent = label;
+    if (api) api.textContent = apiLabel;
+  }
+  if (id === currentId) {
+    const churchNode = document.getElementById("detailChurchCost");
+    const apiNode = document.getElementById("detailApiCost");
+    if (churchNode) churchNode.textContent = label;
+    if (apiNode) apiNode.textContent = apiLabel;
+  }
+}
+
+function subscribeUsage() {
+  clearUsageWatch();
+  const board = document.getElementById("costList");
+  board.innerHTML = "";
+  if (!churches.length) {
+    board.innerHTML = '<p class="hint">아직 교회가 없습니다.</p>';
+    return;
+  }
+  churches.forEach((church) => {
+    ensureCostRow(church);
+    if (usageById[church.id]) paintUsage(church.id, usageById[church.id]);
+    const stop = LI.db.onValue(`churches/${church.id}/live/usage`, (usage) => {
+      paintUsage(church.id, usage);
+    });
+    usageUnsubs.push(stop);
+  });
+}
+
+LI.adminCost = { ensureCostRow, paintUsage };
 
 function renderLinks(church) {
   const base = pageBase();
@@ -142,6 +218,7 @@ async function openChurch(id) {
   detail.hidden = false;
   document.getElementById("detailTitle").textContent = church ? church.name : id;
   document.getElementById("editName").value = church ? church.name : id;
+  paintUsage(id, usageById[id] || null);
   renderLinks(church || { id, name: id });
   [...listEl.children].forEach((node) => {
     if (node.classList) node.classList.toggle("on", node.dataset && node.dataset.id === id);
@@ -247,7 +324,10 @@ function renderSessions(id, index) {
     const button = document.createElement("button");
     button.type = "button";
     const ended = meta && meta.endedAt ? "" : " · 진행 기록";
-    button.textContent = `${formatFolder(folder)}${ended}`;
+    const kept = meta && Number.isFinite(Number(meta.churchKrw))
+      ? ` · ${LI.cost.formatKrw(meta.churchKrw)} · API 원가 ${LI.cost.formatKrw(meta.apiKrw)}`
+      : "";
+    button.textContent = `${formatFolder(folder)}${ended}${kept}`;
     button.addEventListener("click", () => watchTexts(id, folder, meta));
     sessionsEl.append(button);
   });
@@ -589,14 +669,21 @@ document.getElementById("gateSubmit").addEventListener("click", async () => {
 document.getElementById("signOut").addEventListener("click", async () => {
   if (textUnsub) textUnsub();
   textUnsub = null;
+  clearUsageWatch();
+  usageById = {};
   currentId = "";
   churches = [];
+  const board = document.getElementById("costList");
+  if (board) board.innerHTML = "";
   try {
     await LI.auth.signOut();
   } catch (err) {
     showError(err);
   }
 });
+
+const rateBody = document.getElementById("rateCardBody");
+if (rateBody) rateBody.textContent = LI.cost.rateCardText();
 
 LI.db.clearChurch();
 LI.db.init()
