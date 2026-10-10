@@ -38,9 +38,24 @@
         </div>
 
         <div class="card">
-          <h2>이번 방송 요금</h2>
+          <h2>남은 충전금</h2>
+          <p id="balanceCost" class="cost-figure">0원</p>
+          <h2>이번 방송 차감</h2>
           <p id="churchCost" class="cost-figure">0원</p>
-          <p class="hint">이 교회의 요금만 표시합니다. 단가는 바꿀 수 없습니다.</p>
+          <p class="hint">한국어와 영어가 1시간 15,000원입니다. 다른 언어는 시간당 5,000원이고, 61분부터 30분마다 절반이 더 빠집니다. 초마다 오르지 않습니다.</p>
+        </div>
+
+        <div class="card" id="startConfirm" hidden>
+          <h2>방송 시작 확인</h2>
+          <p id="confirmLangs"></p>
+          <p id="confirmPrice"></p>
+          <p id="confirmOvertime"></p>
+          <p id="confirmBalance"></p>
+          <p id="confirmShort" class="hint" hidden></p>
+          <div class="row" style="margin-top:10px;">
+            <button type="button" id="confirmStart">시작</button>
+            <button type="button" class="ghost" id="confirmCancel">취소</button>
+          </div>
         </div>
 
         <div class="card">

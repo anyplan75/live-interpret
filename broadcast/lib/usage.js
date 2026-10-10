@@ -8,6 +8,25 @@ class UsageMeter {
   constructor() {
     this.audioSeconds = 0;
     this.chars = {};
+    this.startedAt = 0;
+    this.clockOn = false;
+    this.languages = [];
+  }
+
+  start(languages, at) {
+    this.startedAt = at == null ? Date.now() : at;
+    this.clockOn = true;
+    this.setLanguages(languages);
+  }
+
+  minutesAt(now) {
+    if (!this.clockOn) return 0;
+    const at = typeof now === "number" ? now : Date.now();
+    return Math.max(0, (at - this.startedAt) / 60000);
+  }
+
+  setLanguages(languages) {
+    this.languages = Array.isArray(languages) ? languages.slice() : [];
   }
 
   addPcm16(byteLength, sampleRate) {
@@ -24,11 +43,15 @@ class UsageMeter {
   }
 
   record(model, now) {
+    const at = typeof now === "number" ? now : Date.now();
+    const minutes = this.minutesAt(at);
     return cost.usageRecord({
       audioSeconds: this.audioSeconds,
       chars: this.chars,
       model,
-    }, now);
+      minutes,
+      languages: this.languages,
+    }, at);
   }
 }
 

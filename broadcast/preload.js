@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   signIn: (email, password) => ipcRenderer.invoke("auth:signIn", email, password),
   signOut: () => ipcRenderer.invoke("auth:signOut"),
   currentChurch: () => ipcRenderer.invoke("church:current"),
+  previewBilling: (targets) => ipcRenderer.invoke("billing:preview", targets),
   saveStyle: (style) => ipcRenderer.invoke("style:set", style),
   savePreacher: (preacher) => ipcRenderer.invoke("preachers:save", preacher),
   pickBulletin: () => ipcRenderer.invoke("bulletin:pick"),

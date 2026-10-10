@@ -82,6 +82,7 @@ async function loadChurches() {
   if (!churches.length) {
     listEl.innerHTML = '<p class="hint">아직 교회가 없습니다.</p>';
     subscribeUsage();
+    await refreshBillingOps();
     return;
   }
   churches.forEach((church) => {
@@ -103,6 +104,64 @@ async function loadChurches() {
     listEl.append(button);
   });
   subscribeUsage();
+  await refreshBillingOps();
+}
+
+function fillTopupChurches() {
+  const select = document.getElementById("topupChurch");
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = "";
+  churches.forEach((church) => {
+    const option = document.createElement("option");
+    option.value = church.id;
+    option.textContent = church.name;
+    select.append(option);
+  });
+  if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+}
+
+async function loadChargeLog() {
+  const host = document.getElementById("chargeLog");
+  if (!host) return;
+  const rows = [];
+  for (const church of churches) {
+    const ledger = await LI.db.get(`churches/${church.id}/billing/ledger`);
+    if (!ledger || typeof ledger !== "object") continue;
+    Object.entries(ledger).forEach(([id, row]) => {
+      if (!row || typeof row !== "object") return;
+      rows.push({
+        id,
+        churchName: church.name,
+        amountKrw: Number(row.amountKrw) || 0,
+        balanceAfter: Number(row.balanceAfter) || 0,
+        at: Number(row.at) || 0,
+        who: row.who || "",
+        note: row.note || row.type || "",
+        depositId: row.depositId || "",
+      });
+    });
+  }
+  rows.sort((a, b) => b.at - a.at);
+  host.innerHTML = "";
+  if (!rows.length) {
+    host.innerHTML = '<p class="hint">충전 기록이 없습니다.</p>';
+    return;
+  }
+  rows.forEach((row) => {
+    const line = document.createElement("p");
+    line.className = "hint";
+    const when = row.at
+      ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "short", timeStyle: "medium" }).format(row.at)
+      : "";
+    line.textContent = `${when} · ${row.churchName} · ${LI.cost.formatKrw(row.amountKrw)} · 잔액 ${LI.cost.formatKrw(row.balanceAfter)} · ${row.who} · ${row.note} · ${row.depositId || "-"}`;
+    host.append(line);
+  });
+}
+
+async function refreshBillingOps() {
+  fillTopupChurches();
+  await loadChargeLog();
 }
 
 function clearUsageWatch() {
@@ -679,6 +738,63 @@ document.getElementById("signOut").addEventListener("click", async () => {
     await LI.auth.signOut();
   } catch (err) {
     showError(err);
+  }
+});
+
+document.getElementById("topupAdd").addEventListener("click", async () => {
+  if (!signedIn) return;
+  const msg = document.getElementById("topupMsg");
+  msg.textContent = "";
+  const churchId = document.getElementById("topupChurch").value;
+  const amount = Math.round(Number(document.getElementById("topupAmount").value) || 0);
+  const note = document.getElementById("topupNote").value.trim();
+  const depositId = document.getElementById("topupDeposit").value.trim();
+  if (!LI.catalog.isChurchId(churchId) || amount <= 0) {
+    msg.textContent = "교회와 금액을 입력해 주세요.";
+    return;
+  }
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    msg.textContent = "관리자 로그인이 필요합니다.";
+    return;
+  }
+  try {
+    LI.db.clearChurch();
+    const billing = (await LI.db.get(`churches/${churchId}/billing`)) || {};
+    const balance = Math.round(Number(billing.balance) || 0);
+    if (depositId) {
+      const key = LI.cost.sanitizeDepositId(depositId);
+      const marked = await LI.db.get(`deposits/${key}`);
+      const ledger = billing.ledger && typeof billing.ledger === "object" ? billing.ledger : {};
+      const seen = Object.values(ledger).some((row) => row && (row.depositId === depositId || row.depositId === key));
+      if (marked || seen) {
+        msg.textContent = "이미 처리한 입금입니다.";
+        return;
+      }
+    }
+    const credit = LI.cost.applyCredit({
+      balance,
+      amount,
+      churchId,
+      who: user.uid,
+      note: note || "수동 충전",
+      depositId,
+      type: "manual",
+    });
+    const row = { ...credit.entry };
+    delete row.id;
+    await LI.db.update(`churches/${churchId}/billing`, {
+      balance: credit.balance,
+      lastEntryId: credit.entry.id,
+      [`ledger/${credit.entry.id}`]: row,
+    });
+    document.getElementById("topupAmount").value = "";
+    document.getElementById("topupNote").value = "";
+    document.getElementById("topupDeposit").value = "";
+    msg.textContent = `${LI.cost.formatKrw(amount)}을 더했습니다. 남은 충전금은 ${LI.cost.formatKrw(credit.balance)}입니다.`;
+    await loadChargeLog();
+  } catch (err) {
+    msg.textContent = err && err.message ? err.message : String(err);
   }
 });
 

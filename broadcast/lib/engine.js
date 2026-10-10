@@ -18,6 +18,7 @@ const { channelPeaks, resampleInt16, selectedChannelPcm } = require("./audio-uti
 const { SpeechSession } = require("./stt");
 const { Pipeline } = require("./pipeline");
 const { UsageMeter } = require("./usage");
+const cost = require("./cost");
 const { createSessionWriter } = require("./files");
 const firebase = require("./firebase");
 
@@ -54,6 +55,119 @@ class Engine {
     this.usageChain = Promise.resolve();
     this.usageTimer = null;
     this.lastUsageWrite = 0;
+    this.sessionCharge = null;
+  }
+
+  async readBalance(churchId) {
+    const raw = await firebase.get(`churches/${churchId}/billing/balance`);
+    return Math.round(Number(raw) || 0);
+  }
+
+  async previewCharge(churchId, targets) {
+    const languages = cleanTargets(targets);
+    const balance = await this.readBalance(churchId);
+    const firstHourKrw = cost.packageKrw({ minutes: 60, languages });
+    return {
+      balance,
+      balanceKrw: balance,
+      firstHourKrw,
+      halfKrw: cost.halfBlockKrw(languages),
+      overtimeText: cost.overtimeText(),
+      short: balance < firstHourKrw,
+      languages,
+    };
+  }
+
+  async writeBilling(churchId, balance, entry) {
+    const row = { ...entry };
+    delete row.id;
+    await firebase.update(`churches/${churchId}/billing`, {
+      balance,
+      lastEntryId: entry.id,
+      [`ledger/${entry.id}`]: row,
+    });
+  }
+
+  async chargeOpening() {
+    const languages = this.targets;
+    const balance = await this.readBalance(this.church.id);
+    const opened = cost.openBroadcast({ balance, languages });
+    if (!opened.ok) {
+      const err = new Error(`충전금이 부족합니다. 첫 시간에 ${cost.formatKrw(opened.firstHourKrw)}이 필요하지만 남은 충전금은 ${cost.formatKrw(opened.balance)}입니다.`);
+      err.short = true;
+      throw err;
+    }
+    const entry = cost.ledgerEntry({
+      id: cost.ledgerId(),
+      type: "charge",
+      deltaKrw: -opened.charged,
+      balanceAfter: opened.balance,
+      at: Date.now(),
+      who: this.church.accountUid || "",
+      note: "첫 시간",
+      churchId: this.church.id,
+    });
+    await this.writeBilling(this.church.id, opened.balance, entry);
+    this.sessionCharge = { ...opened, shortLogged: false };
+    return this.sessionCharge;
+  }
+
+  async collectOvertime(minutes) {
+    if (!this.sessionCharge || !this.sessionCharge.running || !this.church) return this.sessionCharge;
+    const beforeDone = this.sessionCharge.overtimeDone;
+    const beforeCharged = this.sessionCharge.charged;
+    const next = cost.accrue(this.sessionCharge, minutes);
+    const added = next.overtimeDone - beforeDone;
+    if (added > 0) {
+      const deducted = next.charged - beforeCharged;
+      const entry = cost.ledgerEntry({
+        id: cost.ledgerId(),
+        type: "charge",
+        deltaKrw: -deducted,
+        balanceAfter: next.balance,
+        at: Date.now(),
+        who: this.church.accountUid || "",
+        note: "추가 30분",
+        churchId: this.church.id,
+      });
+      await this.writeBilling(this.church.id, next.balance, entry);
+    }
+    if (next.short && !this.sessionCharge.shortLogged) {
+      this.emit({
+        type: "log",
+        level: "error",
+        text: `충전금이 부족합니다. ${cost.formatKrw(next.halfKrw)}을 빼지 못했습니다. 방송은 계속됩니다.`,
+      });
+      next.shortLogged = true;
+    } else {
+      next.shortLogged = !!this.sessionCharge.shortLogged;
+    }
+    this.sessionCharge = next;
+    return next;
+  }
+
+  pricedUsage(preset) {
+    const base = preset || (this.usage ? this.usage.record(this.sessionModel) : null);
+    if (!base) return null;
+    const charged = this.sessionCharge ? this.sessionCharge.charged : base.churchKrw;
+    return cost.usageRecord({
+      audioSeconds: base.audioSeconds,
+      chars: base.chars,
+      model: this.sessionModel,
+      churchKrw: charged,
+      updatedAt: base.updatedAt,
+    }, base.updatedAt);
+  }
+
+  emitCharge(record) {
+    const charged = record ? record.churchKrw : (this.sessionCharge ? this.sessionCharge.charged : 0);
+    this.emit({
+      type: "cost",
+      churchKrw: charged,
+      chargedKrw: charged,
+      balanceKrw: this.sessionCharge ? this.sessionCharge.balance : undefined,
+      short: !!(this.sessionCharge && this.sessionCharge.short),
+    });
   }
 
   listDevices() {
@@ -142,7 +256,9 @@ class Engine {
   async setTargets(churchId, targets) {
     this.targets = cleanTargets(targets);
     if (this.pipeline) this.pipeline.targets = this.targets;
+    if (this.usage) this.usage.setLanguages(this.targets);
     if (churchId) await this.syncSettings(churchId, this.targets);
+    if (this.running) this.flushUsage(true);
     return this.targets;
   }
 
@@ -222,8 +338,10 @@ class Engine {
     });
 
     this.usage = new UsageMeter();
+    this.usage.start(targets);
     this.usageChain = Promise.resolve();
     this.lastUsageWrite = 0;
+    this.sessionCharge = null;
     const cloud = {
       updateSubtitles: (payload) => firebase.update(`churches/${church.id}/live/subtitles`, payload),
       setText: (lang, text) => firebase.setSessionText(church.id, this.folderName, lang, text),
@@ -264,8 +382,25 @@ class Engine {
       },
     });
     await this.speech.start();
-    this.flushUsage(true);
+    try {
+      await this.chargeOpening();
+    } catch (err) {
+      try { await this.speech.stop(); } catch (_) { /* 이미 끊긴 인식은 무시합니다 */ }
+      this.speech = null;
+      if (this.pipeline) {
+        try { await this.pipeline.stop(); } catch (_) { /* 아직 문장이 없으면 무시합니다 */ }
+      }
+      this.pipeline = null;
+      this.running = false;
+      if (this.church && this.folderName) {
+        try {
+          await firebase.update(`churches/${this.church.id}/sessionIndex/${this.folderName}`, { endedAt: Date.now() });
+        } catch (_) { /* 시작 전 실패의 마감 기록은 다음 방송에서 덮습니다 */ }
+      }
+      throw err;
+    }
     this.running = true;
+    const opening = this.flushUsage(true);
     this.emit({
       type: "session",
       running: true,
@@ -274,6 +409,10 @@ class Engine {
       folderName: this.folderName,
       dir: this.sessionDir,
       targets,
+      churchKrw: this.sessionCharge ? this.sessionCharge.charged : (opening ? opening.churchKrw : 0),
+      chargedKrw: this.sessionCharge ? this.sessionCharge.charged : 0,
+      balanceKrw: this.sessionCharge ? this.sessionCharge.balance : 0,
+      short: !!(this.sessionCharge && this.sessionCharge.short),
     });
     return {
       church,
@@ -301,12 +440,18 @@ class Engine {
       this.usageTimer = null;
     }
     this.lastUsageWrite = now;
-    this.emit({ type: "cost", churchKrw: record.churchKrw });
     const churchId = this.church.id;
     this.usageChain = this.usageChain
-      .then(() => firebase.set(`churches/${churchId}/live/usage`, record))
+      .then(async () => {
+        const at = Date.now();
+        const minutes = this.usage && this.usage.minutesAt ? this.usage.minutesAt(at) : 0;
+        await this.collectOvertime(minutes);
+        const priced = this.pricedUsage(preset);
+        this.emitCharge(priced);
+        await firebase.set(`churches/${churchId}/live/usage`, priced);
+      })
       .catch((err) => this.emit({ type: "log", level: "error", text: `요금 기록 실패: ${err.message || err}` }));
-    return record;
+    return this.pricedUsage(preset);
   }
 
   async finishUsage() {
@@ -315,18 +460,22 @@ class Engine {
       this.usageTimer = null;
     }
     if (!this.usage || !this.church || !this.folderName) return null;
-    const record = this.usage.record(this.sessionModel);
-    this.emit({ type: "cost", churchKrw: record.churchKrw });
     const churchId = this.church.id;
     const folder = this.folderName;
     try {
       await this.usageChain;
+      const at = Date.now();
+      const minutes = this.usage.minutesAt ? this.usage.minutesAt(at) : 0;
+      await this.collectOvertime(minutes);
+      const record = this.pricedUsage();
+      this.emitCharge(record);
       await firebase.set(`churches/${churchId}/live/usage`, record);
       await firebase.set(`churches/${churchId}/sessions/${folder}/usage`, record);
+      return record;
     } catch (err) {
       this.emit({ type: "log", level: "error", text: `요금 마감 실패: ${err.message || err}` });
+      return null;
     }
-    return record;
   }
 
   async stop() {
@@ -388,6 +537,10 @@ class Engine {
       running: false,
       dir: this.sessionDir,
       folderName: this.folderName,
+      churchKrw: this.sessionCharge ? this.sessionCharge.charged : (usageRecord ? usageRecord.churchKrw : undefined),
+      chargedKrw: this.sessionCharge ? this.sessionCharge.charged : undefined,
+      balanceKrw: this.sessionCharge ? this.sessionCharge.balance : undefined,
+      short: !!(this.sessionCharge && this.sessionCharge.short),
     });
     this.emit({ type: "log", level: "info", text: "방송을 종료했습니다. 언어별 텍스트만 저장했습니다." });
     return { stopped: true, dir: this.sessionDir };

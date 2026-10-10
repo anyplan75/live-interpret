@@ -351,7 +351,34 @@ function formatKrw(value) {
 
 function showChurchCost(value) {
   const node = document.getElementById("churchCost");
-  if (node) node.textContent = formatKrw(value);
+  if (node && value != null) node.textContent = formatKrw(value);
+}
+
+function showBalance(value) {
+  const node = document.getElementById("balanceCost");
+  if (node && value != null) node.textContent = formatKrw(value);
+}
+
+function languageLabel(code) {
+  const found = (state.catalog.languages || []).find((lang) => lang.code === code);
+  return found && found.name ? found.name : code;
+}
+
+function paintConfirm(preview) {
+  const labels = (preview.languages || []).map(languageLabel);
+  document.getElementById("confirmLangs").textContent = labels.length
+    ? `선택한 언어: ${labels.join(", ")}`
+    : "선택한 언어: 없음";
+  document.getElementById("confirmPrice").textContent = `첫 시간 요금: ${formatKrw(preview.firstHourKrw)}. 영어는 기본 요금에 포함됩니다.`;
+  document.getElementById("confirmOvertime").textContent = preview.overtimeText;
+  document.getElementById("confirmBalance").textContent = `남은 충전금: ${formatKrw(preview.balanceKrw)}`;
+  const short = document.getElementById("confirmShort");
+  short.hidden = !preview.short;
+  short.textContent = preview.short
+    ? `충전금이 부족합니다. 첫 시간에 ${formatKrw(preview.firstHourKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`
+    : "";
+  document.getElementById("confirmStart").disabled = !!preview.short;
+  showBalance(preview.balanceKrw);
 }
 
 function showChurch(church) {
@@ -416,6 +443,15 @@ async function loadChurch() {
   renderPreachers();
   fillStyle(current.style);
   showBulletin(current.bulletin);
+  if (!state.running) {
+    if (current.balanceKrw != null) showBalance(current.balanceKrw);
+    try {
+      const preview = await window.broadcast.previewBilling(state.targets);
+      showBalance(preview.balanceKrw);
+    } catch (err) {
+      log(err.message || String(err), "error");
+    }
+  }
   if (state.church) {
     try { await window.broadcast.setTargets(state.targets); }
     catch (err) { log(err.message || String(err), "error"); }
@@ -452,12 +488,14 @@ async function boot() {
       state.audio = event.audio;
       renderChannels(event.audio.deviceChannels, event.audio.deviceChannel);
     }
-    if (event.type === "cost") showChurchCost(event.churchKrw);
+    if (event.type === "cost") {
+      showChurchCost(event.chargedKrw != null ? event.chargedKrw : event.churchKrw);
+      if (event.balanceKrw != null) showBalance(event.balanceKrw);
+    }
     if (event.type === "session") {
-      if (event.running) {
-        hearing.reset();
-        showChurchCost(0);
-      }
+      if (event.running) hearing.reset();
+      if (event.churchKrw != null) showChurchCost(event.chargedKrw != null ? event.chargedKrw : event.churchKrw);
+      if (event.balanceKrw != null) showBalance(event.balanceKrw);
       setRunning(!!event.running);
       if (event.dir) {
         folderHint.textContent = event.dir;
@@ -602,24 +640,46 @@ document.getElementById("pickFolder").addEventListener("click", async () => {
   folderHint.textContent = folder;
   await persist({ folder });
 });
+async function beginBroadcast() {
+  await persist({
+    sensitivity: sensitivityEl.value,
+    folder: state.settings.folder,
+    targets: selectedTargets(),
+    preacherId: selectedPreacherId(),
+  });
+  state.lines = {};
+  await window.broadcast.start({
+    sensitivity: sensitivityEl.value,
+    folder: state.settings.folder,
+    targets: selectedTargets(),
+    preacherId: selectedPreacherId(),
+    deviceKey: deviceEl.value,
+    channel: state.audio ? state.audio.deviceChannel : 0,
+  });
+  log("방송을 시작했습니다. 언어별 텍스트만 저장합니다.");
+}
+
 document.getElementById("start").addEventListener("click", async () => {
   try {
-    await persist({
-      sensitivity: sensitivityEl.value,
-      folder: state.settings.folder,
-      targets: selectedTargets(),
-      preacherId: selectedPreacherId(),
-    });
-    state.lines = {};
-    await window.broadcast.start({
-      sensitivity: sensitivityEl.value,
-      folder: state.settings.folder,
-      targets: selectedTargets(),
-      preacherId: selectedPreacherId(),
-      deviceKey: deviceEl.value,
-      channel: state.audio ? state.audio.deviceChannel : 0,
-    });
-    log("방송을 시작했습니다. 언어별 텍스트만 저장합니다.");
+    const preview = await window.broadcast.previewBilling(selectedTargets());
+    paintConfirm(preview);
+    document.getElementById("startConfirm").hidden = false;
+  } catch (err) {
+    log(err.message || String(err), "error");
+    setStatus("시작 실패", "err");
+  }
+});
+document.getElementById("confirmCancel").addEventListener("click", () => {
+  document.getElementById("startConfirm").hidden = true;
+  if (!state.running) setStatus("대기", "");
+});
+document.getElementById("confirmStart").addEventListener("click", async () => {
+  try {
+    const preview = await window.broadcast.previewBilling(selectedTargets());
+    paintConfirm(preview);
+    if (preview.short) return;
+    document.getElementById("startConfirm").hidden = true;
+    await beginBroadcast();
   } catch (err) {
     log(err.message || String(err), "error");
     setStatus("시작 실패", "err");

@@ -247,13 +247,24 @@ function registerIpc() {
     const church = await requireChurch();
     const settings = await firebase.get(`churches/${church.id}/live/settings`);
     const staged = stageSummary(church.id);
+    let balanceKrw = 0;
+    try {
+      balanceKrw = (await engine.previewCharge(church.id, [])).balanceKrw;
+    } catch (_) {
+      balanceKrw = 0;
+    }
     return {
       church: publicChurch(church),
       style: catalog.styleFromSettings(settings),
       preachers: await firebase.listPreachers(church.id),
       bulletin: staged ? { fileName: staged.fileName, extracted: staged.extracted } : null,
       keyReady: Boolean(await cachePlatformKey()),
+      balanceKrw,
     };
+  });
+  ipcMain.handle("billing:preview", async (_event, targets) => {
+    const church = await requireChurch();
+    return engine.previewCharge(church.id, targets);
   });
   ipcMain.handle("style:set", async (_event, style) => {
     const church = await requireChurch();

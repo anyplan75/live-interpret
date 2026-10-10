@@ -25,6 +25,12 @@
       ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
       ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
     },
+    "deposits": {
+      "$depositId": {
+        ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+        ".write": false
+      }
+    },
     "churches": {
       "$churchId": {
         ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
@@ -69,6 +75,22 @@
             }
           }
         },
+        "billing": {
+          "balance": {
+            ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.parent().child('lastEntryId').isString() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).exists() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() == newData.val() - (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('balanceAfter').val() == newData.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('amountKrw').val() == newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() && ((auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && data.exists() && newData.val() < data.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() < 0) || (auth.uid === root.child('live-interpret/admin/uid').val() && newData.val() > (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() > 0))"
+          },
+          "lastEntryId": {
+            ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128 && newData.parent().child('ledger').child(newData.val()).exists()"
+          },
+          "ledger": {
+            "$entryId": {
+              ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val()) && !data.exists() && $entryId === newData.parent().parent().child('lastEntryId').val()",
+              ".validate": "newData.hasChildren(['deltaKrw', 'amountKrw', 'balanceAfter', 'at', 'type', 'who']) && newData.child('deltaKrw').isNumber() && newData.child('amountKrw').val() == newData.child('deltaKrw').val() && newData.child('balanceAfter').isNumber() && newData.child('balanceAfter').val() == newData.parent().parent().child('balance').val() && newData.child('at').isNumber() && newData.child('type').isString() && (newData.child('type').val() == 'charge' || newData.child('type').val() == 'deposit' || newData.child('type').val() == 'manual') && newData.child('who').isString() && !newData.child('text').exists() && !newData.child('rate').exists()"
+            }
+          }
+        },
         "live": {
           "settings": {
             ".read": "root.child('live-interpret/churches').child($churchId).child('active').val() !== false || (auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val()))",
@@ -80,7 +102,7 @@
           },
           "usage": {
             ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false",
-            ".validate": "newData.hasChildren(['audioSeconds', 'chars', 'churchKrw', 'apiKrw', 'updatedAt']) && newData.child('audioSeconds').isNumber() && newData.child('churchKrw').isNumber() && newData.child('apiKrw').isNumber() && newData.child('updatedAt').isNumber() && !newData.child('text').exists() && !newData.child('transcript').exists() && !newData.child('rate').exists()",
+            ".validate": "newData.hasChildren(['audioSeconds', 'churchKrw', 'apiKrw', 'updatedAt']) && newData.child('audioSeconds').isNumber() && newData.child('churchKrw').isNumber() && newData.child('apiKrw').isNumber() && newData.child('updatedAt').isNumber() && (!newData.child('chars').exists() || newData.child('chars').hasChildren()) && !newData.child('text').exists() && !newData.child('transcript').exists() && !newData.child('rate').exists()",
             "chars": {
               "$lang": {
                 ".validate": "newData.isNumber()"
