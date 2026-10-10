@@ -13,6 +13,8 @@
   const SERMON_MINUTES = 40;
   const HOUR_BASE_KRW = 15000;
   const EXTRA_LANG_HOUR_KRW = 5000;
+  const HOUR_SECONDS = 3600;
+  const HALF_SECONDS = 1800;
   const CHARS_PER_MINUTE = 750;
   const CAPTION_USD_PER_MIN = 39 / 360;
   const TRANSLATION_USD_PER_MIN = 79 / 180;
@@ -212,6 +214,260 @@
     };
   }
 
+  function paidLanguageSet(languages) {
+    const seen = new Set();
+    const out = [];
+    languageList(languages).forEach((code) => {
+      const clean = String(code).trim();
+      const key = clean.toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(clean);
+    });
+    return out;
+  }
+
+  function languageKey(languages) {
+    return paidLanguageSet(languages)
+      .slice()
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .join(",");
+  }
+
+  function languagesFromKey(key) {
+    return paidLanguageSet(String(key || "").split(","));
+  }
+
+  function languagesFromPrepaid(raw) {
+    if (!raw || typeof raw !== "object") return [];
+    if (typeof raw.languageKey === "string" && raw.languageKey.trim()) return languagesFromKey(raw.languageKey);
+    if (Array.isArray(raw.languages)) return paidLanguageSet(raw.languages);
+    if (raw.languages && typeof raw.languages === "object") {
+      return paidLanguageSet(Object.keys(raw.languages).filter((code) => raw.languages[code]));
+    }
+    return [];
+  }
+
+  function normalizePrepaid(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const remaining = Math.round(Number(raw.remainingSeconds) || 0);
+    const languages = languagesFromPrepaid(raw);
+    const kind = raw.kind === "half" ? "half" : (raw.kind === "hour" ? "hour" : "");
+    const amountKrw = Math.round(Number(raw.amountKrw) || 0);
+    if (remaining <= 0 || !languages.length || !kind || amountKrw < 0) return null;
+    return {
+      remainingSeconds: remaining,
+      languages,
+      kind,
+      amountKrw,
+      extraCount: extraLanguageCount(languages),
+      languageKey: languageKey(languages),
+      updatedAt: Math.round(Number(raw.updatedAt) || 0),
+    };
+  }
+
+  function choosePrepaid(remote, local) {
+    const cloud = normalizePrepaid(remote);
+    const disk = normalizePrepaid(local);
+    if (!cloud) return disk;
+    if (!disk) return cloud;
+    return (cloud.updatedAt || 0) >= (disk.updatedAt || 0) ? cloud : disk;
+  }
+
+  function firebasePrepaid(block, now) {
+    const current = block && typeof block === "object" ? block : {};
+    const languages = languagesFromPrepaid(current);
+    const kind = current.kind === "half" ? "half" : "hour";
+    return {
+      remainingSeconds: Math.max(0, Math.round(Number(current.remainingSeconds) || 0)),
+      languageKey: languageKey(languages),
+      kind,
+      amountKrw: Math.max(0, Math.round(Number(current.amountKrw) || 0)),
+      extraCount: extraLanguageCount(languages),
+      updatedAt: now == null ? Date.now() : now,
+    };
+  }
+
+  function formatClock(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const minutes = Math.floor(total / 60);
+    const rest = total % 60;
+    return `${minutes}:${String(rest).padStart(2, "0")}`;
+  }
+
+  function prepaidLabel(seconds) {
+    return `남은 시간 ${formatClock(seconds)}`;
+  }
+
+  function addedLanguages(paidLanguages, selected) {
+    const paid = new Set(paidLanguageSet(paidLanguages).map((code) => code.toLowerCase()));
+    return paidLanguageSet(selected).filter((code) => !isBaseLanguage(code) && !paid.has(code.toLowerCase()));
+  }
+
+  function planBroadcastStart(input) {
+    const source = input || {};
+    const languages = paidLanguageSet(source.languages);
+    const balance = Math.round(Number(source.balance) || 0);
+    const prepaid = normalizePrepaid(source.prepaid);
+    const overtime = overtimeText();
+    if (!prepaid) {
+      const opened = openBroadcast({ balance, languages });
+      const next = opened.ok ? {
+        remainingSeconds: HOUR_SECONDS,
+        languages,
+        kind: "hour",
+        amountKrw: opened.charged,
+        extraCount: extraLanguageCount(languages),
+        languageKey: languageKey(languages),
+      } : null;
+      return {
+        mode: "hour",
+        ok: opened.ok,
+        short: !opened.ok,
+        running: opened.ok,
+        charged: opened.charged,
+        chargeKrw: opened.firstHourKrw,
+        balance: opened.balance,
+        languages,
+        paidLanguages: languages,
+        remainingSeconds: opened.ok ? HOUR_SECONDS : 0,
+        kind: "hour",
+        amountKrw: opened.charged,
+        firstHourKrw: opened.firstHourKrw,
+        halfKrw: opened.halfKrw,
+        extraFeeKrw: 0,
+        addedLanguages: [],
+        resumed: false,
+        noExtraCharge: false,
+        overtimeText: overtime,
+        note: "첫 시간",
+        prepaid: next,
+      };
+    }
+    const added = addedLanguages(prepaid.languages, languages);
+    if (!added.length) {
+      return {
+        mode: "resume",
+        ok: true,
+        short: false,
+        running: true,
+        charged: 0,
+        chargeKrw: 0,
+        balance,
+        languages,
+        paidLanguages: prepaid.languages.slice(),
+        remainingSeconds: prepaid.remainingSeconds,
+        kind: prepaid.kind,
+        amountKrw: prepaid.amountKrw,
+        firstHourKrw: 0,
+        halfKrw: halfBlockKrw(prepaid.languages),
+        extraFeeKrw: 0,
+        addedLanguages: [],
+        resumed: true,
+        noExtraCharge: true,
+        overtimeText: overtime,
+        note: "",
+        prepaid: { ...prepaid },
+      };
+    }
+    const fee = EXTRA_LANG_HOUR_KRW * added.length;
+    const step = applyCharge(balance, fee);
+    const paidLanguages = prepaid.languages.concat(added);
+    const next = step.ok ? {
+      remainingSeconds: prepaid.remainingSeconds,
+      languages: paidLanguages,
+      kind: prepaid.kind,
+      amountKrw: prepaid.amountKrw + step.deducted,
+      extraCount: extraLanguageCount(paidLanguages),
+      languageKey: languageKey(paidLanguages),
+      updatedAt: prepaid.updatedAt,
+    } : { ...prepaid };
+    return {
+      mode: "extra",
+      ok: step.ok,
+      short: !step.ok,
+      running: step.ok,
+      charged: step.deducted,
+      chargeKrw: fee,
+      balance: step.balance,
+      languages,
+      paidLanguages: step.ok ? paidLanguages : prepaid.languages.slice(),
+      remainingSeconds: prepaid.remainingSeconds,
+      kind: prepaid.kind,
+      amountKrw: step.ok ? prepaid.amountKrw + step.deducted : prepaid.amountKrw,
+      firstHourKrw: 0,
+      halfKrw: halfBlockKrw(step.ok ? paidLanguages : prepaid.languages),
+      extraFeeKrw: fee,
+      addedLanguages: added,
+      resumed: true,
+      noExtraCharge: false,
+      overtimeText: overtime,
+      note: "추가 언어",
+      prepaid: next,
+    };
+  }
+
+  function consumePrepaid(prepaid, elapsedSeconds) {
+    const block = normalizePrepaid(prepaid);
+    if (!block) return { remainingSeconds: 0, expired: true, prepaid: null };
+    const elapsed = Math.max(0, Number(elapsedSeconds) || 0);
+    const left = Math.max(0, Math.round(block.remainingSeconds - elapsed));
+    if (left <= 0) return { remainingSeconds: 0, expired: true, prepaid: null };
+    return {
+      remainingSeconds: left,
+      expired: false,
+      prepaid: { ...block, remainingSeconds: left },
+    };
+  }
+
+  function openHalfBlock(input) {
+    const source = input || {};
+    const languages = paidLanguageSet(source.languages);
+    const balance = Math.round(Number(source.balance) || 0);
+    const half = halfBlockKrw(languages);
+    const step = applyCharge(balance, half);
+    if (!step.ok) {
+      return {
+        ok: false,
+        short: true,
+        running: false,
+        charged: 0,
+        chargeKrw: half,
+        balance,
+        languages,
+        remainingSeconds: 0,
+        kind: "half",
+        amountKrw: 0,
+        halfKrw: half,
+        prepaid: null,
+        note: "추가 30분",
+      };
+    }
+    const prepaid = {
+      remainingSeconds: HALF_SECONDS,
+      languages,
+      kind: "half",
+      amountKrw: step.deducted,
+      extraCount: extraLanguageCount(languages),
+      languageKey: languageKey(languages),
+    };
+    return {
+      ok: true,
+      short: false,
+      running: true,
+      charged: step.deducted,
+      chargeKrw: half,
+      balance: step.balance,
+      languages,
+      remainingSeconds: HALF_SECONDS,
+      kind: "half",
+      amountKrw: step.deducted,
+      halfKrw: half,
+      prepaid,
+      note: "추가 30분",
+    };
+  }
+
   function ledgerId(now) {
     const stamp = now == null ? Date.now() : now;
     const salt = Math.random().toString(36).slice(2, 8);
@@ -391,6 +647,7 @@
       `60분, 영어와 중국어: ${formatKrw(chinese)}.`,
       `90분, 영어만: ${formatKrw(ninety)}.`,
       "방송 화면은 남은 충전금과 이번 방송 차감을 보여 줍니다. 초마다 오르지 않습니다.",
+      "방송을 끄면 남은 시간은 멈추고, 그 교회의 다음 시작에 이어 씁니다.",
       "이 화면은 교회 요금과 API 원가를 함께 보여 줍니다. 교회 방송 앱은 API 원가를 보여 주지 않습니다.",
     ].join("\n");
   }
@@ -400,6 +657,8 @@
     SERMON_MINUTES,
     HOUR_BASE_KRW,
     EXTRA_LANG_HOUR_KRW,
+    HOUR_SECONDS,
+    HALF_SECONDS,
     CHARS_PER_MINUTE,
     CAPTION_USD_PER_MIN,
     TRANSLATION_USD_PER_MIN,
@@ -420,6 +679,17 @@
     applyCharge,
     openBroadcast,
     accrue,
+    paidLanguageSet,
+    languageKey,
+    normalizePrepaid,
+    choosePrepaid,
+    firebasePrepaid,
+    formatClock,
+    prepaidLabel,
+    addedLanguages,
+    planBroadcastStart,
+    consumePrepaid,
+    openHalfBlock,
     applyCredit,
     prepareDeposit,
     ledgerEntry,

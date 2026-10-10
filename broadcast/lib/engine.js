@@ -27,7 +27,7 @@ function cleanTargets(targets) {
 }
 
 class Engine {
-  constructor(emit) {
+  constructor(emit, hooks) {
     const raw = emit || (() => {});
     this.emit = (payload) => {
       if (payload && typeof payload.text === "string") {
@@ -56,6 +56,18 @@ class Engine {
     this.usageTimer = null;
     this.lastUsageWrite = 0;
     this.sessionCharge = null;
+    this.prepaid = null;
+    this.prepaidBudget = 0;
+    this.prepaidAnchor = 0;
+    this.prepaidLastSaved = 0;
+    this.prepaidTimer = null;
+    this.prepaidChain = Promise.resolve();
+    this.inPrepaidTick = false;
+    this.stopPromise = null;
+    this.pendingStopReason = "";
+    const extra = hooks || {};
+    this.readLocalPrepaid = extra.readLocalPrepaid;
+    this.writeLocalPrepaid = extra.writeLocalPrepaid;
   }
 
   async readBalance(churchId) {
@@ -66,84 +78,285 @@ class Engine {
   async previewCharge(churchId, targets) {
     const languages = cleanTargets(targets);
     const balance = await this.readBalance(churchId);
-    const firstHourKrw = cost.packageKrw({ minutes: 60, languages });
+    const prepaid = await this.readPrepaid(churchId);
+    const plan = cost.planBroadcastStart({ balance, languages, prepaid });
+    const remaining = prepaid ? prepaid.remainingSeconds : 0;
     return {
       balance,
       balanceKrw: balance,
-      firstHourKrw,
-      halfKrw: cost.halfBlockKrw(languages),
-      overtimeText: cost.overtimeText(),
-      short: balance < firstHourKrw,
+      firstHourKrw: plan.mode === "hour" ? plan.firstHourKrw : 0,
+      halfKrw: plan.halfKrw,
+      overtimeText: plan.overtimeText,
+      short: !!plan.short,
       languages,
+      mode: plan.mode,
+      remainingSeconds: remaining,
+      resumed: plan.resumed,
+      noExtraCharge: plan.noExtraCharge,
+      extraFeeKrw: plan.extraFeeKrw,
+      addedLanguages: plan.addedLanguages,
+      chargeKrw: plan.chargeKrw,
+      paidLanguages: plan.paidLanguages,
+      kind: prepaid ? prepaid.kind : "",
+      label: remaining > 0 ? cost.prepaidLabel(remaining) : "",
     };
   }
 
-  async writeBilling(churchId, balance, entry) {
+  async readPrepaid(churchId) {
+    let remote = null;
+    let remoteOk = false;
+    try {
+      remote = await firebase.get(`churches/${churchId}/billing/prepaid`);
+      remoteOk = true;
+    } catch (_) {
+      remote = null;
+    }
+    let local = null;
+    try {
+      if (this.readLocalPrepaid) local = await this.readLocalPrepaid(churchId);
+    } catch (_) {
+      local = null;
+    }
+    if (!remoteOk) return cost.normalizePrepaid(local);
+    return cost.choosePrepaid(remote, local);
+  }
+
+  async writePrepaid(churchId, block) {
+    const stored = cost.firebasePrepaid(block, Date.now());
+    try {
+      await firebase.set(`churches/${churchId}/billing/prepaid`, stored);
+    } catch (err) {
+      this.emit({ type: "log", level: "error", text: `남은 시간 저장 실패: ${err.message || err}` });
+    }
+    try {
+      if (this.writeLocalPrepaid) await this.writeLocalPrepaid(churchId, stored);
+    } catch (_) {
+      /* 이 컴퓨터의 사본은 다음 저장에서 다시 씁니다 */
+    }
+    return stored;
+  }
+
+  async writeBilling(churchId, balance, entry, prepaid) {
     const row = { ...entry };
     delete row.id;
-    await firebase.update(`churches/${churchId}/billing`, {
+    const payload = {
       balance,
       lastEntryId: entry.id,
       [`ledger/${entry.id}`]: row,
+    };
+    let stored = null;
+    if (prepaid) {
+      stored = cost.firebasePrepaid(prepaid, entry.at);
+      payload["prepaid/remainingSeconds"] = stored.remainingSeconds;
+      payload["prepaid/languageKey"] = stored.languageKey;
+      payload["prepaid/kind"] = stored.kind;
+      payload["prepaid/amountKrw"] = stored.amountKrw;
+      payload["prepaid/extraCount"] = stored.extraCount;
+      payload["prepaid/updatedAt"] = stored.updatedAt;
+    }
+    await firebase.update(`churches/${churchId}/billing`, payload);
+    if (stored && this.writeLocalPrepaid) {
+      try { await this.writeLocalPrepaid(churchId, stored); } catch (_) { /* 로컬 사본은 다음 저장에서 맞춥니다 */ }
+    }
+    return stored;
+  }
+
+  shortStartMessage(plan) {
+    if (plan && plan.mode === "extra") {
+      return `충전금이 부족합니다. 추가 언어 요금 ${cost.formatKrw(plan.chargeKrw)}이 필요하지만 남은 충전금은 ${cost.formatKrw(plan.balance)}입니다.`;
+    }
+    const price = plan ? plan.firstHourKrw : 0;
+    const balance = plan ? plan.balance : 0;
+    return `충전금이 부족합니다. 첫 시간에 ${cost.formatKrw(price)}이 필요하지만 남은 충전금은 ${cost.formatKrw(balance)}입니다.`;
+  }
+
+  liveRemaining() {
+    if (!this.prepaid) return 0;
+    const elapsed = Math.floor((Date.now() - this.prepaidAnchor) / 1000);
+    return Math.max(0, this.prepaidBudget - elapsed);
+  }
+
+  remainingNow() {
+    if (!this.running) return this.prepaid ? this.prepaid.remainingSeconds : 0;
+    return this.liveRemaining();
+  }
+
+  emitPrepaid() {
+    const remaining = this.remainingNow();
+    this.emit({
+      type: "prepaid",
+      remainingSeconds: remaining,
+      running: !!this.running,
+      label: remaining > 0 ? cost.prepaidLabel(remaining) : "남은 시간 0:00",
     });
+  }
+
+  armPrepaid(block) {
+    this.prepaid = cost.normalizePrepaid(block);
+    this.prepaidBudget = this.prepaid ? this.prepaid.remainingSeconds : 0;
+    this.prepaidAnchor = Date.now();
+    this.prepaidLastSaved = this.prepaidBudget;
+    this.emitPrepaid();
+  }
+
+  startPrepaidTimer() {
+    this.stopPrepaidTimer();
+    this.prepaidTimer = setInterval(() => {
+      this.enqueuePrepaid(() => this.tickPrepaid())
+        .then(() => {
+          if (!this.pendingStopReason || !this.running) return null;
+          this.pendingStopReason = "";
+          return this.stop();
+        })
+        .catch((err) => {
+          this.emit({ type: "log", level: "error", text: `남은 시간 갱신 실패: ${err.message || err}` });
+        });
+    }, 1000);
+  }
+
+  stopPrepaidTimer() {
+    if (this.prepaidTimer) {
+      clearInterval(this.prepaidTimer);
+      this.prepaidTimer = null;
+    }
+  }
+
+  enqueuePrepaid(task) {
+    const run = this.prepaidChain.then(() => task(), () => task());
+    this.prepaidChain = run.then(() => {}, () => {});
+    return run;
+  }
+
+  async tickPrepaid() {
+    if (!this.running || !this.prepaid || !this.church) return;
+    this.inPrepaidTick = true;
+    try {
+      const remaining = this.liveRemaining();
+      if (remaining > 0) {
+        this.prepaid = { ...this.prepaid, remainingSeconds: remaining };
+        this.emitPrepaid();
+        if (this.prepaidLastSaved - remaining >= 5) {
+          await this.writePrepaid(this.church.id, this.prepaid);
+          this.prepaidLastSaved = remaining;
+        }
+        return;
+      }
+      await this.chargeNextBlock();
+    } finally {
+      this.inPrepaidTick = false;
+    }
+  }
+
+  async chargeNextBlock() {
+    if (!this.running || !this.church || !this.prepaid || this.pendingStopReason) return;
+    if (this.liveRemaining() > 0) return;
+    const languages = this.prepaid.languages.slice();
+    const balance = await this.readBalance(this.church.id);
+    if (!this.running) return;
+    const half = cost.openHalfBlock({ balance, languages });
+    if (!half.ok) {
+      this.prepaid = { ...this.prepaid, remainingSeconds: 0 };
+      this.prepaidBudget = 0;
+      this.prepaidAnchor = Date.now();
+      await this.writePrepaid(this.church.id, this.prepaid);
+      this.pendingStopReason = `충전금이 부족합니다. 다음 30분에 ${cost.formatKrw(half.chargeKrw)}이 필요하지만 남은 충전금은 ${cost.formatKrw(half.balance)}입니다. 방송을 종료합니다.`;
+      this.emit({ type: "log", level: "error", text: this.pendingStopReason });
+      this.emitPrepaid();
+      return;
+    }
+    const at = Date.now();
+    const entry = cost.ledgerEntry({
+      id: cost.ledgerId(at),
+      type: "charge",
+      deltaKrw: -half.charged,
+      balanceAfter: half.balance,
+      at,
+      who: this.church.accountUid || "",
+      note: half.note,
+      churchId: this.church.id,
+    });
+    const stored = await this.writeBilling(this.church.id, half.balance, entry, half.prepaid);
+    this.sessionCharge = {
+      ...(this.sessionCharge || {}),
+      ok: true,
+      running: !!this.running,
+      short: false,
+      charged: Math.round(Number(this.sessionCharge && this.sessionCharge.charged) || 0) + half.charged,
+      balance: half.balance,
+      halfKrw: half.halfKrw,
+      languages,
+    };
+    if (!this.running) {
+      this.prepaid = cost.normalizePrepaid(stored || half.prepaid);
+      this.prepaidBudget = this.prepaid ? this.prepaid.remainingSeconds : 0;
+      this.prepaidAnchor = Date.now();
+      return;
+    }
+    this.armPrepaid(stored || half.prepaid);
+    this.emitCharge(this.pricedUsage());
+    this.emit({
+      type: "log",
+      level: "info",
+      text: `다음 30분 ${cost.formatKrw(half.charged)}을 뺐습니다. 남은 시간 30:00부터 다시 셉니다.`,
+    });
+  }
+
+  async freezePrepaid() {
+    this.stopPrepaidTimer();
+    if (!this.prepaid || !this.church) return;
+    const remaining = this.liveRemaining();
+    this.prepaid = { ...this.prepaid, remainingSeconds: remaining };
+    this.prepaidBudget = remaining;
+    this.prepaidAnchor = Date.now();
+    await this.writePrepaid(this.church.id, this.prepaid);
+    this.emitPrepaid();
   }
 
   async chargeOpening() {
     const languages = this.targets;
     const balance = await this.readBalance(this.church.id);
-    const opened = cost.openBroadcast({ balance, languages });
-    if (!opened.ok) {
-      const err = new Error(`충전금이 부족합니다. 첫 시간에 ${cost.formatKrw(opened.firstHourKrw)}이 필요하지만 남은 충전금은 ${cost.formatKrw(opened.balance)}입니다.`);
+    const existing = await this.readPrepaid(this.church.id);
+    const plan = cost.planBroadcastStart({ balance, languages, prepaid: existing });
+    if (!plan.ok) {
+      const err = new Error(this.shortStartMessage(plan));
       err.short = true;
       throw err;
     }
-    const entry = cost.ledgerEntry({
-      id: cost.ledgerId(),
-      type: "charge",
-      deltaKrw: -opened.charged,
-      balanceAfter: opened.balance,
-      at: Date.now(),
-      who: this.church.accountUid || "",
-      note: "첫 시간",
-      churchId: this.church.id,
-    });
-    await this.writeBilling(this.church.id, opened.balance, entry);
-    this.sessionCharge = { ...opened, shortLogged: false };
-    return this.sessionCharge;
-  }
-
-  async collectOvertime(minutes) {
-    if (!this.sessionCharge || !this.sessionCharge.running || !this.church) return this.sessionCharge;
-    const beforeDone = this.sessionCharge.overtimeDone;
-    const beforeCharged = this.sessionCharge.charged;
-    const next = cost.accrue(this.sessionCharge, minutes);
-    const added = next.overtimeDone - beforeDone;
-    if (added > 0) {
-      const deducted = next.charged - beforeCharged;
+    let stored = plan.prepaid;
+    if (plan.charged > 0) {
+      const at = Date.now();
       const entry = cost.ledgerEntry({
-        id: cost.ledgerId(),
+        id: cost.ledgerId(at),
         type: "charge",
-        deltaKrw: -deducted,
-        balanceAfter: next.balance,
-        at: Date.now(),
+        deltaKrw: -plan.charged,
+        balanceAfter: plan.balance,
+        at,
         who: this.church.accountUid || "",
-        note: "추가 30분",
+        note: plan.note,
         churchId: this.church.id,
       });
-      await this.writeBilling(this.church.id, next.balance, entry);
+      stored = await this.writeBilling(this.church.id, plan.balance, entry, plan.prepaid);
+    } else if (stored) {
+      stored = await this.writePrepaid(this.church.id, stored);
     }
-    if (next.short && !this.sessionCharge.shortLogged) {
-      this.emit({
-        type: "log",
-        level: "error",
-        text: `충전금이 부족합니다. ${cost.formatKrw(next.halfKrw)}을 빼지 못했습니다. 방송은 계속됩니다.`,
-      });
-      next.shortLogged = true;
+    this.sessionCharge = {
+      ok: true,
+      running: true,
+      short: false,
+      charged: plan.charged,
+      balance: plan.balance,
+      halfKrw: plan.halfKrw,
+      languages: plan.paidLanguages,
+    };
+    this.armPrepaid(stored || plan.prepaid);
+    if (plan.noExtraCharge) {
+      this.emit({ type: "log", level: "info", text: `${cost.prepaidLabel(plan.remainingSeconds)}. 이번 시작은 추가 요금이 없습니다.` });
+    } else if (plan.mode === "extra") {
+      this.emit({ type: "log", level: "info", text: `추가 언어 요금 ${cost.formatKrw(plan.charged)}을 뺐습니다. 남은 시간은 그대로입니다.` });
     } else {
-      next.shortLogged = !!this.sessionCharge.shortLogged;
+      this.emit({ type: "log", level: "info", text: `첫 시간 ${cost.formatKrw(plan.charged)}을 뺐습니다. ${cost.prepaidLabel(plan.remainingSeconds)}.` });
     }
-    this.sessionCharge = next;
-    return next;
+    return plan;
   }
 
   pricedUsage(preset) {
@@ -254,7 +467,14 @@ class Engine {
   }
 
   async setTargets(churchId, targets) {
-    this.targets = cleanTargets(targets);
+    const next = cleanTargets(targets);
+    if (this.running && this.prepaid) {
+      const added = cost.addedLanguages(this.prepaid.languages, next);
+      if (added.length) {
+        throw new Error("방송 중에는 아직 포함되지 않은 언어를 더할 수 없습니다. 방송을 끄면 남은 시간이 멈추고, 다시 시작할 때 추가 언어 요금을 확인합니다.");
+      }
+    }
+    this.targets = next;
     if (this.pipeline) this.pipeline.targets = this.targets;
     if (this.usage) this.usage.setLanguages(this.targets);
     if (churchId) await this.syncSettings(churchId, this.targets);
@@ -400,6 +620,8 @@ class Engine {
       throw err;
     }
     this.running = true;
+    this.startPrepaidTimer();
+    this.emitPrepaid();
     const opening = this.flushUsage(true);
     this.emit({
       type: "session",
@@ -413,6 +635,8 @@ class Engine {
       chargedKrw: this.sessionCharge ? this.sessionCharge.charged : 0,
       balanceKrw: this.sessionCharge ? this.sessionCharge.balance : 0,
       short: !!(this.sessionCharge && this.sessionCharge.short),
+      remainingSeconds: this.remainingNow(),
+      prepaidLabel: cost.prepaidLabel(this.remainingNow()),
     });
     return {
       church,
@@ -443,9 +667,6 @@ class Engine {
     const churchId = this.church.id;
     this.usageChain = this.usageChain
       .then(async () => {
-        const at = Date.now();
-        const minutes = this.usage && this.usage.minutesAt ? this.usage.minutesAt(at) : 0;
-        await this.collectOvertime(minutes);
         const priced = this.pricedUsage(preset);
         this.emitCharge(priced);
         await firebase.set(`churches/${churchId}/live/usage`, priced);
@@ -464,9 +685,6 @@ class Engine {
     const folder = this.folderName;
     try {
       await this.usageChain;
-      const at = Date.now();
-      const minutes = this.usage.minutesAt ? this.usage.minutesAt(at) : 0;
-      await this.collectOvertime(minutes);
       const record = this.pricedUsage();
       this.emitCharge(record);
       await firebase.set(`churches/${churchId}/live/usage`, record);
@@ -479,8 +697,22 @@ class Engine {
   }
 
   async stop() {
+    if (this.stopPromise) return this.stopPromise;
+    this.stopPromise = this._stop().finally(() => { this.stopPromise = null; });
+    return this.stopPromise;
+  }
+
+  async _stop() {
     if (!this.running) return { stopped: true };
     this.running = false;
+    this.pendingStopReason = "";
+    this.stopPrepaidTimer();
+    if (!this.inPrepaidTick) {
+      try { await this.prepaidChain; } catch (_) { /* 남은 시간 저장이 이미 실패해도 종료는 계속합니다 */ }
+    }
+    try { await this.freezePrepaid(); } catch (err) {
+      this.emit({ type: "log", level: "error", text: `남은 시간 저장 실패: ${err.message || err}` });
+    }
     const speech = this.speech;
     const pipeline = this.pipeline;
     this.speech = null;
@@ -541,7 +773,10 @@ class Engine {
       chargedKrw: this.sessionCharge ? this.sessionCharge.charged : undefined,
       balanceKrw: this.sessionCharge ? this.sessionCharge.balance : undefined,
       short: !!(this.sessionCharge && this.sessionCharge.short),
+      remainingSeconds: this.prepaid ? this.prepaid.remainingSeconds : 0,
+      prepaidLabel: this.prepaid && this.prepaid.remainingSeconds > 0 ? cost.prepaidLabel(this.prepaid.remainingSeconds) : "남은 시간 없음",
     });
+    this.pendingStopReason = "";
     this.emit({ type: "log", level: "info", text: "방송을 종료했습니다. 언어별 텍스트만 저장했습니다." });
     return { stopped: true, dir: this.sessionDir };
   }

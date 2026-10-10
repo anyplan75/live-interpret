@@ -69,6 +69,7 @@ main {
 
 .card h2 { margin: 0 0 10px; color: var(--gold); font-size: 1rem; }
 .cost-figure { margin: 0 0 6px; font-size: 1.8rem; font-weight: 800; color: var(--gold); }
+.cost-figure.time { font-variant-numeric: tabular-nums; letter-spacing: -0.03em; }
 
 label { display: block; font-weight: 700; margin-bottom: 6px; }
 

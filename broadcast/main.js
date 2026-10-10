@@ -135,6 +135,22 @@ function writeSettings(next) {
   return merged;
 }
 
+function readLocalPrepaid(churchId) {
+  const saved = readSettings();
+  const all = saved.prepaidByChurch;
+  if (!churchId || !all || typeof all !== "object") return null;
+  return all[churchId] || null;
+}
+
+function writeLocalPrepaid(churchId, block) {
+  const saved = readSettings();
+  const all = { ...(saved.prepaidByChurch && typeof saved.prepaidByChurch === "object" ? saved.prepaidByChurch : {}) };
+  if (!block) delete all[churchId];
+  else all[churchId] = block;
+  writeSettings({ prepaidByChurch: all });
+  return block;
+}
+
 function send(payload) {
   if (win && !win.isDestroyed()) win.webContents.send("engine", payload);
 }
@@ -410,7 +426,10 @@ if (!gotLock) {
       app.quit();
       return;
     }
-    engine = new Engine(send);
+    engine = new Engine(send, {
+      readLocalPrepaid,
+      writeLocalPrepaid,
+    });
     registerIpc();
     createWindow();
   });

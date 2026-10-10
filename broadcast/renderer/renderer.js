@@ -77,7 +77,18 @@ function renderLangs(selected) {
   return onTargetsChanged();
 }
 
+function restoreLangChecks(selected) {
+  const set = new Set(selected);
+  langsEl.querySelectorAll("input").forEach((input) => {
+    input.checked = set.has(input.value);
+  });
+  langsEl.querySelectorAll(".lang").forEach((label) => {
+    label.classList.toggle("on", label.querySelector("input").checked);
+  });
+}
+
 async function onTargetsChanged(sync = true) {
+  const previous = state.targets.slice();
   state.targets = selectedTargets();
   langCount.textContent = `번역 ${state.targets.length}개 + 한국어`;
   langsEl.querySelectorAll(".lang").forEach((label) => {
@@ -86,9 +97,14 @@ async function onTargetsChanged(sync = true) {
   await persist({ targets: state.targets });
   if (sync && state.church) {
     try {
-      await window.broadcast.setTargets(state.targets);
+      const applied = await window.broadcast.setTargets(state.targets);
+      if (Array.isArray(applied)) state.targets = applied;
     } catch (err) {
       log(err.message || String(err), "error");
+      state.targets = previous;
+      restoreLangChecks(previous);
+      langCount.textContent = `번역 ${state.targets.length}개 + 한국어`;
+      await persist({ targets: state.targets });
     }
   }
   await renderLinks();
@@ -359,6 +375,30 @@ function showBalance(value) {
   if (node && value != null) node.textContent = formatKrw(value);
 }
 
+function formatClock(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+function showPrepaid(info) {
+  const node = document.getElementById("prepaidTime");
+  const hint = document.getElementById("prepaidHint");
+  if (!node || !hint) return;
+  const seconds = Math.max(0, Math.round(Number(info && info.remainingSeconds) || 0));
+  const running = !!(info && info.running);
+  if (seconds > 0) {
+    node.textContent = `남은 시간 ${formatClock(seconds)}`;
+    hint.textContent = running
+      ? "이 시간이 끝날 때까지 추가 요금은 없습니다."
+      : "이어서 쓸 수 있는 시간입니다. 끄면 타이머가 멈추고, 이 시간이 끝날 때까지 추가 요금은 없습니다.";
+    return;
+  }
+  node.textContent = "남은 시간 없음";
+  hint.textContent = "방송을 켜 둔 시간만 줄어듭니다. 끄면 남은 시간이 이 교회에 남습니다.";
+}
+
 function languageLabel(code) {
   const found = (state.catalog.languages || []).find((lang) => lang.code === code);
   return found && found.name ? found.name : code;
@@ -369,16 +409,29 @@ function paintConfirm(preview) {
   document.getElementById("confirmLangs").textContent = labels.length
     ? `선택한 언어: ${labels.join(", ")}`
     : "선택한 언어: 없음";
-  document.getElementById("confirmPrice").textContent = `첫 시간 요금: ${formatKrw(preview.firstHourKrw)}. 영어는 기본 요금에 포함됩니다.`;
+  const price = document.getElementById("confirmPrice");
+  if (preview.noExtraCharge) {
+    price.textContent = `${preview.label || `남은 시간 ${formatClock(preview.remainingSeconds)}`}. 이번 시작은 추가 요금이 없습니다.`;
+  } else if (preview.mode === "extra") {
+    const added = (preview.addedLanguages || []).map(languageLabel).join(", ");
+    price.textContent = `추가 언어 ${added}: ${formatKrw(preview.extraFeeKrw)} (언어당 5,000원, 이번 남은 시간에 한 번). 남은 시간은 그대로입니다.`;
+  } else {
+    price.textContent = `첫 시간 요금: ${formatKrw(preview.firstHourKrw)}. 영어는 기본 요금에 포함됩니다.`;
+  }
   document.getElementById("confirmOvertime").textContent = preview.overtimeText;
   document.getElementById("confirmBalance").textContent = `남은 충전금: ${formatKrw(preview.balanceKrw)}`;
   const short = document.getElementById("confirmShort");
   short.hidden = !preview.short;
-  short.textContent = preview.short
-    ? `충전금이 부족합니다. 첫 시간에 ${formatKrw(preview.firstHourKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`
-    : "";
+  if (preview.short && preview.mode === "extra") {
+    short.textContent = `충전금이 부족합니다. 추가 언어 요금 ${formatKrw(preview.extraFeeKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`;
+  } else if (preview.short) {
+    short.textContent = `충전금이 부족합니다. 첫 시간에 ${formatKrw(preview.firstHourKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`;
+  } else {
+    short.textContent = "";
+  }
   document.getElementById("confirmStart").disabled = !!preview.short;
   showBalance(preview.balanceKrw);
+  if (!state.running) showPrepaid({ remainingSeconds: preview.remainingSeconds, running: false });
 }
 
 function showChurch(church) {
@@ -448,6 +501,7 @@ async function loadChurch() {
     try {
       const preview = await window.broadcast.previewBilling(state.targets);
       showBalance(preview.balanceKrw);
+      showPrepaid({ remainingSeconds: preview.remainingSeconds, running: false });
     } catch (err) {
       log(err.message || String(err), "error");
     }
@@ -492,10 +546,12 @@ async function boot() {
       showChurchCost(event.chargedKrw != null ? event.chargedKrw : event.churchKrw);
       if (event.balanceKrw != null) showBalance(event.balanceKrw);
     }
+    if (event.type === "prepaid") showPrepaid(event);
     if (event.type === "session") {
       if (event.running) hearing.reset();
       if (event.churchKrw != null) showChurchCost(event.chargedKrw != null ? event.chargedKrw : event.churchKrw);
       if (event.balanceKrw != null) showBalance(event.balanceKrw);
+      if (event.remainingSeconds != null) showPrepaid({ remainingSeconds: event.remainingSeconds, running: !!event.running });
       setRunning(!!event.running);
       if (event.dir) {
         folderHint.textContent = event.dir;

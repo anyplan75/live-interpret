@@ -67,6 +67,110 @@ test("hourly package bills Korean and English as the base", () => {
   assert.equal(blocked.charged, 0);
   assert.equal(blocked.balance, 10000);
 
+  const fresh = cost.planBroadcastStart({ balance: 100000, languages: ["en"] });
+  assert.equal(fresh.mode, "hour");
+  assert.equal(fresh.charged, 15000);
+  assert.equal(fresh.balance, 85000);
+  assert.equal(fresh.prepaid.remainingSeconds, 3600);
+  assert.equal(fresh.prepaid.kind, "hour");
+  assert.equal(fresh.prepaid.amountKrw, 15000);
+  assert.equal(fresh.prepaid.languageKey, "en");
+  assert.equal(cost.prepaidLabel(2530), "남은 시간 42:10");
+
+  const paused = cost.consumePrepaid(fresh.prepaid, 20 * 60);
+  assert.equal(paused.expired, false);
+  assert.equal(paused.remainingSeconds, 2400);
+  const resume = cost.planBroadcastStart({
+    balance: paused.prepaid ? 85000 : 0,
+    languages: ["en"],
+    prepaid: { ...paused.prepaid, updatedAt: 10 },
+  });
+  assert.equal(resume.mode, "resume");
+  assert.equal(resume.charged, 0);
+  assert.equal(resume.balance, 85000);
+  assert.equal(resume.noExtraCharge, true);
+  assert.equal(resume.remainingSeconds, 2400);
+  assert.deepEqual(resume.paidLanguages, ["en"]);
+
+  const subset = cost.planBroadcastStart({
+    balance: 85000,
+    languages: ["en"],
+    prepaid: { remainingSeconds: 900, languageKey: "en,zh-CN", kind: "hour", amountKrw: 20000, updatedAt: 3 },
+  });
+  assert.equal(subset.charged, 0);
+  assert.equal(subset.remainingSeconds, 900);
+  assert.deepEqual(subset.paidLanguages, ["en", "zh-CN"]);
+
+  const extra = cost.planBroadcastStart({
+    balance: 85000,
+    languages: ["en", "ja"],
+    prepaid: { remainingSeconds: 900, languageKey: "en,zh-CN", kind: "half", amountKrw: 10000, updatedAt: 4 },
+  });
+  assert.equal(extra.mode, "extra");
+  assert.equal(extra.ok, true);
+  assert.equal(extra.charged, 5000);
+  assert.equal(extra.balance, 80000);
+  assert.equal(extra.remainingSeconds, 900);
+  assert.equal(extra.kind, "half");
+  assert.deepEqual(extra.addedLanguages, ["ja"]);
+  assert.equal(extra.prepaid.amountKrw, 15000);
+  assert.equal(extra.prepaid.extraCount, 2);
+
+  const englishOnJapanese = cost.planBroadcastStart({
+    balance: 1000,
+    languages: ["en", "ja"],
+    prepaid: { remainingSeconds: 600, languageKey: "ja", kind: "hour", amountKrw: 20000, updatedAt: 5 },
+  });
+  assert.equal(englishOnJapanese.charged, 0);
+  assert.equal(englishOnJapanese.balance, 1000);
+  assert.equal(englishOnJapanese.noExtraCharge, true);
+
+  const shortExtra = cost.planBroadcastStart({
+    balance: 4000,
+    languages: ["ja"],
+    prepaid: { remainingSeconds: 600, languageKey: "en", kind: "hour", amountKrw: 15000, updatedAt: 6 },
+  });
+  assert.equal(shortExtra.ok, false);
+  assert.equal(shortExtra.short, true);
+  assert.equal(shortExtra.charged, 0);
+  assert.equal(shortExtra.balance, 4000);
+  assert.equal(shortExtra.chargeKrw, 5000);
+
+  const spent = cost.consumePrepaid({ remainingSeconds: 30, languageKey: "en", kind: "hour", amountKrw: 15000 }, 30);
+  assert.equal(spent.expired, true);
+  assert.equal(spent.prepaid, null);
+  const afterZero = cost.planBroadcastStart({
+    balance: 50000,
+    languages: ["en"],
+    prepaid: { remainingSeconds: 0, languageKey: "en", kind: "hour", amountKrw: 15000 },
+  });
+  assert.equal(afterZero.mode, "hour");
+  assert.equal(afterZero.charged, 15000);
+
+  const half = cost.openHalfBlock({ balance: 50000, languages: ["en", "zh-CN"] });
+  assert.equal(half.ok, true);
+  assert.equal(half.charged, 10000);
+  assert.equal(half.balance, 40000);
+  assert.equal(half.prepaid.remainingSeconds, 1800);
+  assert.equal(half.prepaid.kind, "half");
+  assert.equal(half.prepaid.extraCount, 1);
+  const halfShort = cost.openHalfBlock({ balance: 7000, languages: ["en"] });
+  assert.equal(halfShort.ok, false);
+  assert.equal(halfShort.charged, 0);
+  assert.equal(halfShort.balance, 7000);
+  assert.equal(halfShort.prepaid, null);
+
+  const newerLocal = cost.choosePrepaid(
+    { remainingSeconds: 100, languageKey: "en", kind: "hour", amountKrw: 15000, updatedAt: 10 },
+    { remainingSeconds: 80, languageKey: "en", kind: "hour", amountKrw: 15000, updatedAt: 20 },
+  );
+  assert.equal(newerLocal.remainingSeconds, 80);
+  assert.equal(cost.choosePrepaid(null, newerLocal).remainingSeconds, 80);
+  assert.equal(cost.choosePrepaid(
+    { remainingSeconds: 0, languageKey: "en", kind: "hour", amountKrw: 15000, updatedAt: 50 },
+    newerLocal,
+  ).remainingSeconds, 80);
+
   const depositBody = { churchId: "alpha", amountKrw: 30000, depositId: "dep-1", paidAt: 1 };
   const credited = cost.prepareDeposit({ balances: {}, deposits: {}, ledger: [] }, depositBody);
   assert.equal(credited.duplicate, false);
@@ -243,9 +347,20 @@ test("admin shows both prices and the church app shows only the church price", (
   assert.match(usage[".validate"], /churchKrw/);
   assert.match(usage[".validate"], /hasChildren\(\['audioSeconds', 'churchKrw', 'apiKrw', 'updatedAt'\]\)/);
   assert.match(usage[".validate"], /!newData\.child\('chars'\)\.exists\(\) \|\| newData\.child\('chars'\)\.hasChildren\(\)/);
+  assert.match(broadcast, /id="prepaidTime"/);
+  assert.match(broadcast, /남은 시간/);
+  assert.match(broadcast, /이 시간이 끝날 때까지 추가 요금은 없습니다/);
+  assert.match(renderer, /이번 시작은 추가 요금이 없습니다/);
+  assert.match(renderer, /showPrepaid/);
   assert.doesNotMatch(usage[".validate"], /hasChildren\(\['audioSeconds', 'chars'/);
   assert.match(usage.chars.$lang[".validate"], /isNumber/);
   const billing = rules["live-interpret"].churches.$churchId.billing;
+  const prepaid = billing.prepaid;
+  assert.match(prepaid[".write"], /account\/uid/);
+  assert.match(prepaid[".validate"], /remainingSeconds/);
+  assert.match(prepaid[".validate"], /languageKey/);
+  assert.match(prepaid[".validate"], /'hour'/);
+  assert.match(prepaid[".validate"], /'half'/);
   assert.match(billing.balance[".validate"], /newData\.val\(\) < data\.val\(\)/);
   assert.match(billing.balance[".validate"], /deltaKrw/);
   assert.match(billing.balance[".validate"], /admin\/uid/);
