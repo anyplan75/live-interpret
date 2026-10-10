@@ -1,11 +1,11 @@
-const test = require("node:test");
+const { describe, test } = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  RTAUDIO_FIRST_DEVICE_ID,
-  utf8NamesByDeviceId,
-  rtAudioProbeKeeps,
-  listedDeviceNames,
-  devicesFromOsascript,
+  MAC_AUDIO_NAME_NOTE,
+  PROFILER_TIMEOUT_MS,
+  labelsFromProfilerReport,
+  macInputNameResult,
+  resetMacAudioNameCache,
 } = require("../broadcast/lib/mac-device-names");
 
 const garbledMic = {
@@ -19,140 +19,161 @@ const garbledPhone = {
   inputChannels: 1,
 };
 
-test("a garbled Mac name is replaced when a UTF-8 name exists for that id", () => {
-  const names = {
-    129: "Apple Inc.: MacBook Pro 마이크",
+function profilerReport(items) {
+  return {
+    SPAudioDataType: [
+      {
+        _name: "coreaudio_device",
+        _items: items,
+      },
+    ],
   };
-  const listed = listedDeviceNames([garbledMic, garbledPhone], "darwin", names);
-  assert.equal(listed[0].name, "Apple Inc.: MacBook Pro 마이크");
-  assert.equal(listed[0].deviceId, 129);
-  assert.equal(listed[0].inputChannels, 1);
-  assert.equal(listed[1].name, garbledPhone.name);
-});
+}
 
-test("an unknown id keeps the garbled name", () => {
-  const listed = listedDeviceNames([garbledMic], "darwin", {
-    999: "Apple Inc.: 다른 마이크",
+const micItem = {
+  _name: "MacBook Pro 마이크",
+  coreaudio_device_manufacturer: "Apple Inc.",
+  coreaudio_device_input: 1,
+  coreaudio_device_transport: "coreaudio_device_type_builtin",
+};
+
+function spawnReport(report, status = 0) {
+  const calls = [];
+  function spawn(command, args, options) {
+    calls.push({ command, args, options });
+    return {
+      status,
+      stdout: typeof report === "string" ? report : JSON.stringify(report),
+      stderr: "",
+    };
+  }
+  spawn.calls = calls;
+  return spawn;
+}
+
+describe("mac device names", { concurrency: false }, () => {
+  test("a profiler item replaces the garbled MacBook Pro name", () => {
+    resetMacAudioNameCache();
+    const report = profilerReport([
+      micItem,
+      {
+        _name: "BlackHole 2ch",
+        coreaudio_device_manufacturer: "Existential Audio Inc.",
+        coreaudio_device_input: 2,
+      },
+    ]);
+    const labels = labelsFromProfilerReport(report);
+    assert.deepEqual(labels, ["Apple Inc.: MacBook Pro 마이크", "Existential Audio Inc.: BlackHole 2ch"]);
+    const spawn = spawnReport(report);
+    const named = macInputNameResult([garbledMic, garbledPhone], "darwin", spawn);
+    assert.equal(named.devices[0].name, "Apple Inc.: MacBook Pro 마이크");
+    assert.equal(named.devices[0].deviceId, 129);
+    assert.equal(named.devices[0].inputChannels, 1);
+    assert.equal(named.note, null);
+    assert.equal(spawn.calls[0].command, "/usr/sbin/system_profiler");
+    assert.deepEqual(spawn.calls[0].args, ["SPAudioDataType", "-json"]);
+    assert.equal(spawn.calls[0].options.timeout, PROFILER_TIMEOUT_MS);
+    assert.equal(spawn.calls[0].options.encoding, "utf8");
   });
-  assert.equal(listed[0].name, garbledMic.name);
-  assert.equal(listedDeviceNames([garbledMic], "darwin", {})[0].name, garbledMic.name);
-  assert.equal(listedDeviceNames([garbledMic], "darwin", null)[0].name, garbledMic.name);
-});
 
-test("non-darwin list path is unchanged", () => {
-  const devices = [garbledMic, garbledPhone];
-  const names = {
-    129: "Apple Inc.: MacBook Pro 마이크",
-    130: "Apple Inc.: 정준의 iPhone 마이크",
-  };
-  const labels = Object.values(names);
-  assert.equal(listedDeviceNames(devices, "linux", names, labels), devices);
-  assert.equal(listedDeviceNames(devices, "win32", names, labels), devices);
-  assert.equal(devices[0].name, garbledMic.name);
-  assert.equal(devices[1].name, garbledPhone.name);
-});
+  test("an output-only speaker does not block the microphone", () => {
+    resetMacAudioNameCache();
+    const devices = [garbledMic];
+    const spawn = spawnReport(profilerReport([
+      micItem,
+      {
+        _name: "MacBook Pro 스피커",
+        coreaudio_device_manufacturer: "Apple Inc.",
+        coreaudio_device_output: 2,
+      },
+    ]));
+    const named = macInputNameResult(devices, "darwin", spawn);
+    assert.equal(named.devices[0].name, "Apple Inc.: MacBook Pro 마이크");
+    assert.equal(named.devices[0].inputChannels, 1);
+    assert.equal(named.note, null);
+  });
 
-test("an input-only mic is kept and numbered from 129", () => {
-  const hal = [
-    {
-      id: 8,
-      manufacturer: "Apple Inc.",
-      name: "MacBook Pro 마이크",
-      inputChannels: 1,
-      outputChannels: 0,
-      outputConfig: false,
-      sampleRates: [48000],
-    },
-    {
-      id: 11,
-      manufacturer: "Apple Inc.",
-      name: "정준의 iPhone",
-      inputChannels: 1,
-      outputChannels: 0,
-      outputConfig: false,
-      sampleRates: [44100],
-    },
-    {
-      id: 4,
-      manufacturer: "Apple Inc.",
-      name: "MacBook Pro Speakers",
-      inputChannels: 0,
-      outputChannels: 2,
-      inputConfig: false,
-      sampleRates: [48000],
-    },
-    {
-      id: 12,
-      manufacturer: "Nope",
-      name: "Missing streams",
-      inputChannels: 1,
-      outputChannels: 0,
-      outputConfig: false,
-      inputConfig: false,
-      sampleRates: [48000],
-    },
-    {
-      id: 13,
-      manufacturer: "Nope",
-      name: "No rates",
-      inputChannels: 1,
-      outputChannels: 0,
-      sampleRates: [],
-    },
-  ];
-  const kept = hal.filter(rtAudioProbeKeeps);
-  assert.deepEqual(kept.map((device) => device.name), [
-    "MacBook Pro 마이크",
-    "정준의 iPhone",
-    "MacBook Pro Speakers",
-  ]);
-  const map = utf8NamesByDeviceId(kept);
-  assert.equal(RTAUDIO_FIRST_DEVICE_ID, 129);
-  assert.equal(map[129], "Apple Inc.: MacBook Pro 마이크");
-  assert.equal(map[130], "Apple Inc.: 정준의 iPhone");
-  assert.equal(map[131], "Apple Inc.: MacBook Pro Speakers");
-});
+  test("two input items with the same ASCII letters stay garbled", () => {
+    resetMacAudioNameCache();
+    const devices = [garbledMic];
+    const spawn = spawnReport(profilerReport([
+      micItem,
+      {
+        _name: "MacBook Pro 입력",
+        coreaudio_device_manufacturer: "Apple Inc.",
+        coreaudio_device_input: 1,
+      },
+    ]));
+    const named = macInputNameResult(devices, "darwin", spawn);
+    assert.equal(named.devices, devices);
+    assert.equal(named.devices[0].name, garbledMic.name);
+    assert.equal(named.note, null);
+  });
 
-test("CoreAudio order is numbered from audify's first device id", () => {
-  const map = utf8NamesByDeviceId([
-    { id: 42, manufacturer: "Apple Inc.", name: "MacBook Pro 마이크" },
-    { id: 77, manufacturer: "Apple Inc.", name: "정준의 iPhone 마이크" },
-  ]);
-  assert.equal(RTAUDIO_FIRST_DEVICE_ID, 129);
-  assert.equal(map[129], "Apple Inc.: MacBook Pro 마이크");
-  assert.equal(map[130], "Apple Inc.: 정준의 iPhone 마이크");
-  assert.equal(map[42], "Apple Inc.: MacBook Pro 마이크");
-  assert.equal(map[77], "Apple Inc.: 정준의 iPhone 마이크");
-});
+  test("profiler failure leaves the original names", () => {
+    resetMacAudioNameCache();
+    const devices = [garbledMic, garbledPhone];
+    function failSpawn() {
+      return { status: 1, stdout: "", stderr: "fail", error: new Error("fail") };
+    }
+    const failed = macInputNameResult(devices, "darwin", failSpawn);
+    assert.equal(failed.devices, devices);
+    assert.equal(failed.devices[0].name, garbledMic.name);
+    assert.equal(failed.devices[1].name, garbledPhone.name);
+    assert.equal(failed.note, MAC_AUDIO_NAME_NOTE);
 
-test("an empty CoreAudio name still occupies an RtAudio id", () => {
-  const map = utf8NamesByDeviceId([
-    { id: 130, manufacturer: "Apple Inc.", name: "" },
-    { id: 50, manufacturer: "Apple Inc.", name: "MacBook Pro 마이크" },
-  ]);
-  assert.equal(map[129], undefined);
-  assert.equal(map[130], "Apple Inc.: MacBook Pro 마이크");
-  assert.equal(map[50], "Apple Inc.: MacBook Pro 마이크");
-});
+    function throwSpawn() {
+      throw new Error("boom");
+    }
+    const thrown = macInputNameResult(devices, "darwin", throwSpawn);
+    assert.equal(thrown.devices[0].name, garbledMic.name);
+    assert.equal(thrown.note, MAC_AUDIO_NAME_NOTE);
 
-test("a count mismatch still renames the mic by that letter match", () => {
-  const wrongIds = { 129: "BlackHole 2ch" };
-  const labels = ["BlackHole 2ch", "Apple Inc.: MacBook Pro 마이크", "Elgato Wave Link"];
-  const unknown = { deviceId: 180, name: "Totally Unknown ◆◆◆", inputChannels: 1 };
-  const listed = listedDeviceNames([garbledMic, unknown], "darwin", wrongIds, labels);
-  assert.equal(listed[0].name, "Apple Inc.: MacBook Pro 마이크");
-  assert.equal(listed[0].inputChannels, 1);
-  assert.equal(listed[1].name, unknown.name);
+    const broken = macInputNameResult(devices, "darwin", () => ({ status: 0, stdout: "not-json" }));
+    assert.equal(broken.devices[0].name, garbledMic.name);
+    assert.equal(broken.note, MAC_AUDIO_NAME_NOTE);
+  });
 
-  const ambiguous = listedDeviceNames([garbledMic], "darwin", null, [
-    "Apple Inc.: MacBook Pro 마이크",
-    "Apple Inc.: MacBook Pro 스피커",
-  ]);
-  assert.equal(ambiguous[0].name, garbledMic.name);
-});
+  test("linux and windows do not spawn system_profiler", () => {
+    resetMacAudioNameCache();
+    const devices = [garbledMic, garbledPhone];
+    let calls = 0;
+    function spy() {
+      calls += 1;
+      return { status: 0, stdout: JSON.stringify(profilerReport([micItem])) };
+    }
+    const linux = macInputNameResult(devices, "linux", spy);
+    const win = macInputNameResult(devices, "win32", spy);
+    assert.equal(calls, 0);
+    assert.equal(linux.devices, devices);
+    assert.equal(win.devices, devices);
+    assert.equal(linux.note, null);
+    assert.equal(win.note, null);
+    assert.equal(devices[0].name, garbledMic.name);
+    assert.equal(devices[1].name, garbledPhone.name);
+  });
 
-test("osascript JSON keeps Korean device names", () => {
-  const devices = devicesFromOsascript('{"devices":[{"id":42,"manufacturer":"Apple Inc.","name":"MacBook Pro 마이크"}]}');
-  const map = utf8NamesByDeviceId(devices);
-  assert.equal(map[129], "Apple Inc.: MacBook Pro 마이크");
+  test("a successful profiler read is cached", () => {
+    resetMacAudioNameCache();
+    const spawn = spawnReport(profilerReport([micItem]));
+    const first = macInputNameResult([garbledMic], "darwin", spawn);
+    const second = macInputNameResult([garbledMic], "darwin", spawn);
+    assert.equal(first.devices[0].name, "Apple Inc.: MacBook Pro 마이크");
+    assert.equal(second.devices[0].name, "Apple Inc.: MacBook Pro 마이크");
+    assert.equal(spawn.calls.length, 1);
+
+    resetMacAudioNameCache();
+    let calls = 0;
+    function flaky(command, args, options) {
+      calls += 1;
+      if (calls === 1) return { status: 1, stdout: "", error: new Error("fail") };
+      return spawnReport(profilerReport([micItem]))(command, args, options);
+    }
+    const failed = macInputNameResult([garbledMic], "darwin", flaky);
+    const recovered = macInputNameResult([garbledMic], "darwin", flaky);
+    assert.equal(failed.devices[0].name, garbledMic.name);
+    assert.equal(failed.note, MAC_AUDIO_NAME_NOTE);
+    assert.equal(recovered.devices[0].name, "Apple Inc.: MacBook Pro 마이크");
+    assert.equal(calls, 2);
+  });
 });

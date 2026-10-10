@@ -1,318 +1,56 @@
 const { spawnSync } = require("child_process");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
 
-// audify 1.10.1 vendors thestk/rtaudio @ 40e0d814. RtApi::RtApi sets
-// currentDeviceId_ = 129, and RtApiCore::probeDevices stores the real
-// AudioDeviceID in a private vector while publishing
-// info.ID = currentDeviceId_++. audify copies that ID to device.id
-// (src/rt_audio_converter.cpp). It is not the CoreAudio AudioDeviceID.
-// A fresh RtAudio() — listInputDevices constructs one per call — numbers
-// successfully probed kAudioHardwarePropertyDevices entries from 129.
-const RTAUDIO_FIRST_DEVICE_ID = 129;
+// RtAudio reads CoreAudio names with CFStringGetSystemEncoding(), so Korean
+// becomes replacement characters. osascript could not be relied on: a throw
+// there kept those RtAudio strings and showed no error. system_profiler is
+// on every Mac and prints UTF-8. A real SPAudioDataType report looks like:
+// { "SPAudioDataType": [ { "_name": "coreaudio_device", "_items": [
+//   { "_name": "MacBook Pro Microphone", "coreaudio_device_manufacturer": "Apple Inc." }
+// ] } ] }
+const SYSTEM_PROFILER = "/usr/sbin/system_profiler";
+const PROFILER_ARGS = ["SPAudioDataType", "-json"];
+const PROFILER_TIMEOUT_MS = 15000;
+const MAC_AUDIO_NAME_NOTE = "마이크 이름을 시스템 오디오 정보에서 읽지 못했습니다.";
 
-// kAudioDevicePropertyDeviceNameCFString and kAudioObjectPropertyName are
-// both 'lnam'. RtAudio already reads that CFString, then calls
-// CFStringGetCString with CFStringGetSystemEncoding(), which is not UTF-8,
-// so Korean becomes replacement characters. This lookup reads the same
-// CFString (and 'lmak' for the manufacturer) as UTF-8.
-const COREAUDIO_SCRIPT = String.raw`
-ObjC.import("CoreAudio");
-ObjC.import("Foundation");
-ObjC.import("CoreFoundation");
-ObjC.import("stdlib");
+let cachedLabels = null;
 
-var SEL_DEVICES = 0x64657623;
-var SEL_NAME = 0x6c6e616d;
-var SEL_MANUFACTURER = 0x6c6d616b;
-var SEL_STREAM = 0x736c6179;
-var SEL_RATES = 0x6e737223;
-var SCOPE_GLOBAL = 0x676c6f62;
-var SCOPE_INPUT = 0x696e7074;
-var SCOPE_OUTPUT = 0x6f757470;
-var ELEMENT = 0;
-var SYSTEM = 1;
-var UTF8 = 0x08000100;
-var held = [];
-var structOk = null;
-var bytesChecked = false;
-
-function b64decode(value) {
-  var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  var clean = String(value).replace(/[^A-Za-z0-9+/]/g, "");
-  var out = [];
-  var buffer = 0;
-  var bits = 0;
-  var i;
-  for (i = 0; i < clean.length; i++) {
-    buffer = (buffer << 6) | alphabet.indexOf(clean.charAt(i));
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out.push((buffer >> bits) & 255);
-    }
-  }
-  return out;
+function resetMacAudioNameCache() {
+  cachedLabels = null;
 }
 
-function dataFromBytes(bytes) {
-  var data = $.NSMutableData.data();
-  var slot = $.malloc(8);
-  var i;
-  for (i = 0; i < bytes.length; i++) {
-    slot[0] = bytes[i];
-    data.appendBytesLength(slot, 1);
-  }
-  held.push(data);
-  return data;
+function inputCount(device) {
+  const count = Number(device && device.coreaudio_device_input);
+  return Number.isFinite(count) ? count : 0;
 }
 
-function u32bytes(value) {
-  value = value >>> 0;
-  return [value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255];
+function profilerDeviceLabel(device) {
+  // A MacBook Pro report lists both "MacBook Pro 마이크" and
+  // "MacBook Pro 스피커". Their ASCII keys match, but the speaker has no
+  // input count. Only inputs may compete, or the mic stays garbled.
+  if (!device || inputCount(device) <= 0) return "";
+  if (typeof device._name !== "string" || device._name.length === 0) return "";
+  if (typeof device.coreaudio_device_manufacturer !== "string" || device.coreaudio_device_manufacturer.length === 0) return "";
+  return `${device.coreaudio_device_manufacturer}: ${device._name}`;
 }
 
-function readBytes(ptr, length) {
-  var data = $.NSData.dataWithBytesLength(ptr, length);
-  return b64decode(ObjC.unwrap(data.base64EncodedStringWithOptions(0)));
-}
-
-function assertByteWriter() {
-  var data = dataFromBytes([0x23, 0x76, 0x65, 0x64]);
-  var bytes = readBytes(data.bytes, 4);
-  if (!bytes || bytes.length < 4 || bytes[0] !== 0x23 || bytes[1] !== 0x76 || bytes[2] !== 0x65 || bytes[3] !== 0x64) {
-    throw new Error("bytes");
-  }
-}
-
-function structWorks() {
-  if (structOk !== null) return structOk;
-  try {
-    var address = Ref();
-    address[0] = { mSelector: SEL_DEVICES, mScope: SCOPE_GLOBAL, mElement: ELEMENT };
-    var size = Ref();
-    size[0] = 0;
-    var err = $.AudioObjectGetPropertyDataSize(SYSTEM, address, 0, null, size);
-    structOk = err === 0;
-  } catch (err) {
-    structOk = false;
-  }
-  return structOk;
-}
-
-function callProperty(deviceId, selector, scope, element, fn) {
-  if (structWorks()) {
-    var address = Ref();
-    address[0] = { mSelector: selector >>> 0, mScope: scope >>> 0, mElement: element >>> 0 };
-    return fn(address);
-  }
-  if (!bytesChecked) {
-    assertByteWriter();
-    bytesChecked = true;
-  }
-  var data = dataFromBytes(u32bytes(selector).concat(u32bytes(scope), u32bytes(element)));
-  return fn(data.bytes);
-}
-
-function utf8FromBytes(bytes) {
-  var end = bytes.indexOf(0);
-  if (end < 0) end = bytes.length;
-  var binary = "";
-  var i;
-  for (i = 0; i < end; i++) binary += String.fromCharCode(bytes[i]);
-  try {
-    return decodeURIComponent(escape(binary));
-  } catch (err) {
-    return null;
-  }
-}
-
-function asJsString(value) {
-  if (typeof value === "string") return value;
-  if (value === null || value === undefined) return null;
-  try {
-    var unwrapped = ObjC.unwrap(value);
-    if (typeof unwrapped === "string") return unwrapped;
-  } catch (err) {}
-  try {
-    if (typeof value.js === "string") return value.js;
-  } catch (err2) {}
-  try {
-    if (value.UTF8String !== null && value.UTF8String !== undefined) {
-      var utf = ObjC.unwrap(value.UTF8String);
-      if (typeof utf === "string") return utf;
-    }
-  } catch (err3) {}
-  try {
-    var buf = $.malloc(4096);
-    if (!$.CFStringGetCString(value, buf, 4096, UTF8)) return null;
-    return utf8FromBytes(readBytes(buf, 4096));
-  } catch (err4) {
-    return null;
-  }
-}
-
-function readString(deviceId, selector) {
-  return callProperty(deviceId, selector, SCOPE_GLOBAL, ELEMENT, function (address) {
-    var size = Ref();
-    size[0] = 8;
-    var out = Ref();
-    var err = $.AudioObjectGetPropertyData(deviceId, address, 0, null, size, out);
-    if (err !== 0) return null;
-    var value = out[0];
-    var text = asJsString(value);
-    if (typeof text === "string") text = String(text);
-    try {
-      if (value && typeof value !== "number") $.CFRelease(value);
-    } catch (releaseErr) {}
-    if (typeof text !== "string") throw new Error("cfstring");
-    return text;
-  });
-}
-
-function propertySize(deviceId, selector, scope) {
-  return callProperty(deviceId, selector, scope, ELEMENT, function (address) {
-    var size = Ref();
-    size[0] = 0;
-    var err = $.AudioObjectGetPropertyDataSize(deviceId, address, 0, null, size);
-    if (err !== 0) return 0;
-    return size[0] || 0;
-  });
-}
-
-function probed(deviceId) {
-  // RtApiCore::probeDeviceInfo (rtaudio 40e0d814) reads both stream
-  // configurations, then counts channels. Zero channels on one side is
-  // normal: a MacBook mic has no output stream, speakers have no input.
-  // audify still lists those devices. A JXA size of 0 on the empty side
-  // must not drop them. Skip only when both sides are unreadable, or the
-  // sample-rate scope RtAudio would query is empty.
-  var outputBytes = propertySize(deviceId, SEL_STREAM, SCOPE_OUTPUT);
-  var inputBytes = propertySize(deviceId, SEL_STREAM, SCOPE_INPUT);
-  if (outputBytes <= 0 && inputBytes <= 0) return false;
-  var rateScopes = [];
-  if (outputBytes <= 0) rateScopes.push(SCOPE_INPUT);
-  else if (inputBytes <= 0) rateScopes.push(SCOPE_OUTPUT);
-  else {
-    rateScopes.push(SCOPE_OUTPUT);
-    rateScopes.push(SCOPE_INPUT);
-  }
-  var s;
-  for (s = 0; s < rateScopes.length; s++) {
-    if (propertySize(deviceId, SEL_RATES, rateScopes[s]) > 0) return true;
-  }
+function isAudioReport(parsed) {
+  if (Array.isArray(parsed)) return true;
+  if (!parsed || typeof parsed !== "object") return false;
+  if (Array.isArray(parsed.SPAudioDataType)) return true;
+  if (Array.isArray(parsed._items)) return true;
   return false;
 }
 
-function deviceIds() {
-  return callProperty(SYSTEM, SEL_DEVICES, SCOPE_GLOBAL, ELEMENT, function (address) {
-    var size = Ref();
-    size[0] = 0;
-    var err = $.AudioObjectGetPropertyDataSize(SYSTEM, address, 0, null, size);
-    if (err !== 0) throw new Error("devices");
-    var byteCount = size[0] || 0;
-    if (byteCount < 4) return [];
-    var buf = $.malloc(byteCount);
-    var io = Ref();
-    io[0] = byteCount;
-    err = $.AudioObjectGetPropertyData(SYSTEM, address, 0, null, io, buf);
-    if (err !== 0) throw new Error("devices");
-    var actual = io[0] || byteCount;
-    if (actual > byteCount || actual < 4) actual = byteCount;
-    var bytes = readBytes(buf, actual);
-    var ids = [];
-    var i;
-    for (i = 0; i + 3 < bytes.length; i += 4) {
-      ids.push((bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24)) >>> 0);
-    }
-    return ids;
-  });
-}
-
-function list() {
-  var ids = deviceIds();
-  var devices = [];
-  var i;
-  for (i = 0; i < ids.length; i++) {
-    var id = ids[i];
-    if (!id || !probed(id)) continue;
-    var manufacturer = readString(id, SEL_MANUFACTURER);
-    var name = readString(id, SEL_NAME);
-    if (manufacturer === null || name === null) continue;
-    devices.push({ id: id, manufacturer: manufacturer, name: name });
+function collectProfilerDevices(node, out) {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    node.forEach((item) => collectProfilerDevices(item, out));
+    return;
   }
-  return JSON.stringify({ devices: devices });
-}
-
-list();
-`;
-
-let cachedNames = null;
-
-function coreAudioDeviceLabel(manufacturer, name) {
-  if (typeof name !== "string" || name.length === 0) return "";
-  const maker = typeof manufacturer === "string" ? manufacturer : "";
-  return `${maker}: ${name}`;
-}
-
-function utf8NamesByDeviceId(entries) {
-  const map = Object.create(null);
-  if (!Array.isArray(entries)) return map;
-  const used = new Set();
-  entries.forEach((entry, index) => {
-    const label = coreAudioDeviceLabel(entry && entry.manufacturer, entry && entry.name);
-    const rtId = RTAUDIO_FIRST_DEVICE_ID + index;
-    if (!label) return;
-    map[rtId] = label;
-    used.add(rtId);
-  });
-  entries.forEach((entry) => {
-    if (!entry || entry.id == null || entry.id === "") return;
-    const audioId = Number(entry.id);
-    if (!Number.isFinite(audioId) || used.has(audioId) || Object.prototype.hasOwnProperty.call(map, audioId)) return;
-    const label = coreAudioDeviceLabel(entry.manufacturer, entry.name);
-    if (!label) return;
-    map[audioId] = label;
-  });
-  return map;
-}
-
-function applyUtf8DeviceNames(devices, namesById) {
-  if (!Array.isArray(devices) || !namesById) return devices;
-  let changed = false;
-  const next = devices.map((device) => {
-    if (!device || device.deviceId == null) return device;
-    const utf8 = namesById[device.deviceId];
-    if (typeof utf8 !== "string" || utf8.length === 0 || utf8 === device.name) return device;
-    changed = true;
-    return { ...device, name: utf8 };
-  });
-  return changed ? next : devices;
-}
-
-function letterKey(name) {
-  return String(name || "").replace(/[^0-9A-Za-z]/g, "").toLowerCase();
-}
-
-function rtAudioProbeKeeps(device) {
-  if (!device || typeof device.manufacturer !== "string" || typeof device.name !== "string") return false;
-  if (device.outputConfig === false && device.inputConfig === false) return false;
-  const rates = device.sampleRates;
-  return Array.isArray(rates) && rates.length > 0;
-}
-
-function utf8Labels(entries) {
-  if (!Array.isArray(entries)) return [];
-  const seen = new Set();
-  const labels = [];
-  entries.forEach((entry) => {
-    const label = coreAudioDeviceLabel(entry && entry.manufacturer, entry && entry.name);
-    if (!label || seen.has(label)) return;
-    seen.add(label);
-    labels.push(label);
-  });
-  return labels;
+  const label = profilerDeviceLabel(node);
+  if (label) out.push(label);
+  if (Array.isArray(node._items)) collectProfilerDevices(node._items, out);
+  if (node.SPAudioDataType) collectProfilerDevices(node.SPAudioDataType, out);
 }
 
 function dedupedLabels(labels) {
@@ -324,6 +62,18 @@ function dedupedLabels(labels) {
     out.push(label);
   });
   return out;
+}
+
+function labelsFromProfilerReport(report) {
+  const parsed = typeof report === "string" ? JSON.parse(report) : report;
+  if (!isAudioReport(parsed)) throw new Error("profiler");
+  const labels = [];
+  collectProfilerDevices(parsed, labels);
+  return dedupedLabels(labels);
+}
+
+function letterKey(name) {
+  return String(name || "").replace(/[^0-9A-Za-z]/g, "").toLowerCase();
 }
 
 function uniqueLabelByLetterKey(labels) {
@@ -341,21 +91,16 @@ function uniqueLabelByLetterKey(labels) {
   return unique;
 }
 
-function listedDeviceNames(devices, platform, namesById, utf8LabelList) {
+function listedDeviceNames(devices, platform, utf8LabelList) {
   if (platform !== "darwin") return devices;
   if (!Array.isArray(devices)) return devices;
-  const labels = Array.isArray(utf8LabelList) ? utf8LabelList : namesById ? Object.values(namesById) : [];
-  const byLetter = uniqueLabelByLetterKey(labels);
+  const byLetter = uniqueLabelByLetterKey(utf8LabelList);
   let changed = false;
   const next = devices.map((device) => {
     if (!device) return device;
-    let name = device.name;
-    if (namesById && device.deviceId != null) {
-      const byId = namesById[device.deviceId];
-      if (typeof byId === "string" && byId.length > 0) name = byId;
-    }
     const key = letterKey(device.name);
-    if (key && byLetter.has(key)) name = byLetter.get(key);
+    if (!key || !byLetter.has(key)) return device;
+    const name = byLetter.get(key);
     if (name === device.name) return device;
     changed = true;
     return { ...device, name };
@@ -363,60 +108,48 @@ function listedDeviceNames(devices, platform, namesById, utf8LabelList) {
   return changed ? next : devices;
 }
 
-function devicesFromOsascript(stdout) {
-  const text = String(stdout || "").trim();
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end < start) throw new Error("coreaudio");
-  const parsed = JSON.parse(text.slice(start, end + 1));
-  if (!parsed || !Array.isArray(parsed.devices)) throw new Error("coreaudio");
-  return parsed.devices;
-}
-
-function readCoreAudioDevices() {
-  const file = path.join(os.tmpdir(), `live-interpret-audio-names-${process.pid}.js`);
-  fs.writeFileSync(file, COREAUDIO_SCRIPT, "utf8");
+function readProfilerLabels(spawnImpl) {
+  const run = typeof spawnImpl === "function" ? spawnImpl : spawnSync;
+  let result;
   try {
-    const result = spawnSync("/usr/bin/osascript", ["-l", "JavaScript", file], {
+    result = run(SYSTEM_PROFILER, PROFILER_ARGS, {
       encoding: "utf8",
-      timeout: 8000,
-      maxBuffer: 1024 * 1024,
+      timeout: PROFILER_TIMEOUT_MS,
+      maxBuffer: 4 * 1024 * 1024,
     });
-    if (!result || result.error || result.status !== 0) {
-      throw new Error((result && (result.stderr || result.error)) || "osascript");
-    }
-    return devicesFromOsascript(result.stdout);
-  } finally {
-    try {
-      fs.unlinkSync(file);
-    } catch (_) {
-      /* temp script is only an input to osascript */
-    }
+  } catch (_) {
+    throw new Error("profiler");
+  }
+  if (!result || result.error || result.status !== 0) throw new Error("profiler");
+  return labelsFromProfilerReport(result.stdout);
+}
+
+function macAudioLabels(platform, spawnImpl) {
+  if (platform !== "darwin") return { labels: [], note: null };
+  if (cachedLabels) return { labels: cachedLabels, note: null };
+  try {
+    const labels = readProfilerLabels(spawnImpl);
+    cachedLabels = labels;
+    return { labels, note: null };
+  } catch (_) {
+    return { labels: [], note: MAC_AUDIO_NAME_NOTE };
   }
 }
 
-function macUtf8NamesById() {
-  if (cachedNames) return cachedNames;
-  try {
-    const entries = readCoreAudioDevices();
-    cachedNames = {
-      count: entries.length,
-      names: utf8NamesByDeviceId(entries),
-      labels: utf8Labels(entries),
-    };
-  } catch (_) {
-    cachedNames = { count: -1, names: Object.create(null), labels: [] };
-  }
-  return cachedNames;
+function macInputNameResult(devices, platform, spawnImpl) {
+  const looked = macAudioLabels(platform, spawnImpl);
+  return {
+    devices: listedDeviceNames(devices, platform, looked.labels),
+    note: looked.note,
+  };
 }
 
 module.exports = {
-  RTAUDIO_FIRST_DEVICE_ID,
-  coreAudioDeviceLabel,
-  utf8NamesByDeviceId,
-  applyUtf8DeviceNames,
-  rtAudioProbeKeeps,
+  MAC_AUDIO_NAME_NOTE,
+  PROFILER_TIMEOUT_MS,
+  labelsFromProfilerReport,
   listedDeviceNames,
-  devicesFromOsascript,
-  macUtf8NamesById,
+  macAudioLabels,
+  macInputNameResult,
+  resetMacAudioNameCache,
 };

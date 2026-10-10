@@ -1,5 +1,5 @@
 const { channelPeaks } = require("./audio-util");
-const { listedDeviceNames, macUtf8NamesById } = require("./mac-device-names");
+const { macInputNameResult, MAC_AUDIO_NAME_NOTE } = require("./mac-device-names");
 
 function loadAudify() {
   try {
@@ -33,7 +33,6 @@ function listInputDevices() {
   const { RtAudio, RtAudioApi } = loadAudify();
   const devices = [];
   const notes = [];
-  let coreDeviceCount = null;
   hostApis(RtAudioApi).forEach((api) => {
     let rt;
     try {
@@ -49,7 +48,6 @@ function listInputDevices() {
       notes.push(`${api.label}: 장치를 읽지 못했습니다. ${err.message || ""}`.trim());
       return;
     }
-    if (process.platform === "darwin") coreDeviceCount = found.length;
     const inputs = found.filter((device) => device.inputChannels > 0);
     if (!inputs.length) notes.push(`${api.label}: 입력 장치가 없습니다.`);
     const apiName = (() => {
@@ -74,9 +72,14 @@ function listInputDevices() {
       });
     });
   });
-  const utf8 = process.platform === "darwin" && coreDeviceCount != null ? macUtf8NamesById() : null;
-  const namesById = utf8 && utf8.count === coreDeviceCount ? utf8.names : null;
-  return { devices: listedDeviceNames(devices, process.platform, namesById, utf8 && utf8.labels), notes };
+  try {
+    const named = macInputNameResult(devices, process.platform);
+    if (named.note) notes.push(named.note);
+    return { devices: named.devices, notes };
+  } catch (_) {
+    notes.push(MAC_AUDIO_NAME_NOTE);
+    return { devices, notes };
+  }
 }
 
 function uniqueRates(device) {
