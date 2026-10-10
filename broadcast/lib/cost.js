@@ -66,7 +66,7 @@
     }
     const sourceChars = Math.max(...langs);
     const requests = sourceChars / CHARS_PER_REQUEST;
-    const batches = Math.ceil(langs.length / BATCH_SIZA);
+    const batches = Math.ceil(langs.length / BATCH_SIZE);
     const inputTokens = requests * PROMPT_OVERHEAD_TOKENS * batches + sourceChars * TOKENS_PER_CHAR * batches;
     const outputTokens = sumChars(chars) * TOKENS_PER_CHAR;
     const translationUsd = inputTokens * prices.inputPerMillion / 1e6
