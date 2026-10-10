@@ -182,10 +182,27 @@ function propertySize(deviceId, selector, scope) {
 }
 
 function probed(deviceId) {
-  if (propertySize(deviceId, SEL_STREAM, SCOPE_OUTPUT) <= 0) return false;
-  if (propertySize(deviceId, SEL_STREAM, SCOPE_INPUT) <= 0) return false;
-  if (propertySize(deviceId, SEL_RATES, SCOPE_OUTPUT) <= 0 && propertySize(deviceId, SEL_RATES, SCOPE_INPUT) <= 0) return false;
-  return true;
+  // RtApiCore::probeDeviceInfo (rtaudio 40e0d814) reads both stream
+  // configurations, then counts channels. Zero channels on one side is
+  // normal: a MacBook mic has no output stream, speakers have no input.
+  // audify still lists those devices. A JXA size of 0 on the empty side
+  // must not drop them. Skip only when both sides are unreadable, or the
+  // sample-rate scope RtAudio would query is empty.
+  var outputBytes = propertySize(deviceId, SEL_STREAM, SCOPE_OUTPUT);
+  var inputBytes = propertySize(deviceId, SEL_STREAM, SCOPE_INPUT);
+  if (outputBytes <= 0 && inputBytes <= 0) return false;
+  var rateScopes = [];
+  if (outputBytes <= 0) rateScopes.push(SCOPE_INPUT);
+  else if (inputBytes <= 0) rateScopes.push(SCOPE_OUTPUT);
+  else {
+    rateScopes.push(SCOPE_OUTPUT);
+    rateScopes.push(SCOPE_INPUT);
+  }
+  var s;
+  for (s = 0; s < rateScopes.length; s++) {
+    if (propertySize(deviceId, SEL_RATES, rateScopes[s]) > 0) return true;
+  }
+  return false;
 }
 
 function deviceIds() {
@@ -274,14 +291,76 @@ function applyUtf8DeviceNames(devices, namesById) {
   return changed ? next : devices;
 }
 
-function namesIfDeviceCountMatches(entries, audifyDeviceCount) {
-  if (!Array.isArray(entries) || entries.length !== audifyDeviceCount) return null;
-  return utf8NamesByDeviceId(entries);
+function letterKey(name) {
+  return String(name || "").replace(/[^0-9A-Za-z]/g, "").toLowerCase();
 }
 
-function listedDeviceNames(devices, platform, namesById) {
+function rtAudioProbeKeeps(device) {
+  if (!device || typeof device.manufacturer !== "string" || typeof device.name !== "string") return false;
+  if (device.outputConfig === false && device.inputConfig === false) return false;
+  const rates = device.sampleRates;
+  return Array.isArray(rates) && rates.length > 0;
+}
+
+function utf8Labels(entries) {
+  if (!Array.isArray(entries)) return [];
+  const seen = new Set();
+  const labels = [];
+  entries.forEach((entry) => {
+    const label = coreAudioDeviceLabel(entry && entry.manufacturer, entry && entry.name);
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    labels.push(label);
+  });
+  return labels;
+}
+
+function dedupedLabels(labels) {
+  const seen = new Set();
+  const out = [];
+  (labels || []).forEach((label) => {
+    if (typeof label !== "string" || !label || seen.has(label)) return;
+    seen.add(label);
+    out.push(label);
+  });
+  return out;
+}
+
+function uniqueLabelByLetterKey(labels) {
+  const groups = new Map();
+  dedupedLabels(labels).forEach((label) => {
+    const key = letterKey(label);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(label);
+  });
+  const unique = new Map();
+  groups.forEach((list, key) => {
+    if (list.length === 1) unique.set(key, list[0]);
+  });
+  return unique;
+}
+
+function listedDeviceNames(devices, platform, namesById, utf8LabelList) {
   if (platform !== "darwin") return devices;
-  return applyUtf8DeviceNames(devices, namesById);
+  if (!Array.isArray(devices)) return devices;
+  const labels = Array.isArray(utf8LabelList) ? utf8LabelList : namesById ? Object.values(namesById) : [];
+  const byLetter = uniqueLabelByLetterKey(labels);
+  let changed = false;
+  const next = devices.map((device) => {
+    if (!device) return device;
+    let name = device.name;
+    if (namesById && device.deviceId != null) {
+      const byId = namesById[device.deviceId];
+      if (typeof byId === "string" && byId.length > 0) name = byId;
+    }
+    const key = letterKey(device.name);
+    if (key && byLetter.has(key)) name = byLetter.get(key);
+    if (name === device.name) return device;
+    changed = true;
+    return { ...device, name };
+  });
+  return changed ? next : devices;
 }
 
 function devicesFromOsascript(stdout) {
@@ -320,9 +399,13 @@ function macUtf8NamesById() {
   if (cachedNames) return cachedNames;
   try {
     const entries = readCoreAudioDevices();
-    cachedNames = { count: entries.length, names: utf8NamesByDeviceId(entries) };
+    cachedNames = {
+      count: entries.length,
+      names: utf8NamesByDeviceId(entries),
+      labels: utf8Labels(entries),
+    };
   } catch (_) {
-    cachedNames = { count: -1, names: Object.create(null) };
+    cachedNames = { count: -1, names: Object.create(null), labels: [] };
   }
   return cachedNames;
 }
@@ -332,7 +415,7 @@ module.exports = {
   coreAudioDeviceLabel,
   utf8NamesByDeviceId,
   applyUtf8DeviceNames,
-  namesIfDeviceCountMatches,
+  rtAudioProbeKeeps,
   listedDeviceNames,
   devicesFromOsascript,
   macUtf8NamesById,

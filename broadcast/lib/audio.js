@@ -76,7 +76,7 @@ function listInputDevices() {
   });
   const utf8 = process.platform === "darwin" && coreDeviceCount != null ? macUtf8NamesById() : null;
   const namesById = utf8 && utf8.count === coreDeviceCount ? utf8.names : null;
-  return { devices: listedDeviceNames(devices, process.platform, namesById), notes };
+  return { devices: listedDeviceNames(devices, process.platform, namesById, utf8 && utf8.labels), notes };
 }
 
 function uniqueRates(device) {
