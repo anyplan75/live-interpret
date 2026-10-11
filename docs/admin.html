@@ -58,6 +58,8 @@
       <input id="churchPassword" type="password" autocomplete="new-password">
       <label for="churchPassword2">비밀번호 확인</label>
       <input id="churchPassword2" type="password" autocomplete="new-password">
+      <label for="churchRegion">지역</label>
+      <select id="churchRegion"></select>
       <div class="row" style="margin-top:12px;">
         <button type="button" id="addChurch">교회와 계정 추가</button>
       </div>
@@ -95,9 +97,14 @@
       <div id="costList" class="cost-list"></div>
     </section>
 
-    <section class="card">
+    <section class="card" id="churchFinder">
       <h2>교회</h2>
-      <div id="churchList" class="church-list"></div>
+      <p class="hint">위는 지역, 왼쪽은 이름 첫 글자입니다. 둘을 같이 고르면 그 교회만 보입니다.</p>
+      <div id="regionTabs" class="region-tabs" role="tablist" aria-label="지역"></div>
+      <div class="church-finder">
+        <div id="consonantTabs" class="consonant-tabs" role="tablist" aria-label="초성"></div>
+        <div id="churchList" class="church-list"></div>
+      </div>
     </section>
 
     <section class="card" id="detail" hidden>
@@ -161,6 +168,7 @@
   <script src="js/db.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/identity.js"></script>
+  <script src="js/church-find.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

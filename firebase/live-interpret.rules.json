@@ -46,6 +46,11 @@
           ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
           ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
         },
+        "region": {
+          ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+          ".validate": "newData.isString() && (newData.val() == '서울' || newData.val() == '부산' || newData.val() == '대구' || newData.val() == '인천' || newData.val() == '광주' || newData.val() == '대전' || newData.val() == '울산' || newData.val() == '세종' || newData.val() == '경기' || newData.val() == '강원' || newData.val() == '충북' || newData.val() == '충남' || newData.val() == '전북' || newData.val() == '전남' || newData.val() == '경북' || newData.val() == '경남' || newData.val() == '제주')"
+        },
         "glossary": {
           ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
           ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"

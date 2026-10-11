@@ -5,6 +5,8 @@ const linksEl = document.getElementById("links");
 const sessionsEl = document.getElementById("sessions");
 const textsEl = document.getElementById("texts");
 let churches = [];
+let regionFilter = "전체";
+let consonantFilter = "전체";
 let currentId = "";
 let textUnsub = null;
 let usageUnsubs = [];
@@ -76,36 +78,134 @@ async function loadChurches() {
       name: row.name || id,
       createdAt: row.createdAt || 0,
       active: LI.catalog.churchIsActive(row),
+      region: LI.churchFind.normalizeRegion(row.region),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
-  listEl.innerHTML = "";
-  if (!churches.length) {
-    listEl.innerHTML = '<p class="hint">아직 교회가 없습니다.</p>';
-    subscribeUsage();
-    await refreshBillingOps();
-    return;
-  }
-  churches.forEach((church) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.id = church.id;
-    button.className = `church-item${church.id === currentId ? " on" : ""}${church.active ? "" : " off"}`;
-    const name = document.createElement("span");
-    name.textContent = church.name;
-    const state = document.createElement("span");
-    state.className = "state";
-    state.textContent = church.active ? "활성" : "비활성";
-    const cost = document.createElement("span");
-    cost.className = "church-cost";
-    cost.dataset.cost = church.id;
-    cost.textContent = "0원";
-    button.append(name, state, cost);
-    button.addEventListener("click", () => openChurch(church.id));
-    listEl.append(button);
-  });
+  renderChurchList();
   subscribeUsage();
   await refreshBillingOps();
 }
+
+function fillRegionSelect(select, selected) {
+  if (!select) return;
+  const current = selected == null ? "" : selected;
+  select.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "지역 없음";
+  select.append(empty);
+  LI.churchFind.REGIONS.forEach((label) => {
+    const option = document.createElement("option");
+    option.value = label;
+    option.textContent = label;
+    select.append(option);
+  });
+  select.value = LI.churchFind.normalizeRegion(current);
+}
+
+function paintTabs(container, tabs, selected, onPick) {
+  if (!container) return;
+  container.innerHTML = "";
+  tabs.forEach((tab) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `finder-tab${tab.id === selected ? " on" : ""}`;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", tab.id === selected ? "true" : "false");
+    const label = document.createElement("span");
+    label.className = "tab-label";
+    label.textContent = tab.id;
+    const count = document.createElement("span");
+    count.className = "tab-count";
+    count.textContent = String(tab.count);
+    button.append(label, count);
+    button.addEventListener("click", () => onPick(tab.id));
+    container.append(button);
+  });
+}
+
+function churchCard(church) {
+  const card = document.createElement("div");
+  card.dataset.id = church.id;
+  card.className = `church-item${church.id === currentId ? " on" : ""}${church.active ? "" : " off"}`;
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "church-open";
+  const name = document.createElement("span");
+  name.textContent = church.name;
+  const state = document.createElement("span");
+  state.className = "state";
+  state.textContent = church.active ? "활성" : "비활성";
+  const cost = document.createElement("span");
+  cost.className = "church-cost";
+  cost.dataset.cost = church.id;
+  cost.textContent = "0원";
+  open.append(name, state, cost);
+  open.addEventListener("click", () => openChurch(church.id));
+  const regionLabel = document.createElement("label");
+  regionLabel.className = "church-region";
+  const caption = document.createElement("span");
+  caption.textContent = "지역";
+  const select = document.createElement("select");
+  select.setAttribute("aria-label", `${church.name} 지역`);
+  fillRegionSelect(select, church.region);
+  select.addEventListener("change", () => saveChurchRegion(church.id, select.value));
+  regionLabel.append(caption, select);
+  card.append(open, regionLabel);
+  return card;
+}
+
+function renderChurchList() {
+  const view = LI.churchFind.finderView(churches, regionFilter, consonantFilter);
+  regionFilter = view.regionTab;
+  consonantFilter = view.consonantTab;
+  paintTabs(document.getElementById("regionTabs"), view.regionTabs, regionFilter, (tab) => {
+    regionFilter = tab;
+    renderChurchList();
+  });
+  paintTabs(document.getElementById("consonantTabs"), view.consonantTabs, consonantFilter, (tab) => {
+    consonantFilter = tab;
+    renderChurchList();
+  });
+  listEl.innerHTML = "";
+  if (view.empty) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = view.empty;
+    listEl.append(empty);
+    return;
+  }
+  view.churches.forEach((church) => {
+    listEl.append(churchCard(church));
+    if (usageById[church.id]) paintUsage(church.id, usageById[church.id]);
+  });
+}
+
+async function saveChurchRegion(id, value) {
+  const region = value ? LI.churchFind.normalizeRegion(value) : "";
+  if (value && !region) {
+    showError(new Error("지역이 올바르지 않습니다."));
+    renderChurchList();
+    return;
+  }
+  const church = churches.find((item) => item.id === id);
+  try {
+    await LI.db.set(`churches/${id}/region`, region || null);
+    await LI.db.update(`churchIndex/${id}`, { region: region || null });
+    if (church) church.region = region;
+    renderChurchList();
+  } catch (err) {
+    showError(err);
+    renderChurchList();
+  }
+}
+
+LI.adminFinder = {
+  show(rows) {
+    churches = Array.isArray(rows) ? rows : [];
+    renderChurchList();
+  },
+};
 
 function fillTopupChurches() {
   const select = document.getElementById("topupChurch");
@@ -548,6 +648,12 @@ document.getElementById("addChurch").addEventListener("click", async () => {
     msg.textContent = "비밀번호가 서로 다릅니다.";
     return;
   }
+  const regionInput = document.getElementById("churchRegion").value;
+  const region = regionInput ? LI.churchFind.normalizeRegion(regionInput) : "";
+  if (regionInput && !region) {
+    msg.textContent = "지역이 올바르지 않습니다.";
+    return;
+  }
   const id = LI.catalog.makeChurchId(name);
   const identity = LI.identity.createClient({ apiKey: LI.catalog.firebase.apiKey });
   let created = null;
@@ -558,16 +664,20 @@ document.getElementById("addChurch").addEventListener("click", async () => {
     await LI.db.set(`churches/${id}/name`, name);
     await LI.db.set(`churches/${id}/createdAt`, createdAt);
     await LI.db.set(`churches/${id}/active`, true);
+    if (region) await LI.db.set(`churches/${id}/region`, region);
     await LI.db.set(`churches/${id}/glossary`, glossary);
     await LI.db.set(`churches/${id}/model`, LI.catalog.defaultModel);
     await LI.db.set(`churches/${id}/account`, { uid: created.localId, email: created.email });
     await LI.db.set(`churches/${id}/live/settings`, LI.catalog.defaultLiveSettings());
-    await LI.db.set(`churchIndex/${id}`, { name, createdAt, active: true });
+    const indexRow = { name, createdAt, active: true };
+    if (region) indexRow.region = region;
+    await LI.db.set(`churchIndex/${id}`, indexRow);
     await LI.db.set(`accounts/${created.localId}`, { churchId: id });
     document.getElementById("churchName").value = "";
     document.getElementById("churchEmail").value = "";
     document.getElementById("churchPassword").value = "";
     document.getElementById("churchPassword2").value = "";
+    document.getElementById("churchRegion").value = "";
     await loadChurches();
     await openChurch(id);
     msg.textContent = "교회와 로그인 계정을 만들었습니다. 관리자 로그인은 그대로입니다.";
@@ -578,6 +688,7 @@ document.getElementById("addChurch").addEventListener("click", async () => {
         `churches/${id}/name`,
         `churches/${id}/createdAt`,
         `churches/${id}/active`,
+        `churches/${id}/region`,
         `churches/${id}/glossary`,
         `churches/${id}/model`,
         `churches/${id}/account`,
@@ -800,6 +911,7 @@ document.getElementById("topupAdd").addEventListener("click", async () => {
 
 const rateBody = document.getElementById("rateCardBody");
 if (rateBody) rateBody.textContent = LI.cost.rateCardText();
+fillRegionSelect(document.getElementById("churchRegion"), "");
 
 LI.db.clearChurch();
 LI.db.init()

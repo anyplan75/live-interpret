@@ -110,9 +110,69 @@ pre.transcript {
 }
 
 .stack label { display: block; font-weight: 700; margin: 10px 0 6px; }
-.stack input { width: 100%; }
+.stack input, .stack select { width: 100%; }
 .msg { min-height: 1.2em; color: #7dcea0; }
 .error { color: #ffb4b4; }
+
+.region-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 0 12px;
+  padding-bottom: 4px;
+}
+.church-finder { display: flex; align-items: flex-start; gap: 10px; }
+.consonant-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.church-finder .church-list { flex: 1 1 auto; min-width: 0; }
+button.finder-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.consonant-tabs button.finder-tab { width: 100%; min-width: 84px; }
+button.finder-tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.finder-tab .tab-count { color: var(--accent-2); font-variant-numeric: tabular-nums; font-weight: 800; }
+button.finder-tab.on .tab-count { color: #fff; }
+.church-item { cursor: default; }
+.church-item .church-open {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+.church-item .church-region {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.church-item .church-region select { display: block; width: 100%; margin-top: 4px; padding: 6px 8px; }
 
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
 .lang-row { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
