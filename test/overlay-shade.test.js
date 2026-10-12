@@ -40,19 +40,28 @@ test("overlay scrim is one edge band per layout", () => {
   assert.doesNotMatch(css, /background:\s*rgba\(0,\s*0,\s*0,\s*0\.7\)/);
 });
 
-test("gradient tail reaches zero without a hard stop", () => {
+test("shade falls from the opacity setting to clear across the whole band", () => {
   const band = stops(css);
-  assert.ok(band.length >= 12);
+  assert.ok(band.length >= 11);
   const positions = band.map((stop) => stop.at);
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
   assert.equal(positions[0], 0);
   assert.equal(positions[positions.length - 1], 100);
-  const factors = [...css.matchAll(/calc\(var\(--shade-a\)\s*\*\s*([0-9.]+)\)/g)].map((match) => Number(match[1]));
-  assert.ok(factors.length >= 10);
-  for (let i = 1; i < factors.length; i += 1) assert.ok(factors[i] <= factors[i - 1]);
-  assert.ok(factors[factors.length - 1] < 0.001);
-  assert.ok(factors[factors.length - 3] < 0.02);
+  assert.match(band[0].raw, /, var\(--shade-a\)\) 0%/);
   assert.match(css, /rgba\(var\(--shade-r\), var\(--shade-g\), var\(--shade-b\), 0\) 100%/);
+  const sampled = [...css.matchAll(/rgba\(var\(--shade-r\), var\(--shade-g\), var\(--shade-b\), calc\(var\(--shade-a\) \* ([0-9.]+)\)\) ([0-9.]+)%/g)].map((match) => ({
+    factor: Number(match[1]),
+    at: Number(match[2]),
+  }));
+  assert.ok(sampled.length >= 8);
+  for (let i = 1; i < sampled.length; i += 1) {
+    assert.ok(sampled[i].factor < sampled[i - 1].factor);
+    assert.ok(sampled[i].at > sampled[i - 1].at);
+  }
+  const at = (percent) => sampled.find((stop) => stop.at === percent);
+  assert.ok(Math.abs(at(50).factor - 0.5) <= 0.05);
+  assert.ok(at(20).factor <= 0.85 && at(20).factor >= 0.7);
+  assert.ok(at(80).factor <= 0.3 && at(80).factor >= 0.1);
 });
 
 test("opacity setting is the darkest alpha and the slider stays", () => {
