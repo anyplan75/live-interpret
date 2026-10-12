@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("fs");
+const path = require("path");
 const { extractChannel, resampleInt16, selectedChannelPcm, wavFromPcm16, channelPeaks } = require("../broadcast/lib/audio-util");
 const { UtteranceVad } = require("../broadcast/lib/vad");
 const { listInputDevices } = require("../broadcast/lib/audio");
@@ -49,6 +51,18 @@ test("vad returns one utterance after speech and silence", () => {
   quiet.push(frame(30, 0.4));
   const tooShort = quiet.push(frame(80, 0));
   assert.equal(tooShort.finished, false);
+});
+
+test("a missing saved input uses the default mic and hides RtApiCore disconnect text", () => {
+  const root = path.join(__dirname, "..");
+  const audio = fs.readFileSync(path.join(root, "broadcast/lib/audio.js"), "utf8");
+  const engine = fs.readFileSync(path.join(root, "broadcast/lib/engine.js"), "utf8");
+  const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
+  assert.match(engine, /pickInputDevice/);
+  assert.match(engine, /이 컴퓨터의 기본 마이크로 바꿨습니다/);
+  assert.match(engine, /_onAudioStreamError/);
+  assert.match(audio, /stream device was disconnected/);
+  assert.match(renderer, /defaultInputDevice/);
 });
 
 test("host audio APIs can be queried without throwing", () => {

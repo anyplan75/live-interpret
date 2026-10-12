@@ -601,14 +601,24 @@ function showChurch(church) {
   document.getElementById("start").disabled = !church.active || state.running;
 }
 
+function defaultInputDevice() {
+  return state.devices.find((device) => device.isDefault) || state.devices[0] || null;
+}
+
 async function chooseDevice() {
-  const key = deviceEl.value;
-  if (!key) return;
+  let key = deviceEl.value;
+  if (!key) {
+    const fallback = defaultInputDevice();
+    if (!fallback) return;
+    key = fallback.key;
+    deviceEl.value = key;
+  }
   try {
     const channel = state.settings.audio && state.settings.audio.deviceKey === key
       ? state.settings.audio.channel || 0
       : 0;
     state.audio = await window.broadcast.monitor(key, channel);
+    if (state.audio && state.audio.deviceKey) deviceEl.value = state.audio.deviceKey;
     renderChannels(state.audio.deviceChannels);
     audioHint.textContent = `${state.audio.apiLabel} · ${state.audio.deviceName} · 입력 ${state.audio.deviceChannels}채널 · ${state.audio.sampleRate}Hz.`;
     await persist({ audio: { deviceKey: key, channel: state.audio.deviceChannel } });
@@ -729,7 +739,12 @@ async function reloadDevices() {
   state.devices = result.devices || [];
   renderDevices();
   (result.notes || []).forEach((note) => log(note, "info"));
-  if (deviceEl.value) await chooseDevice();
+  const saved = state.settings.audio && state.settings.audio.deviceKey;
+  if (saved && !state.devices.some((device) => device.key === saved)) {
+    const fallback = defaultInputDevice();
+    if (fallback) deviceEl.value = fallback.key;
+  }
+  if (deviceEl.value || state.devices.length) await chooseDevice();
 }
 
 document.getElementById("churchSignIn").addEventListener("click", async () => {

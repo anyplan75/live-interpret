@@ -420,14 +420,41 @@ class Engine {
     return result;
   }
 
+  pickInputDevice(deviceKey) {
+    const listed = this.listDevices();
+    const devices = listed.devices || [];
+    if (!devices.length) return { device: null, switched: false, notes: listed.notes || [] };
+    const key = String(deviceKey || "");
+    const found = key ? devices.find((item) => item.key === key) : null;
+    if (found) return { device: found, switched: false, notes: listed.notes || [] };
+    const fallback = devices.find((item) => item.isDefault) || devices[0];
+    return { device: fallback, switched: !!key, notes: listed.notes || [] };
+  }
+
+  _onAudioStreamError(message) {
+    const text = String(message || "");
+    if (!text || /no open stream to close/i.test(text)) return;
+    if (/RtApiCore:/i.test(text) && /disconnected/i.test(text)) return;
+    if (/stream device was disconnected/i.test(text)) return;
+    this.emit({ type: "log", level: "error", text: message });
+  }
+
   monitor(deviceKey, channel) {
-    const device = this.devices.find((item) => item.key === deviceKey) || this.listDevices().devices.find((item) => item.key === deviceKey);
-    if (!device) throw new Error("입력 장치를 찾지 못했습니다. 목록을 새로고침해 주세요.");
+    const picked = this.pickInputDevice(deviceKey);
+    const device = picked.device;
+    if (!device) throw new Error("입력 장치가 없습니다. 마이크를 연결한 뒤 장치를 새로고침해 주세요.");
     const snap = this.capture.start(device, {
       onPcm: (buffer, info) => this._onPcm(buffer, info),
-      onError: (message) => this.emit({ type: "log", level: "error", text: message }),
+      onError: (message) => this._onAudioStreamError(message),
     });
     this.device = device;
+    if (picked.switched) {
+      this.emit({ type: "log", level: "info", text: "이 컴퓨터의 기본 마이크로 바꿨습니다." });
+    }
+    if (channel != null && channel !== snap.deviceChannel) {
+      const applied = this.capture.selectChannel(Number(channel) || 0);
+      Object.assign(snap, applied);
+    }
     this.emit({ type: "audio", audio: snap });
     return snap;
   }

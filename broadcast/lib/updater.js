@@ -18,6 +18,21 @@ function failureText(err) {
   return redactSecrets((err && err.message) || String(err));
 }
 
+function isQuietUpdateFailure(err) {
+  const text = failureText(err);
+  if (!text) return true;
+  if (text.length > 400 && /<(?:!DOCTYPE|html|meta)\b/i.test(text)) return true;
+  if (/Cannot parse releases feed/i.test(text)) return true;
+  if (/Unable to find latest version on GitHub/i.test(text)) return true;
+  if (/releases\/latest/i.test(text) && /(404|not found)/i.test(text)) return true;
+  return false;
+}
+
+function logUpdateFailure(log, err) {
+  if (isQuietUpdateFailure(err)) return;
+  log("error", `업데이트 확인 실패: ${failureText(err)}`);
+}
+
 /**
  * `electron-builder --mac dir` 은 app-update.yml 을 쓰지 않습니다.
  * 패키지된 앱에서는 process.resourcesPath/app-update.yml 이 그 파일입니다.
@@ -74,23 +89,28 @@ function startAutoUpdate(opts) {
     let checkFailureLogged = false;
     updater.on("error", (err) => {
       checkFailureLogged = true;
-      log("error", `업데이트 확인 실패: ${failureText(err)}`);
+      logUpdateFailure(log, err);
     });
     let pending;
     try {
       pending = updater.checkForUpdates();
     } catch (err) {
-      if (!checkFailureLogged) log("error", `업데이트 확인 실패: ${failureText(err)}`);
+      if (!checkFailureLogged) logUpdateFailure(log, err);
       return updater;
     }
     // 거절은 삼킵니다. error 이벤트가 이미 적었으면 다시 적지 않습니다.
     Promise.resolve(pending).catch((err) => {
-      if (!checkFailureLogged) log("error", `업데이트 확인 실패: ${failureText(err)}`);
+      if (!checkFailureLogged) logUpdateFailure(log, err);
     });
   } catch (err) {
-    log("error", `업데이트 확인 실패: ${failureText(err)}`);
+    logUpdateFailure(log, err);
   }
   return updater;
 }
 
-module.exports = { startAutoUpdate, silentUpdateAllowed, RELEASES_URL };
+module.exports = {
+  startAutoUpdate,
+  silentUpdateAllowed,
+  isQuietUpdateFailure,
+  RELEASES_URL,
+};

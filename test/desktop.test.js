@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { EventEmitter } = require("events");
 const consent = require("../broadcast/lib/consent");
-const { startAutoUpdate, silentUpdateAllowed } = require("../broadcast/lib/updater");
+const { startAutoUpdate, silentUpdateAllowed, isQuietUpdateFailure } = require("../broadcast/lib/updater");
 
 const root = path.join(__dirname, "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
@@ -150,6 +150,23 @@ test("missing app-update.yml and update-check failures are logged and ignored", 
     assert.equal(syncLogs.at(-1)[0], "error");
     assert.match(syncLogs.at(-1)[1], /업데이트 확인 실패/);
     assert.doesNotMatch(syncLogs.at(-1)[1], /sk-b{20}/);
+
+    const quietLogs = [];
+    const quietErr = new Error(
+      "Cannot parse releases feed: Error: Unable to find latest version on GitHub "
+      + "(https://github.com/anyplan75/live-interpret/releases/latest)\n<!DOCTYPE html><html>"
+    );
+    assert.equal(isQuietUpdateFailure(quietErr), true);
+    const quietUpdater = fakeUpdater();
+    quietUpdater.checkForUpdates = () => Promise.reject(quietErr);
+    startAutoUpdate({
+      app: { isPackaged: true, resourcesPath: withFile },
+      platform: "darwin",
+      updater: quietUpdater,
+      log: (level, text) => quietLogs.push([level, text]),
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(quietLogs.length, 0);
   } finally {
     process.off("unhandledRejection", onRejection);
     fs.rmSync(empty, { recursive: true, force: true });

@@ -206,6 +206,8 @@ class InputCapture {
             0,
             (_type, message) => {
               if (!message || /no open stream to close/i.test(message)) return;
+              if (/RtApiCore:/i.test(message) && /disconnected/i.test(message)) return;
+              if (/stream device was disconnected/i.test(message)) return;
               if (this.onError) this.onError(message);
             }
           );
