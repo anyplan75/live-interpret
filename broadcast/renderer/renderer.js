@@ -26,6 +26,7 @@ const state = {
   lines: {},
   targets: [],
   spoken: "ko",
+  channels: [],
   style: null,
 };
 
@@ -58,8 +59,43 @@ function spokenName(code) {
   return found ? found.name : "한국어";
 }
 
+function activeChannelRows() {
+  return (state.channels || []).map((row, index) => ({ ...row, index })).filter((row) => row.on);
+}
+
 function renderHeardTitle() {
-  if (heardTitleEl) heardTitleEl.textContent = `지금 듣는 ${spokenName(state.spoken)}`;
+  if (!heardTitleEl) return;
+  const on = activeChannelRows();
+  if (on.length <= 1) {
+    const code = on.length ? on[0].spoken : state.spoken;
+    heardTitleEl.textContent = `지금 듣는 ${spokenName(code)}`;
+    return;
+  }
+  heardTitleEl.textContent = `지금 듣는 ${on.map((row) => `채널 ${row.index + 1} ${spokenName(row.spoken)}`).join(" · ")}`;
+}
+
+function billingSpoken() {
+  const on = activeChannelRows();
+  return on.length ? on.map((row) => row.spoken) : [state.spoken || "ko"];
+}
+
+function extraChannelIndexes() {
+  return (state.channels || []).map((row, index) => (row.on ? index : -1)).filter((index) => index > 0);
+}
+
+function ensureChannels(count) {
+  const saved = Array.isArray(state.settings && state.settings.channels) ? state.settings.channels : [];
+  const current = Array.isArray(state.channels) ? state.channels : [];
+  const rows = [];
+  for (let i = 0; i < count; i += 1) {
+    const prev = current[i] || saved[i] || {};
+    const fallback = i === 0 && state.settings ? state.settings.spoken : "ko";
+    const spoken = knownSpoken(prev.spoken || fallback);
+    const on = prev.on != null ? !!prev.on : i === 0;
+    rows.push({ spoken, on });
+  }
+  state.channels = rows;
+  if (rows[0]) state.spoken = rows[0].spoken;
 }
 
 function renderSpoken(code) {
@@ -173,34 +209,82 @@ function renderDevices() {
   if ([...deviceEl.options].some((option) => option.value === previous)) deviceEl.value = previous;
 }
 
-function renderChannels(count, selected) {
-  channelsEl.innerHTML = "";
+function fillSpokenSelect(select, code) {
+  select.innerHTML = "";
+  (state.catalog.languages || []).forEach((lang) => {
+    const option = document.createElement("option");
+    option.value = lang.code;
+    option.textContent = `${lang.flag} ${lang.name}`;
+    select.append(option);
+  });
+  select.value = knownSpoken(code);
+}
+
+function renderChannels(count) {
   const total = count || 0;
-  for (let i = 0; i < total; i++) {
+  ensureChannels(total);
+  channelsEl.innerHTML = "";
+  for (let i = 0; i < total; i += 1) {
+    const row = state.channels[i];
+    const wrap = document.createElement("div");
+    wrap.className = `channel${row.on ? " on" : ""}`;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `channel${i === selected ? " on" : ""}`;
-    const name = document.createElement("span");
-    name.textContent = `채널 ${i + 1}`;
+    button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
+    button.addEventListener("click", () => toggleChannel(i));
     const meter = document.createElement("div");
     meter.className = "meter";
     const bar = document.createElement("span");
     bar.dataset.channel = String(i);
     meter.append(bar);
-    button.append(name, meter);
-    button.addEventListener("click", async () => {
-      try {
-        state.audio = await window.broadcast.setChannel(i);
-        renderChannels(state.audio.deviceChannels, state.audio.deviceChannel);
-        await persist({ audio: { ...(state.settings.audio || {}), channel: i } });
-        audioHint.textContent = state.audio.mode === "single"
-          ? `채널 ${i + 1}만 열었습니다. 인식도 이 채널만 사용합니다.`
-          : `${state.audio.apiLabel} · ${state.audio.openedChannels}채널을 열었습니다. 인식은 채널 ${state.audio.deviceChannel + 1}만 사용합니다.`;
-      } catch (err) {
-        log(err.message || String(err), "error");
-      }
-    });
-    channelsEl.append(button);
+    const select = document.createElement("select");
+    select.className = "channel-spoken";
+    select.dataset.channel = String(i);
+    select.setAttribute("aria-label", `채널 ${i + 1} 말하는 언어`);
+    if (i === 0) select.id = "spoken";
+    fillSpokenSelect(select, row.spoken);
+    select.addEventListener("change", () => onChannelSpoken(i, select.value));
+    wrap.append(button, meter, select);
+    channelsEl.append(wrap);
+  }
+  renderHeardTitle();
+}
+
+async function toggleChannel(index) {
+  const next = !state.channels[index].on;
+  if (!state.running) {
+    state.channels[index].on = next;
+    if (!state.channels.some((row) => row.on)) state.channels[0].on = true;
+    await persist({ channels: state.channels });
+    renderChannels(state.channels.length);
+    return;
+  }
+  try {
+    const result = await window.broadcast.setChannelOn(index, next);
+    state.channels[index].on = !!(result && result.on);
+    await persist({ channels: state.channels });
+    renderChannels(state.channels.length);
+    if (result && result.blocked) log(result.message, "error");
+  } catch (err) {
+    log(err.message || String(err), "error");
+    renderChannels(state.channels.length);
+  }
+}
+
+async function onChannelSpoken(index, code) {
+  const previous = state.channels[index].spoken;
+  state.channels[index].spoken = knownSpoken(code);
+  if (index === 0) state.spoken = state.channels[index].spoken;
+  renderHeardTitle();
+  try {
+    await persist({ channels: state.channels, spoken: state.spoken });
+    if (state.running) await window.broadcast.setChannelSpoken(index, state.channels[index].spoken);
+  } catch (err) {
+    state.channels[index].spoken = previous;
+    if (index === 0) state.spoken = previous;
+    renderHeardTitle();
+    await persist({ channels: state.channels, spoken: state.spoken });
+    log(err.message || String(err), "error");
   }
 }
 
@@ -467,6 +551,13 @@ function paintConfirm(preview) {
   } else {
     price.textContent = `첫 시간 요금: ${formatKrw(preview.firstHourKrw)}. 영어는 기본 요금에 포함됩니다.`;
   }
+  if (preview.channelFeeKrw) {
+    price.textContent += ` 추가 채널: ${formatKrw(preview.channelFeeKrw)} (채널당 ${formatKrw(preview.channelFeeEachKrw || 10000)}, 한 번).`;
+  }
+  if (preview.blockedChannels && preview.blockedChannels.length) {
+    const names = preview.blockedChannels.map((index) => `채널 ${index + 1}`).join(", ");
+    price.textContent += ` ${names}은 충전금이 부족해 시작하지 않습니다. 채널 1은 그대로 방송됩니다.`;
+  }
   document.getElementById("confirmOvertime").textContent = preview.overtimeText;
   document.getElementById("confirmBalance").textContent = `남은 충전금: ${formatKrw(preview.balanceKrw)}`;
   const short = document.getElementById("confirmShort");
@@ -501,8 +592,8 @@ async function chooseDevice() {
       ? state.settings.audio.channel || 0
       : 0;
     state.audio = await window.broadcast.monitor(key, channel);
-    renderChannels(state.audio.deviceChannels, state.audio.deviceChannel);
-    audioHint.textContent = `${state.audio.apiLabel} · ${state.audio.deviceName} · ${state.audio.sampleRate}Hz. 레벨이 움직이는 채널을 고르세요.`;
+    renderChannels(state.audio.deviceChannels);
+    audioHint.textContent = `${state.audio.apiLabel} · ${state.audio.deviceName} · 입력 ${state.audio.deviceChannels}채널 · ${state.audio.sampleRate}Hz.`;
     await persist({ audio: { deviceKey: key, channel: state.audio.deviceChannel } });
     if (!state.running) setStatus("장치 듣는 중", "");
   } catch (err) {
@@ -548,7 +639,7 @@ async function loadChurch() {
   if (!state.running) {
     if (current.balanceKrw != null) showBalance(current.balanceKrw);
     try {
-      const preview = await window.broadcast.previewBilling(state.targets, state.spoken);
+      const preview = await window.broadcast.previewBilling(state.targets, billingSpoken(), extraChannelIndexes());
       showBalance(preview.balanceKrw);
       showPrepaid({ remainingSeconds: preview.remainingSeconds, running: false });
     } catch (err) {
@@ -579,20 +670,22 @@ async function boot() {
   await reloadDevices();
   window.broadcast.onEvent((event) => {
     if (event.type === "levels") applyLevels(event.peaks || []);
-    if (event.type === "live") hearing.live(event.text);
-    if (event.type === "heard") hearing.heard(event.id, event.text);
+    if (event.type === "live") hearing.live(channelPrefix(event.channel, event.text));
+    if (event.type === "heard") hearing.heard(event.id, channelPrefix(event.channel, event.text));
     if (event.type === "line" && event.lang) {
       state.lines[event.lang] = event.text || "";
       const card = cardsEl.querySelector(`[data-lang="${event.lang}"] .text`);
       if (card) card.textContent = event.text || "대기 중...";
-      if (event.lang === state.spoken && event.isFinal && event.text && event.text !== event.raw) {
+      const row = Number.isInteger(event.channel) ? state.channels[event.channel] : null;
+      const source = row ? row.spoken : state.spoken;
+      if (event.lang === source && event.isFinal && event.text && event.text !== event.raw) {
         hearing.corrected(event.heardId, event.raw, event.text);
       }
     }
     if (event.type === "log") log(event.text, event.level);
     if (event.type === "audio" && event.audio) {
       state.audio = event.audio;
-      renderChannels(event.audio.deviceChannels, event.audio.deviceChannel);
+      renderChannels(event.audio.deviceChannels);
     }
     if (event.type === "cost") {
       showChurchCost(event.chargedKrw != null ? event.chargedKrw : event.churchKrw);
@@ -734,28 +827,12 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
   }
 });
 
-spokenEl.addEventListener("change", async () => {
-  const previous = state.spoken;
-  state.spoken = knownSpoken(spokenEl.value);
-  renderHeardTitle();
-  if (langCount) langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
-  try {
-    await persist({ spoken: state.spoken });
-    if (state.running) {
-      await window.broadcast.setSpoken(state.spoken);
-      await renderLinks();
-    } else {
-      await onTargetsChanged();
-    }
-  } catch (err) {
-    state.spoken = previous;
-    spokenEl.value = previous;
-    renderHeardTitle();
-    if (langCount) langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
-    await persist({ spoken: previous });
-    log(err.message || String(err), "error");
-  }
-});
+function channelPrefix(index, text) {
+  const value = String(text || "");
+  if (!value || !Number.isInteger(index) || activeChannelRows().length < 2) return value;
+  return `채널 ${index + 1} ${value}`;
+}
+
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 deviceEl.addEventListener("change", chooseDevice);
 sensitivityEl.addEventListener("change", () => persist({ sensitivity: sensitivityEl.value }));
@@ -771,31 +848,41 @@ document.getElementById("pickFolder").addEventListener("click", async () => {
   await persist({ folder });
 });
 async function beginBroadcast() {
-  state.spoken = knownSpoken(spokenEl ? spokenEl.value : state.spoken);
+  if (state.channels[0]) state.spoken = state.channels[0].spoken;
   renderHeardTitle();
   await persist({
     sensitivity: sensitivityEl.value,
     folder: state.settings.folder,
     targets: selectedTargets(),
     spoken: state.spoken,
+    channels: state.channels,
     preacherId: selectedPreacherId(),
   });
   state.lines = {};
-  await window.broadcast.start({
+  const started = await window.broadcast.start({
     sensitivity: sensitivityEl.value,
     folder: state.settings.folder,
     targets: selectedTargets(),
     spoken: state.spoken,
+    channels: state.channels,
     preacherId: selectedPreacherId(),
     deviceKey: deviceEl.value,
     channel: state.audio ? state.audio.deviceChannel : 0,
   });
+  if (started && Array.isArray(started.channels) && started.channels.length) {
+    state.channels = started.channels.map((row) => ({
+      spoken: knownSpoken(row.spoken),
+      on: !!row.on,
+    }));
+    if (state.channels[0]) state.spoken = state.channels[0].spoken;
+    renderChannels(state.channels.length);
+  }
   log("방송을 시작했습니다. 언어별 텍스트만 저장합니다.");
 }
 
 document.getElementById("start").addEventListener("click", async () => {
   try {
-    const preview = await window.broadcast.previewBilling(selectedTargets(), state.spoken);
+    const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraChannelIndexes());
     paintConfirm(preview);
     document.getElementById("startConfirm").hidden = false;
   } catch (err) {
@@ -809,7 +896,7 @@ document.getElementById("confirmCancel").addEventListener("click", () => {
 });
 document.getElementById("confirmStart").addEventListener("click", async () => {
   try {
-    const preview = await window.broadcast.previewBilling(selectedTargets(), state.spoken);
+    const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraChannelIndexes());
     paintConfirm(preview);
     if (preview.short) return;
     document.getElementById("startConfirm").hidden = true;

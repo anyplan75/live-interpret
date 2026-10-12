@@ -13,6 +13,7 @@
   const SERMON_MINUTES = 40;
   const HOUR_BASE_KRW = 15000;
   const EXTRA_LANG_HOUR_KRW = 5000;
+  const EXTRA_CHANNEL_KRW = 10000;
   const HOUR_SECONDS = 3600;
   const HALF_SECONDS = 1800;
   const CHARS_PER_MINUTE = 750;
@@ -100,6 +101,49 @@
   function isBaseLanguage(code) {
     const lang = String(code || "").trim().toLowerCase();
     return !lang || lang === "ko" || lang === "en" || lang.startsWith("ko-") || lang.startsWith("en-");
+  }
+
+  function extraChannelIndexes(indexes) {
+    const seen = new Set();
+    const out = [];
+    (Array.isArray(indexes) ? indexes : []).forEach((raw) => {
+      const index = Number(raw);
+      if (!Number.isInteger(index) || index <= 0 || seen.has(index)) return;
+      seen.add(index);
+      out.push(index);
+    });
+    out.sort((a, b) => a - b);
+    return out;
+  }
+
+  function channelFeePlan(input) {
+    const balance = Math.round(Number(input && input.balance) || 0);
+    const requested = extraChannelIndexes(input && input.channels);
+    const paid = new Set(extraChannelIndexes(input && input.paid));
+    const started = [];
+    const blocked = [];
+    let left = balance;
+    let charged = 0;
+    requested.forEach((index) => {
+      if (paid.has(index)) {
+        started.push(index);
+        return;
+      }
+      if (left < EXTRA_CHANNEL_KRW) {
+        blocked.push(index);
+        return;
+      }
+      left -= EXTRA_CHANNEL_KRW;
+      charged += EXTRA_CHANNEL_KRW;
+      started.push(index);
+    });
+    return {
+      started,
+      blocked,
+      charged,
+      balance: left,
+      feeKrw: EXTRA_CHANNEL_KRW,
+    };
   }
 
   function extraLanguageCount(languages) {
@@ -657,6 +701,9 @@
     SERMON_MINUTES,
     HOUR_BASE_KRW,
     EXTRA_LANG_HOUR_KRW,
+    EXTRA_CHANNEL_KRW,
+    extraChannelIndexes,
+    channelFeePlan,
     HOUR_SECONDS,
     HALF_SECONDS,
     CHARS_PER_MINUTE,

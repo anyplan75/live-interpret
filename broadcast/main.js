@@ -281,9 +281,9 @@ function registerIpc() {
       balanceKrw,
     };
   });
-  ipcMain.handle("billing:preview", async (_event, targets, spoken) => {
+  ipcMain.handle("billing:preview", async (_event, targets, spoken, extraChannels) => {
     const church = await requireChurch();
-    return engine.previewCharge(church.id, targets, spoken);
+    return engine.previewCharge(church.id, targets, spoken, extraChannels);
   });
   ipcMain.handle("style:set", async (_event, style) => {
     const church = await requireChurch();
@@ -363,6 +363,14 @@ function registerIpc() {
     const church = await requireChurch();
     return engine.setSpoken(church.id, spoken);
   });
+  ipcMain.handle("channel:spoken", async (_event, index, spoken) => {
+    const church = await requireChurch();
+    return engine.setChannelSpoken(church.id, index, spoken);
+  });
+  ipcMain.handle("channel:on", async (_event, index, on) => {
+    const church = await requireChurch();
+    return engine.setChannelOn(church.id, index, on);
+  });
   ipcMain.handle("targets:set", async (_event, _churchId, targets, spoken) => {
     const church = await requireChurch();
     return engine.setTargets(church.id, targets, spoken);
@@ -392,6 +400,7 @@ function registerIpc() {
       folderName: started.folderName,
       dir: started.dir,
       targets: started.targets,
+      channels: started.channels || [],
     };
   });
   ipcMain.handle("broadcast:stop", () => engine.stop());

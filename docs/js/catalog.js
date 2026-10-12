@@ -253,12 +253,20 @@
     return spoken;
   }
 
+  function spokenSources(spoken) {
+    const list = Array.isArray(spoken) ? spoken : [spoken];
+    const seen = new Set();
+    list.forEach((code) => seen.add(spokenLanguage(code)));
+    if (!seen.size) seen.add("ko");
+    return seen;
+  }
+
   function translationTargets(targets, spoken) {
-    const source = spokenLanguage(spoken);
+    const sources = spokenSources(spoken);
     const seen = new Set();
     const out = [];
     (Array.isArray(targets) ? targets : []).forEach((code) => {
-      if (!code || code === "ko" || code === source || !langByCode[code] || seen.has(code)) return;
+      if (!code || code === "ko" || sources.has(code) || !langByCode[code] || seen.has(code)) return;
       seen.add(code);
       out.push(code);
     });

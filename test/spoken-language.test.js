@@ -72,11 +72,11 @@ test("recognition follows the spoken language and does not translate it into its
 test("the broadcast window labels the heard language", () => {
   const html = read("broadcast/renderer/index.html");
   const renderer = read("broadcast/renderer/renderer.js");
-  assert.match(html, /id="spoken"/);
-  assert.match(html, /말하는 언어/);
   assert.match(html, /id="heardTitle"/);
+  assert.match(renderer, /channel-spoken/);
+  assert.match(renderer, /deviceChannels/);
   assert.match(renderer, /지금 듣는 \$\{spokenName/);
-  assert.match(renderer, /setSpoken/);
+  assert.match(renderer, /setChannelSpoken/);
   assert.doesNotMatch(renderer, /spokenEl\.disabled = running/);
   assert.match(read("broadcast/lib/stt.js"), /languages: \[this\.language\]/);
 });

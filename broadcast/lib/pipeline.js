@@ -70,7 +70,8 @@ class Pipeline {
     this.utterance = "";
     this.interim = "";
     this.recentContext = [];
-    this.sessionTexts = {};
+    this.sharedTexts = opts.sharedTexts || null;
+    this.sessionTexts = this.sharedTexts ? this.sharedTexts.texts : {};
     this.sentenceId = Date.now();
     this.lastSpeechTime = Date.now();
     this.lastLivePush = 0;
@@ -351,9 +352,19 @@ class Pipeline {
       if (!result[lang]) continue;
       const out = String(result[lang]).trim();
       if (!out) continue;
-      if (!this.sessionTexts[lang]) this.sessionTexts[lang] = [];
-      this.sessionTexts[lang].push(out);
-      const full = this.sessionTexts[lang].join("\n");
+      const commit = () => {
+        if (!this.sessionTexts[lang]) this.sessionTexts[lang] = [];
+        this.sessionTexts[lang].push(out);
+        return this.sessionTexts[lang].join("\n");
+      };
+      let full;
+      if (this.sharedTexts) {
+        const run = this.sharedTexts.chain.then(commit);
+        this.sharedTexts.chain = run.then(() => {}).catch(() => {});
+        full = await run;
+      } else {
+        full = commit();
+      }
       try {
         if (this.files) this.files.write(lang, full);
       } catch (err) {

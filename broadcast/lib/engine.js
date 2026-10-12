@@ -17,7 +17,7 @@ const {
 const bulletin = require("./bulletin");
 const preacherLib = require("./preacher");
 const { listInputDevices, InputCapture } = require("./audio");
-const { channelPeaks, resampleInt16, selectedChannelPcm } = require("./audio-util");
+const { channelPeaks, resampleInt16, extractChannel } = require("./audio-util");
 const { SpeechSession } = require("./stt");
 const { Pipeline } = require("./pipeline");
 const { UsageMeter } = require("./usage");
@@ -27,6 +27,19 @@ const firebase = require("./firebase");
 
 function cleanTargets(targets) {
   return [...new Set((targets || []).filter((code) => code !== "ko" && langByCode[code]))];
+}
+
+function normalizeChannelRows(list, count, fallbackSpoken) {
+  const n = Math.max(1, Number(count) || 1);
+  const rows = [];
+  for (let i = 0; i < n; i += 1) {
+    const row = Array.isArray(list) ? list[i] : null;
+    const spoken = spokenLanguage(row && row.spoken ? row.spoken : (i === 0 ? fallbackSpoken : "ko"));
+    const on = row && row.on != null ? !!row.on : i === 0;
+    rows.push({ spoken, on });
+  }
+  if (!rows.some((row) => row.on)) rows[0].on = true;
+  return rows;
 }
 
 class Engine {
@@ -50,6 +63,10 @@ class Engine {
     this.outputs = [];
     this.spoken = "ko";
     this.spokenChain = Promise.resolve();
+    this.channelRows = [];
+    this.channelSessions = new Map();
+    this.paidChannels = new Set();
+    this.sharedTexts = null;
     this.running = false;
     this.lastLevelAt = 0;
     this.sessionDir = "";
@@ -81,12 +98,16 @@ class Engine {
     return Math.round(Number(raw) || 0);
   }
 
-  async previewCharge(churchId, targets, spoken) {
+  async previewCharge(churchId, targets, spoken, extraChannels) {
     const languages = translationTargets(targets, spoken);
     const balance = await this.readBalance(churchId);
     const prepaid = await this.readPrepaid(churchId);
     const plan = cost.planBroadcastStart({ balance, languages, prepaid });
     const remaining = prepaid ? prepaid.remainingSeconds : 0;
+    const balanceAfterHour = plan.short ? balance : (plan.charged > 0 ? plan.balance : balance);
+    const channelPlan = plan.short
+      ? { started: [], blocked: [], charged: 0, balance: balanceAfterHour, feeKrw: cost.EXTRA_CHANNEL_KRW }
+      : cost.channelFeePlan({ balance: balanceAfterHour, channels: extraChannels, paid: [] });
     return {
       balance,
       balanceKrw: balance,
@@ -105,6 +126,10 @@ class Engine {
       paidLanguages: plan.paidLanguages,
       kind: prepaid ? prepaid.kind : "",
       label: remaining > 0 ? cost.prepaidLabel(remaining) : "",
+      channelFeeKrw: channelPlan.charged,
+      extraChannels: channelPlan.started,
+      blockedChannels: channelPlan.blocked,
+      channelFeeEachKrw: cost.EXTRA_CHANNEL_KRW,
     };
   }
 
@@ -403,10 +428,8 @@ class Engine {
       onError: (message) => this.emit({ type: "log", level: "error", text: message }),
     });
     this.device = device;
-    const selected = Number.isInteger(channel) ? channel : 0;
-    const applied = this.capture.selectChannel(Math.min(selected, device.inputChannels - 1));
-    this.emit({ type: "audio", audio: applied });
-    return applied;
+    this.emit({ type: "audio", audio: snap });
+    return snap;
   }
 
   setChannel(index) {
@@ -427,24 +450,39 @@ class Engine {
       }
       this.emit({ type: "levels", peaks, deviceChannel: info.deviceChannel });
     }
-    if (!this.speech) return;
+    if (!this.channelSessions || !this.channelSessions.size) {
+      if (!this.speech) return;
+    }
     try {
-      const mono = selectedChannelPcm(buffer, info);
-      const pcm24 = resampleInt16(mono, info.sampleRate || 48000, 24000);
-      this.speech.push(pcm24);
+      const rate = info.sampleRate || 48000;
+      if (!this.channelSessions || !this.channelSessions.size) {
+        const mono = info.mode === "single" ? buffer : extractChannel(buffer, info.nChannels, info.selected || 0);
+        this.speech.push(resampleInt16(mono, rate, 24000));
+        return;
+      }
+      if (info.mode === "single") {
+        const session = this.channelSessions.get(info.deviceChannel);
+        if (session) session.speech.push(resampleInt16(buffer, rate, 24000));
+        return;
+      }
+      this.channelSessions.forEach((session, index) => {
+        if (index >= info.nChannels) return;
+        const mono = extractChannel(buffer, info.nChannels, index);
+        session.speech.push(resampleInt16(mono, rate, 24000));
+      });
     } catch (err) {
       this.emit({ type: "log", level: "error", text: err.message || String(err) });
     }
   }
 
   async syncSettings(churchId, targets) {
-    const source = spokenLanguage(this.spoken);
-    const selected = translationTargets(targets, source);
+    const sources = this.activeSpoken();
+    const selected = translationTargets(targets, sources);
     const existing = (await firebase.get(`churches/${churchId}/live/settings`)) || {};
-    const active = [source, ...selected];
+    const active = [...new Set([...sources, ...selected])];
     const next = {
       _timestamp: Date.now(),
-      spoken: source,
+      spoken: sources[0] || "ko",
       activeTargets: active,
       global: existing.global || {
         layout: "bottom",
@@ -478,7 +516,7 @@ class Engine {
   async setTargets(churchId, targets, spoken) {
     if (spoken != null) this.spoken = spokenLanguage(spoken);
     const selected = cleanTargets(targets);
-    const next = translationTargets(selected, this.spoken);
+    const next = translationTargets(selected, this.activeSpoken());
     if (this.running && this.prepaid) {
       const added = cost.addedLanguages(this.prepaid.languages, next);
       if (added.length) {
@@ -494,31 +532,191 @@ class Engine {
     return selected;
   }
 
+  activeSpoken() {
+    const rows = (this.channelRows || []).filter((row) => row.on);
+    const codes = rows.map((row) => spokenLanguage(row.spoken));
+    if (!codes.length) codes.push(spokenLanguage(this.spoken));
+    return codes;
+  }
+
   async setSpoken(churchId, spoken) {
-    const job = this.spokenChain.then(() => this.applySpoken(churchId, spoken));
+    return this.setChannelSpoken(churchId, 0, spoken);
+  }
+
+  async setChannelSpoken(churchId, index, spoken) {
+    const job = this.spokenChain.then(() => this.applyChannelSpoken(churchId, index, spoken));
     this.spokenChain = job.catch(() => {});
     return job;
   }
 
-  async applySpoken(churchId, spoken) {
-    const nextSpoken = spokenLanguage(spoken);
-    const changed = nextSpoken !== this.spoken;
-    this.spoken = nextSpoken;
-    const outputs = Array.isArray(this.outputs) ? this.outputs : [];
-    const translated = translationTargets(outputs, nextSpoken);
-    this.targets = translated;
-    if (this.pipeline && this.pipeline.setSourceLang) this.pipeline.setSourceLang(nextSpoken, translated);
-    else if (this.pipeline) {
-      this.pipeline.sourceLang = nextSpoken;
-      this.pipeline.targets = translated;
+  async applyChannelSpoken(churchId, index, spoken) {
+    const i = Number(index) || 0;
+    const code = spokenLanguage(spoken);
+    if (!this.channelRows) this.channelRows = [];
+    while (this.channelRows.length <= i) this.channelRows.push({ spoken: "ko", on: i === 0 });
+    const changed = this.channelRows[i].spoken !== code;
+    this.channelRows[i].spoken = code;
+    if (i === 0) this.spoken = code;
+    const row = this.channelSessions && this.channelSessions.get(i);
+    const pipeline = row ? row.pipeline : (i === 0 ? this.pipeline : null);
+    const speech = row ? row.speech : (i === 0 ? this.speech : null);
+    const ownTargets = translationTargets(this.outputs || [], code);
+    if (pipeline && pipeline.setSourceLang) pipeline.setSourceLang(code, ownTargets);
+    else if (pipeline) {
+      pipeline.sourceLang = code;
+      pipeline.targets = ownTargets;
     }
-    if (churchId) await this.syncSettings(churchId, outputs);
-    if (this.speech && this.speech.setLanguage) await this.speech.setLanguage(nextSpoken);
+    if (row) row.spoken = code;
+    if (speech && speech.setLanguage) await speech.setLanguage(code);
+    if (churchId) await this.syncSettings(churchId, this.outputs || []);
     if (changed && this.running) {
-      const name = langByCode[nextSpoken] ? langByCode[nextSpoken].name : nextSpoken;
-      this.emit({ type: "log", level: "info", text: `인식 언어를 ${name}로 바꿨습니다.` });
+      const name = langByCode[code] ? langByCode[code].name : code;
+      this.emit({ type: "log", level: "info", text: `채널 ${i + 1} 인식 언어를 ${name}로 바꿨습니다.` });
     }
-    return nextSpoken;
+    return code;
+  }
+
+  async chargeChannelFees(extraIndexes) {
+    if (!this.paidChannels) this.paidChannels = new Set();
+    const balance = this.sessionCharge ? this.sessionCharge.balance : await this.readBalance(this.church.id);
+    const paid = [...this.paidChannels];
+    const plan = cost.channelFeePlan({ balance, channels: extraIndexes, paid });
+    const newly = plan.started.filter((index) => !this.paidChannels.has(index));
+    if (plan.charged > 0 && newly.length) {
+      const at = Date.now();
+      const entry = cost.ledgerEntry({
+        id: cost.ledgerId(at),
+        type: "charge",
+        deltaKrw: -plan.charged,
+        balanceAfter: plan.balance,
+        at,
+        who: this.church.accountUid || "",
+        note: `추가 채널 ${newly.map((index) => index + 1).join(", ")}`,
+        churchId: this.church.id,
+      });
+      await this.writeBilling(this.church.id, plan.balance, entry, null);
+      this.sessionCharge.charged = Math.round(Number(this.sessionCharge.charged) || 0) + plan.charged;
+      this.sessionCharge.balance = plan.balance;
+      this.emitCharge(this.pricedUsage());
+      this.emit({
+        type: "log",
+        level: "info",
+        text: `추가 채널 ${newly.map((index) => index + 1).join(", ")}에서 ${cost.formatKrw(plan.charged)}을 뺐습니다. 이 요금은 한 번만 빠집니다.`,
+      });
+    }
+    plan.started.forEach((index) => this.paidChannels.add(index));
+    return plan;
+  }
+
+  async setChannelOn(churchId, index, on) {
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0) throw new Error("채널이 올바르지 않습니다.");
+    if (!this.channelRows) this.channelRows = [];
+    while (this.channelRows.length <= i) this.channelRows.push({ spoken: "ko", on: false });
+    if (!on) {
+      this.channelRows[i].on = false;
+      if (this.running) await this.closeChannel(i);
+      if (churchId) await this.syncSettings(churchId, this.outputs || []);
+      return { index: i, on: false, charged: 0 };
+    }
+    if (this.running && i > 0 && !(this.paidChannels && this.paidChannels.has(i))) {
+      const plan = await this.chargeChannelFees([i]);
+      if (plan.blocked.includes(i)) {
+        this.channelRows[i].on = false;
+        const message = `채널 ${i + 1}은 충전금이 부족해 시작하지 못했습니다.`;
+        this.emit({ type: "log", level: "error", text: message });
+        return { index: i, on: false, blocked: true, message, balance: plan.balance };
+      }
+    }
+    this.channelRows[i].on = true;
+    if (this.running) await this.openChannel(i);
+    if (churchId) await this.syncSettings(churchId, this.outputs || []);
+    return { index: i, on: true, charged: 0 };
+  }
+
+  channelBroadcastBits() {
+    return {
+      apiKey: this.sessionApiKey,
+      model: this.sessionModel,
+      glossary: this.sessionGlossary || "",
+      sessionContext: this.sessionContext || "",
+      extraKeywords: this.sessionKeywords || [],
+      pauseTails: this.sessionPauseTails || [],
+      sensitivity: this.sessionSensitivity || "normal",
+    };
+  }
+
+  async openChannel(index) {
+    if (!this.channelSessions) this.channelSessions = new Map();
+    if (!this.sharedTexts) this.sharedTexts = { texts: {}, chain: Promise.resolve() };
+    if (this.channelSessions.has(index)) return this.channelSessions.get(index);
+    const row = this.channelRows[index] || { spoken: "ko", on: true };
+    const spoken = spokenLanguage(row.spoken);
+    const targets = translationTargets(this.outputs || [], spoken);
+    const bits = this.channelBroadcastBits();
+    const cloud = this.sessionCloud;
+    const pipeline = new Pipeline({
+      apiKey: bits.apiKey,
+      model: bits.model,
+      sourceLang: spoken,
+      targets,
+      glossary: bits.glossary,
+      sessionContext: bits.sessionContext,
+      pauseTails: bits.pauseTails,
+      files: this.writer,
+      usage: this.usage,
+      cloud,
+      sharedTexts: this.sharedTexts,
+      onLive: (text) => this.emit({ type: "live", channel: index, text }),
+      onHeard: (heard) => this.emit({ type: "heard", channel: index, ...heard }),
+      onLine: (line) => this.emit({ type: "line", channel: index, ...line }),
+      onLog: (text) => this.emit({ type: "log", level: "info", text }),
+    });
+    pipeline.startTicker();
+    const speech = new SpeechSession({
+      apiKey: bits.apiKey,
+      churchName: this.church ? this.church.name : "",
+      glossary: bits.glossary,
+      sessionContext: bits.sessionContext,
+      extraKeywords: bits.extraKeywords,
+      sensitivity: bits.sensitivity,
+      language: spoken,
+      onInterim: (text) => pipeline.onInterim(text),
+      onFinal: (text) => pipeline.onFinalChunk(text),
+      onStatus: (text) => this.emit({ type: "log", level: "info", text }),
+      onError: (text) => this.emit({ type: "log", level: "error", text }),
+      onAudio: index === 0 ? (pcm) => {
+        if (!this.usage || !pcm) return;
+        this.usage.addPcm16(pcm.length, 24000);
+        this.flushUsage(false);
+      } : null,
+    });
+    await speech.start();
+    const session = { speech, pipeline, spoken, index };
+    this.channelSessions.set(index, session);
+    if (!this.speech) {
+      this.speech = speech;
+      this.pipeline = pipeline;
+    }
+    return session;
+  }
+
+  async closeChannel(index) {
+    const session = this.channelSessions.get(index);
+    if (!session) return;
+    this.channelSessions.delete(index);
+    try { await session.speech.stop(); } catch (_) { /* 이미 끊긴 인식은 무시합니다 */ }
+    try { await session.pipeline.stop(); } catch (_) { /* 아직 문장이 없으면 무시합니다 */ }
+    if (this.speech === session.speech) {
+      const next = this.channelSessions.values().next().value || null;
+      this.speech = next ? next.speech : null;
+      this.pipeline = next ? next.pipeline : null;
+    }
+  }
+
+  async closeAllChannels() {
+    const indexes = [...this.channelSessions.keys()];
+    for (const index of indexes) await this.closeChannel(index);
   }
 
   async start(opts) {
@@ -530,14 +728,19 @@ class Engine {
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
     if (!isChurchId(opts.churchId)) throw new Error("교회를 선택해 주세요.");
     if (!isPreacherId(opts.preacherId)) throw new Error("설교자를 등록하고 선택해 주세요.");
-    const spoken = spokenLanguage(opts.spoken);
     const outputCodes = cleanTargets(opts.targets);
-    const targets = translationTargets(outputCodes, spoken);
     if (!outputCodes.length) throw new Error("번역할 언어를 하나 이상 선택해 주세요.");
     if (!this.capture.opened) {
       if (!opts.deviceKey) throw new Error("입력 장치를 먼저 선택해 주세요.");
       this.monitor(opts.deviceKey, opts.channel || 0);
     }
+    const channelCount = this.device && this.device.inputChannels ? this.device.inputChannels : 1;
+    this.channelRows = normalizeChannelRows(opts.channels, channelCount, opts.spoken);
+    this.paidChannels = new Set();
+    this.channelSessions = new Map();
+    this.sharedTexts = { texts: {}, chain: Promise.resolve() };
+    const spoken = this.channelRows[0].spoken;
+    const targets = translationTargets(outputCodes, this.channelRows.filter((row) => row.on).map((row) => row.spoken));
     const church = await firebase.getChurch(opts.churchId);
     if (!church) throw new Error("교회를 찾지 못했습니다. 관리 페이지에서 교회를 먼저 추가해 주세요.");
     if (!church.active) throw new Error("이 교회는 비활성 상태입니다. 관리 페이지에서 활성화해 주세요.");
@@ -589,6 +792,11 @@ class Engine {
 
     const sessionContext = sessionContextText({ bulletin: extracted, preacher: selected });
     const extraKeywords = contextKeywords(extracted, selected);
+    this.sessionGlossary = glossary;
+    this.sessionContext = sessionContext;
+    this.sessionKeywords = extraKeywords;
+    this.sessionPauseTails = preacherLib.pauseTails(selected);
+    this.sessionSensitivity = opts.sensitivity || "normal";
     await this.syncSettings(church.id, outputCodes);
     await firebase.setSessionMeta(church.id, this.folderName, {
       churchName: church.name,
@@ -605,56 +813,37 @@ class Engine {
     this.usageChain = Promise.resolve();
     this.lastUsageWrite = 0;
     this.sessionCharge = null;
-    const cloud = {
+    this.sessionCloud = {
       updateSubtitles: (payload) => firebase.update(`churches/${church.id}/live/subtitles`, payload),
       setText: (lang, text) => firebase.setSessionText(church.id, this.folderName, lang, text),
       appendSentence: (lang, id, text) => firebase.appendSessionSentence(church.id, this.folderName, lang, id, text),
       recordUsage: (record) => this.flushUsage(true, record),
     };
-    this.pipeline = new Pipeline({
-      apiKey,
-      model,
-      sourceLang: spoken,
-      targets,
-      glossary,
-      sessionContext,
-      pauseTails: preacherLib.pauseTails(selected),
-      files: this.writer,
-      usage: this.usage,
-      cloud,
-      onLive: (text) => this.emit({ type: "live", text }),
-      onHeard: (heard) => this.emit({ type: "heard", ...heard }),
-      onLine: (line) => this.emit({ type: "line", ...line }),
-      onLog: (text) => this.emit({ type: "log", level: "info", text }),
-    });
-    this.pipeline.startTicker();
-    this.speech = new SpeechSession({
-      apiKey,
-      churchName: church.name,
-      glossary,
-      sessionContext,
-      extraKeywords,
-      sensitivity: opts.sensitivity || "normal",
-      language: spoken,
-      onInterim: (text) => this.pipeline && this.pipeline.onInterim(text),
-      onFinal: (text) => this.pipeline && this.pipeline.onFinalChunk(text),
-      onStatus: (text) => this.emit({ type: "log", level: "info", text }),
-      onError: (text) => this.emit({ type: "log", level: "error", text }),
-      onAudio: (pcm) => {
-        if (!this.usage || !pcm) return;
-        this.usage.addPcm16(pcm.length, 24000);
-        this.flushUsage(false);
-      },
-    });
-    await this.speech.start();
+    this.pipeline = null;
+    this.speech = null;
     try {
       await this.chargeOpening();
-    } catch (err) {
-      try { await this.speech.stop(); } catch (_) { /* 이미 끊긴 인식은 무시합니다 */ }
-      this.speech = null;
-      if (this.pipeline) {
-        try { await this.pipeline.stop(); } catch (_) { /* 아직 문장이 없으면 무시합니다 */ }
+      const requested = this.channelRows.map((row, index) => (row.on ? index : -1)).filter((index) => index >= 0);
+      const fees = await this.chargeChannelFees(requested.filter((index) => index > 0));
+      const active = new Set(fees.started);
+      if (requested.includes(0) || fees.blocked.length) active.add(0);
+      if (!active.size) active.add(0);
+      fees.blocked.forEach((index) => {
+        this.channelRows[index].on = false;
+        this.emit({
+          type: "log",
+          level: "error",
+          text: `채널 ${index + 1}은 충전금이 부족해 시작하지 못했습니다.`,
+        });
+      });
+      for (const index of [...active].sort((a, b) => a - b)) {
+        this.channelRows[index].on = true;
+        await this.openChannel(index);
       }
+      await this.syncSettings(church.id, outputCodes);
+    } catch (err) {
+      try { await this.closeAllChannels(); } catch (_) { /* 이미 끊긴 인식은 무시합니다 */ }
+      this.speech = null;
       this.pipeline = null;
       this.running = false;
       if (this.church && this.folderName) {
@@ -688,6 +877,7 @@ class Engine {
       folderName: this.folderName,
       dir: this.sessionDir,
       targets,
+      channels: this.channelRows.map((row) => ({ spoken: row.spoken, on: row.on })),
     };
   }
 
@@ -758,11 +948,17 @@ class Engine {
     try { await this.freezePrepaid(); } catch (err) {
       this.emit({ type: "log", level: "error", text: `남은 시간 저장 실패: ${err.message || err}` });
     }
-    const speech = this.speech;
-    const pipeline = this.pipeline;
+    const pipelines = [...this.channelSessions.values()].map((row) => row.pipeline).filter(Boolean);
+    if (!pipelines.length && this.pipeline) pipelines.push(this.pipeline);
+    await this.closeAllChannels();
     this.speech = null;
-    if (speech) await speech.stop();
-    if (pipeline) await pipeline.stop();
+    const pipeline = pipelines[0] || null;
+    pipelines.slice(1).forEach((item) => {
+      if (!pipeline) return;
+      pipeline.lessons.push(...(item.lessons || []));
+      pipeline.samples.push(...(item.samples || []));
+      pipeline.pauses.push(...(item.pauses || []));
+    });
     const usageRecord = await this.finishUsage();
     if (this.church && this.preacherId && pipeline) {
       try {

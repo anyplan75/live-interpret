@@ -134,7 +134,7 @@
             <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
           </div>
           <div id="channels" class="channels"></div>
-          <p class="hint" id="audioHint">레벨이 움직이는 채널이 설교 소리입니다. 브라우저 마이크는 쓰지 않습니다.</p>
+          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 채널 1은 기본 요금에 포함됩니다. 다른 채널을 켜면 채널당 10,000원이 한 번 빠지고, 30분 추가 요금에는 다시 포함되지 않습니다.</p>
         </div>
 
         <div class="card">
@@ -164,10 +164,7 @@
     <section>
       <div class="card">
         <h2 id="heardTitle">지금 듣는 한국어</h2>
-        <label for="spoken">말하는 언어
-          <select id="spoken"></select>
-        </label>
-        <p class="hint">노란 칸은 지금 듣는 말입니다. 끝난 말은 아래에 듣는 말로 쌓이고, 교정은 그 듣는 말 바로 아래에 붙습니다.</p>
+        <p class="hint">말하는 언어는 채널마다 고릅니다. 노란 칸은 지금 듣는 말입니다. 끝난 말은 아래에 듣는 말로 쌓이고, 교정은 그 듣는 말 바로 아래에 붙습니다.</p>
         <div id="live" class="live">대기 중...</div>
         <div id="koStack" class="ko-stack"></div>
         <h2>안내</h2>
