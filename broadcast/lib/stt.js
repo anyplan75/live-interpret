@@ -76,32 +76,118 @@ class SpeechSession {
         else resolve();
       };
       const timer = setTimeout(() => finish(new Error("실시간 인식 연결 시간 초과")), 6000);
+      let socket;
       try {
-        this.ws = new this.WebSocketImpl(REALTIME_URL, {
+        socket = new this.WebSocketImpl(REALTIME_URL, {
           headers: { Authorization: `Bearer ${this.apiKey}` },
         });
       } catch (err) {
         finish(err);
         return;
       }
-      this.ws.on("open", () => this.sendSession());
-      this.ws.on("message", (data) => {
-        this.handleMessage(data, finish);
+      this.ws = socket;
+      const current = () => this.ws === socket;
+      socket.on("open", () => {
+        if (current()) this.sendSession();
       });
-      this.ws.on("error", (err) => {
+      socket.on("message", (data) => {
+        if (current()) this.handleMessage(data, finish);
+      });
+      socket.on("error", (err) => {
+        if (!current()) return;
+        if (this.languageWait) {
+          const wait = this.languageWait;
+          this.languageWait = null;
+          wait(err);
+          return;
+        }
         if (!this.ready) finish(err);
         else this.onError(err.message || "음성 인식 연결 오류");
       });
-      this.ws.on("close", () => {
+      socket.on("close", () => {
+        if (!current()) return;
         this.ready = false;
         if (!settled) finish(new Error("음성 인식 연결이 닫혔습니다."));
       });
     });
   }
 
+  /**
+   * 방송은 그대로 두고 인식 언어만 바꿉니다.
+   * 열린 소켓이 세션 갱신을 받아들이면 그 자리에서 바꾸고, 아니면 인식 소켓만 다시 연결합니다.
+   */
+  async setLanguage(code) {
+    const spoken = spokenLanguage(code);
+    const language = transcriptionLanguage(spoken);
+    if (this.closed) {
+      this.spoken = spoken;
+      this.language = language;
+      return spoken;
+    }
+    if (spoken === this.spoken && language === this.language) return spoken;
+    this.switching = true;
+    this.paused = true;
+    this.partial = "";
+    this.partialItem = null;
+    this.uttGen += 1;
+    if (this.inflight) {
+      try { await this.inflight; } catch (_) { /* 직전 발화의 실패는 언어 변경을 막지 않습니다 */ }
+    }
+    this.spoken = spoken;
+    this.language = language;
+    try {
+      if (this.mode === "realtime") {
+        const updated = await this.updateLiveLanguage();
+        if (!updated && !this.closed) await this.reconnectRecognition();
+      }
+    } finally {
+      this.switching = false;
+      if (!this.closed) this.release();
+    }
+    return spoken;
+  }
+
+  updateLiveLanguage() {
+    return new Promise((resolve) => {
+      if (this.languageWait) {
+        resolve(false);
+        return;
+      }
+      let settled = false;
+      const finish = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (this.languageWait === finish) this.languageWait = null;
+        resolve(!err);
+      };
+      const timer = setTimeout(() => finish(new Error("인식 언어 변경 시간 초과")), 2500);
+      this.languageWait = finish;
+      if (!this.sendSession()) finish(new Error("음성 인식 소켓이 열려 있지 않습니다."));
+    });
+  }
+
+  async reconnectRecognition() {
+    this.ready = false;
+    this.mode = "realtime";
+    const old = this.ws;
+    this.ws = null;
+    try {
+      if (old) old.close();
+    } catch (_) {
+      /* 이미 닫힌 소켓 */
+    }
+    try {
+      await this.connect();
+      this.onStatus("인식 언어를 바꿨습니다.");
+    } catch (err) {
+      if (!this.closed) this.switchToFile(err.message || String(err));
+    }
+  }
+
   sendSession() {
     const keywords = keywordsFromGlossary(this.glossary, this.churchName, this.extraKeywords);
-    this.send({
+    return this.send({
       type: "session.update",
       session: {
         type: "transcription",
@@ -132,6 +218,12 @@ class SpeechSession {
     if (event.type === "session.updated" || event.type === "transcription_session.updated") {
       this.ready = true;
       this.startedAt = Date.now();
+      if (this.languageWait) {
+        const wait = this.languageWait;
+        this.languageWait = null;
+        wait();
+        return;
+      }
       this.onStatus("실시간 음성 인식에 연결되었습니다.");
       if (onReady) onReady();
       return;
@@ -179,6 +271,12 @@ class SpeechSession {
     }
     if (event.type === "error") {
       const message = (event.error && (event.error.message || event.error.code)) || "음성 인식 오류";
+      if (this.languageWait) {
+        const wait = this.languageWait;
+        this.languageWait = null;
+        wait(new Error(message));
+        return;
+      }
       if (!this.ready && onReady) onReady(new Error(message));
       else this.onError(message);
     }
@@ -343,6 +441,10 @@ class SpeechSession {
   }
 
   release() {
+    if (this.switching) {
+      this.paused = true;
+      return;
+    }
     const queued = this.backlog.splice(0);
     this.paused = false;
     if (this.startedAt && Date.now() - this.startedAt > 45 * 60 * 1000 && this.mode === "realtime") {

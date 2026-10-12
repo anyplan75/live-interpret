@@ -47,7 +47,9 @@ class Engine {
     this.writer = null;
     this.church = null;
     this.targets = [];
+    this.outputs = [];
     this.spoken = "ko";
+    this.spokenChain = Promise.resolve();
     this.running = false;
     this.lastLevelAt = 0;
     this.sessionDir = "";
@@ -483,12 +485,40 @@ class Engine {
         throw new Error("방송 중에는 아직 포함되지 않은 언어를 더할 수 없습니다. 방송을 끄면 남은 시간이 멈추고, 다시 시작할 때 추가 언어 요금을 확인합니다.");
       }
     }
+    this.outputs = selected;
     this.targets = next;
     if (this.pipeline) this.pipeline.targets = this.targets;
     if (this.usage) this.usage.setLanguages(this.targets);
     if (churchId) await this.syncSettings(churchId, selected);
     if (this.running) this.flushUsage(true);
     return selected;
+  }
+
+  async setSpoken(churchId, spoken) {
+    const job = this.spokenChain.then(() => this.applySpoken(churchId, spoken));
+    this.spokenChain = job.catch(() => {});
+    return job;
+  }
+
+  async applySpoken(churchId, spoken) {
+    const nextSpoken = spokenLanguage(spoken);
+    const changed = nextSpoken !== this.spoken;
+    this.spoken = nextSpoken;
+    const outputs = Array.isArray(this.outputs) ? this.outputs : [];
+    const translated = translationTargets(outputs, nextSpoken);
+    this.targets = translated;
+    if (this.pipeline && this.pipeline.setSourceLang) this.pipeline.setSourceLang(nextSpoken, translated);
+    else if (this.pipeline) {
+      this.pipeline.sourceLang = nextSpoken;
+      this.pipeline.targets = translated;
+    }
+    if (churchId) await this.syncSettings(churchId, outputs);
+    if (this.speech && this.speech.setLanguage) await this.speech.setLanguage(nextSpoken);
+    if (changed && this.running) {
+      const name = langByCode[nextSpoken] ? langByCode[nextSpoken].name : nextSpoken;
+      this.emit({ type: "log", level: "info", text: `인식 언어를 ${name}로 바꿨습니다.` });
+    }
+    return nextSpoken;
   }
 
   async start(opts) {
@@ -524,6 +554,7 @@ class Engine {
     this.folderName = this.writer.folderName;
     this.church = church;
     this.spoken = spoken;
+    this.outputs = outputCodes;
     this.targets = targets;
     this.sessionApiKey = apiKey;
     this.sessionModel = model;

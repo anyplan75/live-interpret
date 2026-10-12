@@ -267,9 +267,9 @@ class Pipeline {
   }
 
   /** 번역으로 넘긴 글자 수만 더합니다. 문장 전체는 요금 기록에 다시 쓰지 않습니다. */
-  meterTranslation(text) {
+  meterTranslation(text, langs) {
     if (!this.usage) return;
-    this.usage.addTranslation(text, this.targets);
+    this.usage.addTranslation(text, langs || this.targets);
     const record = this.usage.record(this.model);
     if (this.cloud && this.cloud.recordUsage) {
       Promise.resolve(this.cloud.recordUsage(record)).catch((err) => {
@@ -278,42 +278,58 @@ class Pipeline {
     }
   }
 
+  setSourceLang(code, targets) {
+    this.sourceLang = spokenLanguage(code);
+    if (Array.isArray(targets)) {
+      this.targets = targets.filter((lang) => lang !== "ko" && lang !== this.sourceLang && langByCode[lang]);
+    }
+    this.interim = "";
+    this.unprocessed = "";
+    this.holdFragment = "";
+    this.holdHeard = 0;
+    this.spoken = "";
+    this.utterance = "";
+    this.onLive("");
+  }
+
   async publish(koreanText, id, heardId) {
     koreanText = stripGuidance(koreanText);
     if (!koreanText || sentence.isNoise(koreanText) || isGuidanceEcho(koreanText)) return;
-    this.meterTranslation(koreanText);
+    const source = this.sourceLang;
+    const targets = this.targets.slice();
+    this.meterTranslation(koreanText, targets);
     try {
       const result = await this.translateImpl(koreanText, {
         apiKey: this.apiKey,
         model: this.model,
-        sourceLang: this.sourceLang,
-        targetCodes: this.targets,
+        sourceLang: source,
+        targetCodes: targets,
         previousContext: this.recentContext.join("\n"),
         sessionContext: this.sessionContext,
         glossary: this.glossary,
       });
-      if (this.sourceLang === "ko" && result.ko != null && String(result.ko).trim() && String(result.ko).trim() !== koreanText) {
+      if (source === "ko" && result.ko != null && String(result.ko).trim() && String(result.ko).trim() !== koreanText) {
         this.lessons.push({ heard: koreanText, corrected: String(result.ko).trim() });
         if (this.lessons.length > 40) this.lessons.shift();
       }
-      if (this.sourceLang === "ko" && result.ko != null && !String(result.ko).trim()) {
+      if (source === "ko" && result.ko != null && !String(result.ko).trim()) {
         this.onLine({ lang: "ko", text: "", raw: koreanText, isFinal: true, id, heardId, skipped: true });
         return;
       }
       result._raw = koreanText;
-      if (this.sourceLang !== "ko") result[this.sourceLang] = koreanText;
-      this.remember(this.sourceLang === "ko" ? result.ko : koreanText);
-      this.noteSample(result);
-      await this.writeLanguages(result, id, [this.sourceLang, ...this.targets], heardId);
+      if (source !== "ko") result[source] = koreanText;
+      this.remember(source === "ko" ? result.ko : koreanText);
+      this.noteSample(result, source);
+      await this.writeLanguages(result, id, [source, ...targets], heardId);
     } catch (err) {
-      const kept = this.sourceLang === "ko" ? "한국어 원문" : "받아쓴 원문";
+      const kept = source === "ko" ? "한국어 원문" : "받아쓴 원문";
       this.onLog(`번역 실패, ${kept}을 남깁니다: ${err.message || err}`);
-      await this.writeLanguages({ [this.sourceLang]: koreanText, _raw: koreanText }, id, [this.sourceLang], heardId);
+      await this.writeLanguages({ [source]: koreanText, _raw: koreanText }, id, [source], heardId);
     }
   }
 
-  noteSample(result) {
-    if (this.sourceLang !== "ko") return;
+  noteSample(result, source) {
+    if ((source || this.sourceLang) !== "ko") return;
     const lang = this.targets.includes("en") ? "en" : this.targets[0];
     const ko = String(result.ko || "").trim();
     const text = lang && result[lang] ? String(result[lang]).trim() : "";

@@ -359,6 +359,10 @@ function registerIpc() {
   });
   ipcMain.handle("audio:monitor", (_event, deviceKey, channel) => engine.monitor(deviceKey, channel));
   ipcMain.handle("audio:channel", (_event, index) => engine.setChannel(index));
+  ipcMain.handle("spoken:set", async (_event, spoken) => {
+    const church = await requireChurch();
+    return engine.setSpoken(church.id, spoken);
+  });
   ipcMain.handle("targets:set", async (_event, _churchId, targets, spoken) => {
     const church = await requireChurch();
     return engine.setTargets(church.id, targets, spoken);

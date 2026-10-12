@@ -272,7 +272,6 @@ function setRunning(running) {
   document.getElementById("stop").disabled = !running;
   document.getElementById("showSession").disabled = !state.settings.sessionDir && !running;
   deviceEl.disabled = running;
-  if (spokenEl) spokenEl.disabled = running;
   document.getElementById("pickFolder").disabled = running;
   document.getElementById("pickBulletin").disabled = running;
   preacherEl.disabled = running;
@@ -736,9 +735,26 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
 });
 
 spokenEl.addEventListener("change", async () => {
+  const previous = state.spoken;
   state.spoken = knownSpoken(spokenEl.value);
   renderHeardTitle();
-  await onTargetsChanged();
+  if (langCount) langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
+  try {
+    await persist({ spoken: state.spoken });
+    if (state.running) {
+      await window.broadcast.setSpoken(state.spoken);
+      await renderLinks();
+    } else {
+      await onTargetsChanged();
+    }
+  } catch (err) {
+    state.spoken = previous;
+    spokenEl.value = previous;
+    renderHeardTitle();
+    if (langCount) langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
+    await persist({ spoken: previous });
+    log(err.message || String(err), "error");
+  }
 });
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 deviceEl.addEventListener("change", chooseDevice);

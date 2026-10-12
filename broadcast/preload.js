@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   monitor: (deviceKey, channel) => ipcRenderer.invoke("audio:monitor", deviceKey, channel),
   setChannel: (index) => ipcRenderer.invoke("audio:channel", index),
   setTargets: (targets, spoken) => ipcRenderer.invoke("targets:set", "", targets, spoken),
+  setSpoken: (spoken) => ipcRenderer.invoke("spoken:set", spoken),
   links: (targets, spoken) => ipcRenderer.invoke("links", "", targets, spoken),
   start: (opts) => ipcRenderer.invoke("broadcast:start", opts),
   stop: () => ipcRenderer.invoke("broadcast:stop"),

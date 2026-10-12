@@ -6,6 +6,8 @@ const catalog = require("../docs/js/catalog");
 const cost = require("../broadcast/lib/cost");
 const { buildPrompt } = require("../broadcast/lib/translator");
 const { SpeechSession } = require("../broadcast/lib/stt");
+const { Engine } = require("../broadcast/lib/engine");
+const { Pipeline } = require("../broadcast/lib/pipeline");
 
 const root = path.join(__dirname, "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
@@ -74,5 +76,128 @@ test("the broadcast window labels the heard language", () => {
   assert.match(html, /말하는 언어/);
   assert.match(html, /id="heardTitle"/);
   assert.match(renderer, /지금 듣는 \$\{spokenName/);
+  assert.match(renderer, /setSpoken/);
+  assert.doesNotMatch(renderer, /spokenEl\.disabled = running/);
   assert.match(read("broadcast/lib/stt.js"), /languages: \[this\.language\]/);
+});
+
+class FakeSocket {
+  static sockets = [];
+  static failUpdates = 0;
+
+  constructor() {
+    this.sent = [];
+    this.handlers = {};
+    this.readyState = 0;
+    FakeSocket.sockets.push(this);
+    queueMicrotask(() => {
+      this.readyState = 1;
+      if (this.handlers.open) this.handlers.open();
+    });
+  }
+
+  on(type, fn) {
+    this.handlers[type] = fn;
+  }
+
+  send(raw) {
+    const msg = JSON.parse(raw);
+    this.sent.push(msg);
+    if (msg.type !== "session.update") return;
+    if (FakeSocket.failUpdates > 0) {
+      FakeSocket.failUpdates -= 1;
+      queueMicrotask(() => {
+        if (this.handlers.message) {
+          this.handlers.message(JSON.stringify({ type: "error", error: { message: "language locked" } }));
+        }
+      });
+      return;
+    }
+    queueMicrotask(() => {
+      if (this.handlers.message) this.handlers.message(JSON.stringify({ type: "session.updated" }));
+    });
+  }
+
+  close() {
+    this.readyState = 3;
+    this.closed = true;
+  }
+}
+
+test("a live language change updates recognition without ending the broadcast", async () => {
+  FakeSocket.sockets = [];
+  FakeSocket.failUpdates = 0;
+  const session = new SpeechSession({
+    apiKey: "sk-test",
+    language: "ko",
+    churchName: "은혜교회",
+    WebSocketImpl: FakeSocket,
+  });
+  await session.start();
+  assert.equal(session.closed, false);
+  assert.equal(FakeSocket.sockets.length, 1);
+  await session.setLanguage("en");
+  assert.equal(session.closed, false);
+  assert.equal(session.mode, "realtime");
+  assert.equal(session.spoken, "en");
+  assert.equal(session.language, "en");
+  assert.equal(FakeSocket.sockets.length, 1);
+  const updates = FakeSocket.sockets[0].sent.filter((msg) => msg.type === "session.update");
+  assert.deepEqual(updates.at(-1).session.audio.input.transcription.languages, ["en"]);
+
+  FakeSocket.failUpdates = 1;
+  await session.setLanguage("ja");
+  assert.equal(session.closed, false);
+  assert.equal(session.mode, "realtime");
+  assert.equal(FakeSocket.sockets.length, 2);
+  assert.equal(FakeSocket.sockets[0].closed, true);
+  const reopened = FakeSocket.sockets[1].sent.find((msg) => msg.type === "session.update");
+  assert.deepEqual(reopened.session.audio.input.transcription.languages, ["ja"]);
+  assert.equal(session.language, "ja");
+
+  const fileSession = new SpeechSession({ apiKey: "sk-test", language: "ko", WebSocketImpl: FakeSocket });
+  fileSession.mode = "file";
+  const before = FakeSocket.sockets.length;
+  await fileSession.setLanguage("vi");
+  assert.equal(fileSession.language, "vi");
+  assert.equal(FakeSocket.sockets.length, before);
+});
+
+test("switching spoken language during a broadcast does not change the hour price", async () => {
+  const logs = [];
+  const engine = new Engine((payload) => logs.push(payload));
+  engine.running = true;
+  engine.spoken = "ko";
+  engine.outputs = ["en", "ja"];
+  engine.targets = ["en", "ja"];
+  engine.prepaid = { languages: ["en", "ja"], amountKrw: 20000, remainingSeconds: 1800 };
+  engine.sessionCharge = { charged: 20000 };
+  const usage = {
+    languages: ["en", "ja"],
+    setLanguages(langs) { this.languages = langs.slice(); },
+  };
+  engine.usage = usage;
+  const switched = [];
+  engine.speech = {
+    async setLanguage(code) {
+      switched.push(code);
+      return code;
+    },
+  };
+  engine.pipeline = new Pipeline({
+    targets: ["en", "ja"],
+    sourceLang: "ko",
+    onLive: () => {},
+  });
+  const spoken = await engine.setSpoken("", "ja");
+  assert.equal(spoken, "ja");
+  assert.equal(engine.running, true);
+  assert.equal(engine.pipeline.sourceLang, "ja");
+  assert.deepEqual(engine.pipeline.targets, ["en"]);
+  assert.deepEqual(usage.languages, ["en", "ja"]);
+  assert.equal(engine.sessionCharge.charged, 20000);
+  assert.equal(engine.prepaid.amountKrw, 20000);
+  assert.deepEqual(engine.prepaid.languages, ["en", "ja"]);
+  assert.deepEqual(switched, ["ja"]);
+  assert.equal(logs.some((row) => row.text && row.text.includes("일본어")), true);
 });
