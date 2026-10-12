@@ -74,5 +74,5 @@ test("opacity setting is the darkest alpha and the slider stays", () => {
 
 test("subtitle stays on the dark side of the band", () => {
   assert.match(css, /\.layout-bottom #subtitle,\s*\.layout-top #subtitle\s*\{[^}]*max-height:\s*calc\(100vh\s*\/\s*6 \* 0\.62 - 0\.9vh\)/);
-  assert.match(css, /\.layout-left #subtitle,\s*\.layout-right #subtitle\s*\{[^}]*max-width:\s*calc\(100vw\s*\/\s*2 \* 0\.5 - 1\.6vw\)/);
+  assert.match(css, /\.layout-left #subtitle,\s*\.layout-right #subtitle\s*\{[^}]*max-width:\s*calc\(\(100vw\s*\/\s*2 \* 0\.5 - 1\.6vw\)\s*\*\s*1\.3\)/);
 });

@@ -132,7 +132,7 @@ html, body {
 
 .layout-left #subtitle,
 .layout-right #subtitle {
-  max-width: calc(100vw / 2 * 0.5 - 1.6vw);
+  max-width: calc((100vw / 2 * 0.5 - 1.6vw) * 1.3);
   overflow: hidden;
 }
 
