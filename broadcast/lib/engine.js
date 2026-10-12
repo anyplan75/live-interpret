@@ -11,6 +11,8 @@ const {
   applyStyleToSettings,
   styleFromSettings,
   subtitleFontId,
+  spokenLanguage,
+  translationTargets,
 } = require("./catalog");
 const bulletin = require("./bulletin");
 const preacherLib = require("./preacher");
@@ -45,6 +47,7 @@ class Engine {
     this.writer = null;
     this.church = null;
     this.targets = [];
+    this.spoken = "ko";
     this.running = false;
     this.lastLevelAt = 0;
     this.sessionDir = "";
@@ -76,8 +79,8 @@ class Engine {
     return Math.round(Number(raw) || 0);
   }
 
-  async previewCharge(churchId, targets) {
-    const languages = cleanTargets(targets);
+  async previewCharge(churchId, targets, spoken) {
+    const languages = translationTargets(targets, spoken);
     const balance = await this.readBalance(churchId);
     const prepaid = await this.readPrepaid(churchId);
     const plan = cost.planBroadcastStart({ balance, languages, prepaid });
@@ -433,11 +436,13 @@ class Engine {
   }
 
   async syncSettings(churchId, targets) {
-    const selected = cleanTargets(targets);
+    const source = spokenLanguage(this.spoken);
+    const selected = translationTargets(targets, source);
     const existing = (await firebase.get(`churches/${churchId}/live/settings`)) || {};
-    const active = ["ko", ...selected];
+    const active = [source, ...selected];
     const next = {
       _timestamp: Date.now(),
+      spoken: source,
       activeTargets: active,
       global: existing.global || {
         layout: "bottom",
@@ -468,8 +473,10 @@ class Engine {
     return styleFromSettings(next);
   }
 
-  async setTargets(churchId, targets) {
-    const next = cleanTargets(targets);
+  async setTargets(churchId, targets, spoken) {
+    if (spoken != null) this.spoken = spokenLanguage(spoken);
+    const selected = cleanTargets(targets);
+    const next = translationTargets(selected, this.spoken);
     if (this.running && this.prepaid) {
       const added = cost.addedLanguages(this.prepaid.languages, next);
       if (added.length) {
@@ -479,9 +486,9 @@ class Engine {
     this.targets = next;
     if (this.pipeline) this.pipeline.targets = this.targets;
     if (this.usage) this.usage.setLanguages(this.targets);
-    if (churchId) await this.syncSettings(churchId, this.targets);
+    if (churchId) await this.syncSettings(churchId, selected);
     if (this.running) this.flushUsage(true);
-    return this.targets;
+    return selected;
   }
 
   async start(opts) {
@@ -493,8 +500,10 @@ class Engine {
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
     if (!isChurchId(opts.churchId)) throw new Error("교회를 선택해 주세요.");
     if (!isPreacherId(opts.preacherId)) throw new Error("설교자를 등록하고 선택해 주세요.");
-    const targets = cleanTargets(opts.targets);
-    if (!targets.length) throw new Error("번역할 언어를 하나 이상 선택해 주세요. 한국어는 항상 포함됩니다.");
+    const spoken = spokenLanguage(opts.spoken);
+    const outputCodes = cleanTargets(opts.targets);
+    const targets = translationTargets(outputCodes, spoken);
+    if (!outputCodes.length) throw new Error("번역할 언어를 하나 이상 선택해 주세요.");
     if (!this.capture.opened) {
       if (!opts.deviceKey) throw new Error("입력 장치를 먼저 선택해 주세요.");
       this.monitor(opts.deviceKey, opts.channel || 0);
@@ -514,6 +523,7 @@ class Engine {
     this.sessionDir = this.writer.dir;
     this.folderName = this.writer.folderName;
     this.church = church;
+    this.spoken = spoken;
     this.targets = targets;
     this.sessionApiKey = apiKey;
     this.sessionModel = model;
@@ -548,12 +558,12 @@ class Engine {
 
     const sessionContext = sessionContextText({ bulletin: extracted, preacher: selected });
     const extraKeywords = contextKeywords(extracted, selected);
-    await this.syncSettings(church.id, targets);
+    await this.syncSettings(church.id, outputCodes);
     await firebase.setSessionMeta(church.id, this.folderName, {
       churchName: church.name,
       startedAt: Date.now(),
       folderName: this.folderName,
-      languages: ["ko", ...targets],
+      languages: [spoken, ...targets],
       preacherId: selected.id,
       preacherName: selected.name,
       endedAt: null,
@@ -573,6 +583,7 @@ class Engine {
     this.pipeline = new Pipeline({
       apiKey,
       model,
+      sourceLang: spoken,
       targets,
       glossary,
       sessionContext,
@@ -593,6 +604,7 @@ class Engine {
       sessionContext,
       extraKeywords,
       sensitivity: opts.sensitivity || "normal",
+      language: spoken,
       onInterim: (text) => this.pipeline && this.pipeline.onInterim(text),
       onFinal: (text) => this.pipeline && this.pipeline.onFinalChunk(text),
       onStatus: (text) => this.emit({ type: "log", level: "info", text }),

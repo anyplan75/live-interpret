@@ -6,12 +6,47 @@ const { langByCode, defaultModel } = require("./catalog");
 
 const BATCH_SIZE = 5;
 
+function sourceLanguage(opts) {
+  const code = opts && opts.sourceLang;
+  return code && langByCode[code] ? code : "ko";
+}
+
 function buildPrompt(koreanText, targetCodes, opts) {
-  const langLines = ["ko: 교정된 한국어", ...targetCodes.map((code) => {
+  const source = sourceLanguage(opts);
+  const targets = (targetCodes || []).filter((code) => code !== source && langByCode[code]);
+  if (source !== "ko") {
+    const meta = langByCode[source];
+    const langLines = targets.map((code) => {
+      const row = langByCode[code];
+      return `${code}: ${row ? row.name : code} 번역`;
+    });
+    const schemaKeys = targets.map((code) => `  "${code}": "..."`).join(",\n");
+    const contextBlock = opts.previousContext ? `\n[직전 문맥]\n${opts.previousContext}\n` : "";
+    const sessionContext = String(opts.sessionContext || "").trim();
+    const sessionBlock = sessionContext ? `\n[이번 예배·설교자]\n${sessionContext}\n` : "";
+    const glossary = String(opts.glossary || "").trim();
+    return `너는 교회 예배(설교·기도·찬송·광고) 동시통역 자막기다.
+원문은 ${meta.name}(${source})로 받아쓴 말이다. ${source}로는 다시 번역하지 마라.
+1) 지정 언어로만 자연스럽고 예배에 어울리게 번역하라.
+2) 내용을 요약·삭제·임의 첨삭하지 마라.
+3) JSON 문자열 값 안의 따옴표는 반드시 이스케이프하라.
+4) [이번 예배·설교자]에 정확도 교정이나 자연스러움 교정이 있으면 그 표현을 우선하라.
+
+${glossary}
+${sessionBlock}
+${contextBlock}
+반드시 아래 JSON 형식으로만 응답 (키: ${langLines.join(", ")}):
+{
+${schemaKeys}
+}
+
+발화 원본: ${JSON.stringify(koreanText)}`;
+  }
+  const langLines = ["ko: 교정된 한국어", ...targets.map((code) => {
     const meta = langByCode[code];
     return `${code}: ${meta ? meta.name : code} 번역`;
   })];
-  const schemaKeys = ["ko", ...targetCodes].map((code) => `  "${code}": "..."`).join(",\n");
+  const schemaKeys = ["ko", ...targets].map((code) => `  "${code}": "..."`).join(",\n");
   const contextBlock = opts.previousContext ? `\n[직전 문맥]\n${opts.previousContext}\n` : "";
   const sessionContext = String(opts.sessionContext || "").trim();
   const sessionBlock = sessionContext ? `\n[이번 예배·설교자]\n${sessionContext}\n` : "";
@@ -98,11 +133,14 @@ async function translate(koreanText, opts) {
   const apiKey = opts.apiKey;
   if (!apiKey) throw new Error("OpenAI API 키가 없습니다.");
   const model = opts.model || defaultModel;
+  const source = sourceLanguage(opts);
   const targetCodes = (opts.targetCodes && opts.targetCodes.length ? opts.targetCodes : [])
-    .filter((code) => code !== "ko" && langByCode[code]);
+    .filter((code) => code !== source && langByCode[code]);
+  if (!targetCodes.length) return { [source]: koreanText };
   const baseOpts = {
     apiKey,
     model,
+    sourceLang: source,
     previousContext: opts.previousContext || "",
     sessionContext: opts.sessionContext || "",
     glossary: opts.glossary || "",
@@ -113,24 +151,27 @@ async function translate(koreanText, opts) {
 
   const firstBatch = targetCodes.slice(0, BATCH_SIZE);
   const first = await callWithRetry(koreanText, firstBatch, baseOpts);
-  const correctedKo = first.ko != null && String(first.ko).trim()
+  const correctedKo = source === "ko" && first.ko != null && String(first.ko).trim()
     ? String(first.ko).trim()
     : koreanText;
-  const result = { ...first, ko: correctedKo };
+  const result = source === "ko"
+    ? { ...first, ko: correctedKo }
+    : { ...first, [source]: koreanText };
 
   for (let i = BATCH_SIZE; i < targetCodes.length; i += BATCH_SIZE) {
     const batch = targetCodes.slice(i, i + BATCH_SIZE);
     try {
-      const part = await callWithRetry(correctedKo, batch, { ...baseOpts, koFixed: true });
+      const part = await callWithRetry(correctedKo, batch, { ...baseOpts, koFixed: source === "ko" });
       batch.forEach((code) => {
-        if (part[code]) result[code] = part[code];
+        if (code !== source && part[code]) result[code] = part[code];
       });
     } catch (err) {
       if (opts.onBatchError) opts.onBatchError(batch, err);
     }
   }
 
-  if (!result.ko) result.ko = koreanText;
+  if (source === "ko" && !result.ko) result.ko = koreanText;
+  if (source !== "ko") result[source] = koreanText;
   return result;
 }
 

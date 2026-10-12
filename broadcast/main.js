@@ -186,6 +186,7 @@ function registerIpc() {
       saved.targets = catalog.defaultSelectedTargets();
     }
     if (!saved.sensitivity) saved.sensitivity = "normal";
+    saved.spoken = catalog.spokenLanguage(saved.spoken);
     return saved;
   });
   ipcMain.handle("settings:set", (_event, patch) => writeSettings(patch || {}));
@@ -280,9 +281,9 @@ function registerIpc() {
       balanceKrw,
     };
   });
-  ipcMain.handle("billing:preview", async (_event, targets) => {
+  ipcMain.handle("billing:preview", async (_event, targets, spoken) => {
     const church = await requireChurch();
-    return engine.previewCharge(church.id, targets);
+    return engine.previewCharge(church.id, targets, spoken);
   });
   ipcMain.handle("style:set", async (_event, style) => {
     const church = await requireChurch();
@@ -358,13 +359,14 @@ function registerIpc() {
   });
   ipcMain.handle("audio:monitor", (_event, deviceKey, channel) => engine.monitor(deviceKey, channel));
   ipcMain.handle("audio:channel", (_event, index) => engine.setChannel(index));
-  ipcMain.handle("targets:set", async (_event, _churchId, targets) => {
+  ipcMain.handle("targets:set", async (_event, _churchId, targets, spoken) => {
     const church = await requireChurch();
-    return engine.setTargets(church.id, targets);
+    return engine.setTargets(church.id, targets, spoken);
   });
-  ipcMain.handle("links", async (_event, _churchId, targets) => {
+  ipcMain.handle("links", async (_event, _churchId, targets, spoken) => {
     const church = await requireChurch();
-    const codes = ["ko", ...(targets || []).filter((code) => code !== "ko" && catalog.langByCode[code])];
+    const source = catalog.spokenLanguage(spoken);
+    const codes = [source, ...catalog.translationTargets(targets, source)];
     return {
       home: catalog.homeLink(catalog.pagesBase, church.id),
       items: catalog.buildLinks(catalog.pagesBase, church.id, codes),

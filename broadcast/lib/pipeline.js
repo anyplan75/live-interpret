@@ -1,6 +1,6 @@
 const sentence = require("./sentence");
 const { translate } = require("./translator");
-const { timing, langByCode, isGuidanceEcho, stripGuidance } = require("./catalog");
+const { timing, langByCode, isGuidanceEcho, stripGuidance, spokenLanguage } = require("./catalog");
 
 function joinSpace(left, right) {
   return `${left || ""} ${right || ""}`.replace(/\s+/g, " ").trim();
@@ -43,7 +43,8 @@ class Pipeline {
   constructor(opts) {
     this.apiKey = opts.apiKey;
     this.model = opts.model;
-    this.targets = (opts.targets || []).filter((code) => code !== "ko" && langByCode[code]);
+    this.sourceLang = spokenLanguage(opts.sourceLang);
+    this.targets = (opts.targets || []).filter((code) => code !== "ko" && code !== this.sourceLang && langByCode[code]);
     this.glossary = opts.glossary || "";
     this.sessionContext = opts.sessionContext || "";
     this.lessons = [];
@@ -285,30 +286,34 @@ class Pipeline {
       const result = await this.translateImpl(koreanText, {
         apiKey: this.apiKey,
         model: this.model,
+        sourceLang: this.sourceLang,
         targetCodes: this.targets,
         previousContext: this.recentContext.join("\n"),
         sessionContext: this.sessionContext,
         glossary: this.glossary,
       });
-      if (result.ko != null && String(result.ko).trim() && String(result.ko).trim() !== koreanText) {
+      if (this.sourceLang === "ko" && result.ko != null && String(result.ko).trim() && String(result.ko).trim() !== koreanText) {
         this.lessons.push({ heard: koreanText, corrected: String(result.ko).trim() });
         if (this.lessons.length > 40) this.lessons.shift();
       }
-      if (result.ko != null && !String(result.ko).trim()) {
+      if (this.sourceLang === "ko" && result.ko != null && !String(result.ko).trim()) {
         this.onLine({ lang: "ko", text: "", raw: koreanText, isFinal: true, id, heardId, skipped: true });
         return;
       }
       result._raw = koreanText;
-      this.remember(result.ko);
+      if (this.sourceLang !== "ko") result[this.sourceLang] = koreanText;
+      this.remember(this.sourceLang === "ko" ? result.ko : koreanText);
       this.noteSample(result);
-      await this.writeLanguages(result, id, ["ko", ...this.targets], heardId);
+      await this.writeLanguages(result, id, [this.sourceLang, ...this.targets], heardId);
     } catch (err) {
-      this.onLog(`번역 실패, 한국어 원문을 남깁니다: ${err.message || err}`);
-      await this.writeLanguages({ ko: koreanText, _raw: koreanText }, id, ["ko"], heardId);
+      const kept = this.sourceLang === "ko" ? "한국어 원문" : "받아쓴 원문";
+      this.onLog(`번역 실패, ${kept}을 남깁니다: ${err.message || err}`);
+      await this.writeLanguages({ [this.sourceLang]: koreanText, _raw: koreanText }, id, [this.sourceLang], heardId);
     }
   }
 
   noteSample(result) {
+    if (this.sourceLang !== "ko") return;
     const lang = this.targets.includes("en") ? "en" : this.targets[0];
     const ko = String(result.ko || "").trim();
     const text = lang && result[lang] ? String(result[lang]).trim() : "";
@@ -344,10 +349,10 @@ class Pipeline {
         this.onLog(`클라우드 ${lang} 문장 추가 실패: ${err.message || err}`);
       }
       payload[lang] = { text: out, id, isFinal: true };
-      if (lang === "ko") this.onLine({ lang, text: out, raw: result._raw, isFinal: true, id, heardId });
+      if (lang === this.sourceLang) this.onLine({ lang, text: out, raw: result._raw, isFinal: true, id, heardId });
       else this.onLine({ lang, text: out, raw: "", isFinal: true, id });
     }
-    if (payload.ko && this.cloud) {
+    if (Object.keys(payload).some((key) => key !== "_timestamp") && this.cloud) {
       try {
         await this.cloud.updateSubtitles(payload);
       } catch (err) {
@@ -369,7 +374,7 @@ class Pipeline {
     this.lastLivePush = now;
     this.cloud.updateSubtitles({
       _timestamp: now,
-      ko: { text, id: this.sentenceId, isFinal: false },
+      [this.sourceLang]: { text, id: this.sentenceId, isFinal: false },
     }).catch(() => {});
   }
 
@@ -378,7 +383,7 @@ class Pipeline {
     this.lastLivePush = Date.now();
     this.cloud.updateSubtitles({
       _timestamp: this.lastLivePush,
-      ko: { text, id, isFinal: !!isFinal },
+      [this.sourceLang]: { text, id, isFinal: !!isFinal },
     }).catch(() => {});
   }
 

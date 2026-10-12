@@ -11,6 +11,8 @@ const cardsEl = document.getElementById("cards");
 const logEl = document.getElementById("log");
 const langCount = document.getElementById("langCount");
 const preacherEl = document.getElementById("preacher");
+const spokenEl = document.getElementById("spoken");
+const heardTitleEl = document.getElementById("heardTitle");
 
 const state = {
   catalog: null,
@@ -23,6 +25,7 @@ const state = {
   signedIn: false,
   lines: {},
   targets: [],
+  spoken: "ko",
   style: null,
 };
 
@@ -43,6 +46,37 @@ function log(text, level) {
 
 function selectedTargets() {
   return [...langsEl.querySelectorAll("input:checked")].map((input) => input.value);
+}
+
+function knownSpoken(code) {
+  const found = (state.catalog && state.catalog.languages || []).find((lang) => lang.code === code);
+  return found ? found.code : "ko";
+}
+
+function spokenName(code) {
+  const found = (state.catalog && state.catalog.languages || []).find((lang) => lang.code === code);
+  return found ? found.name : "한국어";
+}
+
+function renderHeardTitle() {
+  if (heardTitleEl) heardTitleEl.textContent = `지금 듣는 ${spokenName(state.spoken)}`;
+}
+
+function renderSpoken(code) {
+  state.spoken = knownSpoken(code);
+  if (!spokenEl || !state.catalog) {
+    renderHeardTitle();
+    return;
+  }
+  spokenEl.innerHTML = "";
+  state.catalog.languages.forEach((lang) => {
+    const option = document.createElement("option");
+    option.value = lang.code;
+    option.textContent = `${lang.flag} ${lang.name}`;
+    spokenEl.append(option);
+  });
+  spokenEl.value = state.spoken;
+  renderHeardTitle();
 }
 
 function selectedPreacherId() {
@@ -90,21 +124,21 @@ function restoreLangChecks(selected) {
 async function onTargetsChanged(sync = true) {
   const previous = state.targets.slice();
   state.targets = selectedTargets();
-  langCount.textContent = `번역 ${state.targets.length}개 + 한국어`;
+  langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
   langsEl.querySelectorAll(".lang").forEach((label) => {
     label.classList.toggle("on", label.querySelector("input").checked);
   });
-  await persist({ targets: state.targets });
+  await persist({ targets: state.targets, spoken: state.spoken });
   if (sync && state.church) {
     try {
-      const applied = await window.broadcast.setTargets(state.targets);
+      const applied = await window.broadcast.setTargets(state.targets, state.spoken);
       if (Array.isArray(applied)) state.targets = applied;
     } catch (err) {
       log(err.message || String(err), "error");
       state.targets = previous;
       restoreLangChecks(previous);
-      langCount.textContent = `번역 ${state.targets.length}개 + 한국어`;
-      await persist({ targets: state.targets });
+      langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
+      await persist({ targets: state.targets, spoken: state.spoken });
     }
   }
   await renderLinks();
@@ -184,7 +218,7 @@ async function renderLinks() {
   if (!state.church) return;
   let links;
   try {
-    links = await window.broadcast.links(state.targets);
+    links = await window.broadcast.links(state.targets, state.spoken);
   } catch (err) {
     log(err.message || String(err), "error");
     return;
@@ -238,6 +272,7 @@ function setRunning(running) {
   document.getElementById("stop").disabled = !running;
   document.getElementById("showSession").disabled = !state.settings.sessionDir && !running;
   deviceEl.disabled = running;
+  if (spokenEl) spokenEl.disabled = running;
   document.getElementById("pickFolder").disabled = running;
   document.getElementById("pickBulletin").disabled = running;
   preacherEl.disabled = running;
@@ -514,7 +549,7 @@ async function loadChurch() {
   if (!state.running) {
     if (current.balanceKrw != null) showBalance(current.balanceKrw);
     try {
-      const preview = await window.broadcast.previewBilling(state.targets);
+      const preview = await window.broadcast.previewBilling(state.targets, state.spoken);
       showBalance(preview.balanceKrw);
       showPrepaid({ remainingSeconds: preview.remainingSeconds, running: false });
     } catch (err) {
@@ -522,7 +557,7 @@ async function loadChurch() {
     }
   }
   if (state.church) {
-    try { await window.broadcast.setTargets(state.targets); }
+    try { await window.broadcast.setTargets(state.targets, state.spoken); }
     catch (err) { log(err.message || String(err), "error"); }
   }
   await renderLinks();
@@ -533,6 +568,7 @@ async function boot() {
   state.settings = await window.broadcast.getSettings();
   sensitivityEl.value = state.settings.sensitivity || "normal";
   if (state.settings.folder) folderHint.textContent = state.settings.folder;
+  renderSpoken(state.settings.spoken);
   await renderLangs(state.settings.targets || state.catalog.defaultTargets);
   const auth = await window.broadcast.authStatus();
   setSignedIn(auth);
@@ -550,7 +586,9 @@ async function boot() {
       state.lines[event.lang] = event.text || "";
       const card = cardsEl.querySelector(`[data-lang="${event.lang}"] .text`);
       if (card) card.textContent = event.text || "대기 중...";
-      if (event.lang === "ko" && event.isFinal && event.text) hearing.corrected(event.heardId, event.raw, event.text);
+      if (event.lang === state.spoken && event.isFinal && event.text && event.text !== event.raw) {
+        hearing.corrected(event.heardId, event.raw, event.text);
+      }
     }
     if (event.type === "log") log(event.text, event.level);
     if (event.type === "audio" && event.audio) {
@@ -697,6 +735,11 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
   }
 });
 
+spokenEl.addEventListener("change", async () => {
+  state.spoken = knownSpoken(spokenEl.value);
+  renderHeardTitle();
+  await onTargetsChanged();
+});
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 deviceEl.addEventListener("change", chooseDevice);
 sensitivityEl.addEventListener("change", () => persist({ sensitivity: sensitivityEl.value }));
@@ -712,10 +755,13 @@ document.getElementById("pickFolder").addEventListener("click", async () => {
   await persist({ folder });
 });
 async function beginBroadcast() {
+  state.spoken = knownSpoken(spokenEl ? spokenEl.value : state.spoken);
+  renderHeardTitle();
   await persist({
     sensitivity: sensitivityEl.value,
     folder: state.settings.folder,
     targets: selectedTargets(),
+    spoken: state.spoken,
     preacherId: selectedPreacherId(),
   });
   state.lines = {};
@@ -723,6 +769,7 @@ async function beginBroadcast() {
     sensitivity: sensitivityEl.value,
     folder: state.settings.folder,
     targets: selectedTargets(),
+    spoken: state.spoken,
     preacherId: selectedPreacherId(),
     deviceKey: deviceEl.value,
     channel: state.audio ? state.audio.deviceChannel : 0,
@@ -732,7 +779,7 @@ async function beginBroadcast() {
 
 document.getElementById("start").addEventListener("click", async () => {
   try {
-    const preview = await window.broadcast.previewBilling(selectedTargets());
+    const preview = await window.broadcast.previewBilling(selectedTargets(), state.spoken);
     paintConfirm(preview);
     document.getElementById("startConfirm").hidden = false;
   } catch (err) {
@@ -746,7 +793,7 @@ document.getElementById("confirmCancel").addEventListener("click", () => {
 });
 document.getElementById("confirmStart").addEventListener("click", async () => {
   try {
-    const preview = await window.broadcast.previewBilling(selectedTargets());
+    const preview = await window.broadcast.previewBilling(selectedTargets(), state.spoken);
     paintConfirm(preview);
     if (preview.short) return;
     document.getElementById("startConfirm").hidden = true;

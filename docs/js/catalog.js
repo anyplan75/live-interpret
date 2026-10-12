@@ -216,7 +216,7 @@
   function isGuidancePiece(text) {
     const folded = String(text || "").replace(/\s+/g, "");
     if (!folded) return false;
-    if (folded.includes("한국교회예배")) return true;
+    if (folded.includes("한국교회예배") || folded.includes("교회예배입니다")) return true;
     if (folded.includes("받아씁")) return true;
     if (folded.includes("설교,기도,찬송") || folded.includes("설교기도찬송")) return true;
     if (/^교회이름은.+입니다[.]?$/.test(folded)) return true;
@@ -242,11 +242,38 @@
     return stripGuidance(raw) === "";
   }
 
-  function sttPrompt(churchName, extra) {
+  function spokenLanguage(code) {
+    const value = String(code || "").trim();
+    return langByCode[value] ? value : "ko";
+  }
+
+  function transcriptionLanguage(code) {
+    const spoken = spokenLanguage(code);
+    if (spoken === "zh-CN" || spoken === "zh-TW") return "zh";
+    return spoken;
+  }
+
+  function translationTargets(targets, spoken) {
+    const source = spokenLanguage(spoken);
+    const seen = new Set();
+    const out = [];
+    (Array.isArray(targets) ? targets : []).forEach((code) => {
+      if (!code || code === "ko" || code === source || !langByCode[code] || seen.has(code)) return;
+      seen.add(code);
+      out.push(code);
+    });
+    return out;
+  }
+
+  function sttPrompt(churchName, extra, langCode) {
+    const spoken = spokenLanguage(langCode);
+    const meta = langByCode[spoken];
     const name = String(churchName || "교회")
       .replace(/[<>\r\n]/g, " ")
       .trim();
-    const base = `한국 교회 예배입니다. 설교, 기도, 찬송, 광고를 한국어로 받아씁니다. 교회 이름은 ${name}입니다.`;
+    const base = spoken === "ko"
+      ? `한국 교회 예배입니다. 설교, 기도, 찬송, 광고를 한국어로 받아씁니다. 교회 이름은 ${name}입니다.`
+      : `교회 예배입니다. 설교, 기도, 찬송, 광고를 ${meta.name}로 받아씁니다. 교회 이름은 ${name}입니다.`;
     const more = String(extra || "")
       .split("\n")
       .map((line) => line.trim())
@@ -491,6 +518,9 @@
   return {
     languages,
     langByCode,
+    spokenLanguage,
+    transcriptionLanguage,
+    translationTargets,
     subtitleFonts,
     subtitleFontId,
     subtitleFont,

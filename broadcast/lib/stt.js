@@ -1,7 +1,7 @@
 const WebSocket = require("ws");
 const { UtteranceVad } = require("./vad");
 const { wavFromPcm16 } = require("./audio-util");
-const { keywordsFromGlossary, sttPrompt } = require("./catalog");
+const { keywordsFromGlossary, sttPrompt, spokenLanguage, transcriptionLanguage } = require("./catalog");
 
 const REALTIME_URL = "wss://api.openai.com/v1/realtime?intent=transcription";
 
@@ -18,6 +18,8 @@ function sensitivityThreshold(level) {
 class SpeechSession {
   constructor(opts) {
     this.apiKey = opts.apiKey;
+    this.spoken = spokenLanguage(opts.language);
+    this.language = transcriptionLanguage(this.spoken);
     this.churchName = opts.churchName || "";
     this.glossary = opts.glossary || "";
     this.sessionContext = opts.sessionContext || "";
@@ -108,9 +110,9 @@ class SpeechSession {
             format: { type: "audio/pcm", rate: 24000 },
             transcription: {
               model: "gpt-live-transcribe",
-              prompt: sttPrompt(this.churchName, this.sessionContext),
+              prompt: sttPrompt(this.churchName, this.sessionContext, this.spoken),
               keywords,
-              languages: ["ko"],
+              languages: [this.language],
               delay: "low",
             },
             turn_detection: null,
@@ -299,7 +301,7 @@ class SpeechSession {
     if (!pcm || pcm.length < 4800) return "";
     if (meter && this.onAudio) this.onAudio(pcm);
     const wav = wavFromPcm16(pcm, 24000);
-    const prompt = sttPrompt(this.churchName, this.sessionContext);
+        const prompt = sttPrompt(this.churchName, this.sessionContext, this.spoken);
     const models = ["gpt-4o-mini-transcribe", "whisper-1"];
     let lastError = null;
     for (const model of models) {
@@ -307,7 +309,7 @@ class SpeechSession {
         const form = new FormData();
         form.append("file", new Blob([wav], { type: "audio/wav" }), "speech.wav");
         form.append("model", model);
-        form.append("language", "ko");
+        form.append("language", this.language);
         form.append("prompt", prompt.slice(0, model === "whisper-1" ? 220 : 800));
         const res = await this.fetchImpl("https://api.openai.com/v1/audio/transcriptions", {
           method: "POST",
