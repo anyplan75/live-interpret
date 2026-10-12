@@ -16,6 +16,7 @@ on:
       - "docs/js/languages.js"
       - "package.json"
       - "package-lock.json"
+      - "scripts/pack-mac.js"
       - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
@@ -38,13 +39,17 @@ jobs:
             os: macos-14
             platform: mac
             arch: arm64
+            # This runner has no Developer ID certificate. Local pack:mac
+            # uses build.mac.identity when the login keychain has one.
+            builder_args: "-c.mac.identity=-"
           - label: Windows x64
             os: windows-latest
             platform: win
             arch: x64
+            builder_args: ""
     env:
-      # No Apple Developer ID or Windows code-signing certificate yet.
-      # The Mac app stays ad-hoc signed ("identity": "-" in package.json).
+      # No certificate or notarization secret is stored in this workflow.
+      # The macOS runner stays ad-hoc signed via builder_args.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
@@ -72,11 +77,11 @@ jobs:
 
       - name: Build installer
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never ${{ matrix.builder_args }}
 
       - name: Build installer and upload to draft release
         if: startsWith(github.ref, 'refs/tags/v')
-        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish always
+        run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish always ${{ matrix.builder_args }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

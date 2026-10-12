@@ -13,8 +13,8 @@
     "start": "electron .",
     "web": "node scripts/serve-web.js",
     "test": "node --test test/*.js",
-    "pack:mac": "electron-builder --mac dir --arm64 && node scripts/name-mac-app.js",
-    "dist:mac": "electron-builder --mac --arm64 --publish never",
+    "pack:mac": "node scripts/pack-mac.js",
+    "dist:mac": "node scripts/pack-mac.js --dist",
     "dist:win": "electron-builder --win --x64 --publish never"
   },
   "engines": {
@@ -70,7 +70,7 @@
       ],
       "artifactName": "live-interpret-${version}-mac-${arch}.${ext}",
       "category": "public.app-category.music",
-      "identity": "-",
+      "identity": "ZJYZ656BL8",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",

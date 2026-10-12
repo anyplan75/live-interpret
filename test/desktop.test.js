@@ -165,10 +165,22 @@ test("installers build per OS and publish draft releases", () => {
   assert.deepEqual(build.win.target, [{ target: "nsis", arch: ["x64"] }]);
   assert.ok(build.mac.target.some((row) => row.target === "zip" && row.arch.includes("arm64")));
   assert.deepEqual(build.publish, [{ provider: "github", owner: "anyplan75", repo: "live-interpret", releaseType: "draft" }]);
-  assert.equal(build.mac.identity, "-");
+  assert.equal(build.mac.identity, "ZJYZ656BL8");
+  assert.doesNotMatch(build.mac.identity, /Developer ID Application|:/);
+  assert.equal(build.mac.hardenedRuntime, false);
   assert.equal(build.win.certificateFile, undefined);
   assert.match(pkg.scripts["dist:win"], /--win --x64/);
-  assert.match(pkg.scripts["pack:mac"], /--mac dir --arm64/);
+  assert.equal(pkg.scripts["pack:mac"], "node scripts/pack-mac.js");
+  assert.equal(pkg.scripts["dist:mac"], "node scripts/pack-mac.js --dist");
+
+  const packMac = read("scripts/pack-mac.js");
+  assert.match(packMac, /--mac", "dir", "--arm64/);
+  assert.match(packMac, /codesign --sign -/);
+  assert.match(packMac, /임시 서명으로 대체합니다/);
+  assert.match(packMac, /APPLE_TEAM_ID/);
+  assert.match(packMac, /-c\.mac\.identity=-/);
+  assert.match(packMac, /-c\.mac\.hardenedRuntime=true/);
+  assert.doesNotMatch(packMac, /\.p12|CSC_LINK|CSC_KEY_PASSWORD|APPLE_APP_SPECIFIC_PASSWORD\s*[:=]\s*["'][^"']|BEGIN CERTIFICATE/);
 
   const workflow = read(".github/workflows/desktop.yml");
   assert.match(workflow, /os: macos-14[\s\S]*platform: mac[\s\S]*arch: arm64/);
@@ -176,8 +188,28 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(workflow, /runs-on: \$\{\{ matrix\.os \}\}/);
   assert.match(workflow, /--publish always/);
   assert.match(workflow, /GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
-  assert.doesNotMatch(workflow, /CSC_LINK|APPLE_ID|CSC_KEY_PASSWORD/);
-  assert.match(read("README.md"), /Apple Developer ID/);
+  assert.match(workflow, /-c\.mac\.identity=-/);
+  assert.doesNotMatch(workflow, /CSC_LINK|APPLE_APP_SPECIFIC_PASSWORD|CSC_KEY_PASSWORD|\.p12/);
+  assert.match(read("README.md"), /ZJYZ656BL8/);
+});
+
+test("Mac signing selects a Developer ID cert by team id and falls back only when it is absent", () => {
+  const { findDeveloperIdLine, notarizationCredentials, TEAM_ID } = require("../scripts/pack-mac.js");
+  assert.equal(TEAM_ID, "ZJYZ656BL8");
+  const output = [
+    '  1) AAAA "Developer ID Installer: Example (ZJYZ656BL8)"',
+    '  2) BBBB "Apple Development: Example (ZJYZ656BL8)"',
+    '  3) CCCC "Developer ID Application: Other (AAAAAAAAAA)"',
+    '  4) DDDD "Developer ID Application: Example (ZJYZ656BL8)"',
+  ].join("\n");
+  assert.equal(findDeveloperIdLine(output, TEAM_ID), '4) DDDD "Developer ID Application: Example (ZJYZ656BL8)"');
+  assert.equal(findDeveloperIdLine(output, "BBBBBBBBBB"), "");
+  assert.equal(findDeveloperIdLine("", TEAM_ID), "");
+  assert.equal(notarizationCredentials({}), "");
+  assert.equal(notarizationCredentials({ APPLE_ID: "a", APPLE_APP_SPECIFIC_PASSWORD: "b" }), "apple-id");
+  assert.equal(notarizationCredentials({ APPLE_API_KEY: "k", APPLE_API_KEY_ID: "i", APPLE_API_ISSUER: "u" }), "api-key");
+  assert.equal(notarizationCredentials({ APPLE_KEYCHAIN_PROFILE: "profile" }), "keychain-profile");
+  assert.equal(notarizationCredentials({ APPLE_TEAM_ID: TEAM_ID }), "");
 });
 
 test("admin reads every preacher dataset, church accounts write only their own", () => {

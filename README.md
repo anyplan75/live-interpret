@@ -14,7 +14,7 @@
 dist/mac-arm64/실시간 통역.app
 ```
 
-[Releases](https://github.com/anyplan75/live-interpret/releases)의 `live-interpret-버전-mac-arm64.dmg`로 설치할 수도 있습니다. 아직 Apple Developer ID 서명이 없어서 처음 열 때 Finder에서 앱을 Control-클릭 → **열기**를 누릅니다.
+[Releases](https://github.com/anyplan75/live-interpret/releases)의 `live-interpret-버전-mac-arm64.dmg`로 설치할 수도 있습니다. GitHub Actions 러너에는 Developer ID 인증서가 없어서 그 설치 파일은 임시 서명입니다. 처음 열 때 Finder에서 앱을 Control-클릭 → **열기**를 누릅니다.
 
 처음 실행하면 마이크 권한을 묻습니다. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 **실시간 통역**을 허용합니다.
 
@@ -26,6 +26,8 @@ dist/mac-arm64/실시간 통역.app
 npm install
 npm run pack:mac
 ```
+
+`npm run pack:mac`은 `package.json`의 `build.mac.identity`(`ZJYZ656BL8`)로 로그인 키체인의 Developer ID Application 인증서를 고릅니다. 인증서 이름은 저장소에 없습니다. 그 인증서가 없으면 `codesign --sign -` 임시 서명으로 대체하고, 그 사실을 출력합니다. 공증은 `APPLE_ID`와 `APPLE_APP_SPECIFIC_PASSWORD`, 또는 API 키, 또는 `APPLE_KEYCHAIN_PROFILE`이 환경 변수에 있을 때만 합니다. 인증서, p12, 비밀번호는 저장소에 넣지 않습니다.
 
 ### 윈도우 교회 PC
 
@@ -74,7 +76,7 @@ npm run dist:win   # 윈도우 x64
 앱은 동의 창을 지나면 `electron-updater`로 GitHub Releases의 최신 공개 릴리스를 확인합니다.
 
 - **윈도우**: 새 버전을 뒤에서 내려받고, 앱을 끌 때 설치합니다. 다음 실행부터 새 버전입니다.
-- **맥**: 지금은 앱이 임시(ad-hoc) 서명이라 macOS가 스스로 교체를 허락하지 않습니다. 새 버전이 있으면 방송 로그에 알리고 Releases 주소를 보여 줍니다. 맥 자동 설치를 켜려면 나중에 **Apple Developer ID** 인증서로 서명하고 공증(notarize)한 다음 `package.json`의 `liveInterpret.macSilentUpdate`를 `true`로 바꿉니다. 인증서는 저장소에 없고, 받으면 GitHub Secrets(`CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID` 등)로 넣습니다.
+- **맥**: 로그인 키체인에 Team ID `ZJYZ656BL8`의 Developer ID Application 인증서가 있으면 `npm run pack:mac`이 그 인증서로 서명합니다. 공증까지 끝난 빌드가 아니면 macOS가 스스로 교체하지 않습니다. 새 버전이 있으면 방송 로그에 알리고 Releases 주소를 보여 줍니다. 맥 자동 설치를 켜려면 그 인증서로 서명하고 공증(notarize)한 다음 `package.json`의 `liveInterpret.macSilentUpdate`를 `true`로 바꿉니다. 인증서와 공증 비밀번호는 저장소에 없습니다.
 - 개발 실행(`npm start`)에서는 업데이트를 확인하지 않습니다.
 
 ## 두 가지 로그인
