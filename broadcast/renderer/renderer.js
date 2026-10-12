@@ -261,6 +261,20 @@ function fillStyle(style) {
     const name = document.createElement("span");
     name.textContent = `${lang.flag} ${lang.name}`;
     const controls = document.createElement("span");
+    controls.className = "font-controls";
+    const fontLabel = document.createElement("span");
+    fontLabel.textContent = "글꼴 ";
+    const picker = document.createElement("select");
+    picker.dataset.font = lang.code;
+    const faces = state.catalog.subtitleFonts || [];
+    faces.forEach((face) => {
+      const option = document.createElement("option");
+      option.value = face.id;
+      option.textContent = face.label;
+      picker.append(option);
+    });
+    const savedFont = font.font;
+    picker.value = faces.some((face) => face.id === savedFont) ? savedFont : (lang.defaultFont || "inter");
     const sizeLabel = document.createElement("span");
     sizeLabel.textContent = "크기 ";
     const size = document.createElement("input");
@@ -274,7 +288,7 @@ function fillStyle(style) {
     space.step = "0.5";
     space.dataset.space = lang.code;
     space.value = font.letterSpacing !== undefined ? font.letterSpacing : 0;
-    controls.append(sizeLabel, size, spaceLabel, space);
+    controls.append(fontLabel, picker, sizeLabel, size, spaceLabel, space);
     row.append(name, controls);
     rows.append(row);
   });
@@ -284,6 +298,7 @@ function readStyle() {
   const fonts = {};
   state.catalog.languages.forEach((lang) => {
     fonts[lang.code] = {
+      font: document.querySelector(`[data-font="${lang.code}"]`).value,
       fontSize: document.querySelector(`[data-size="${lang.code}"]`).value,
       letterSpacing: document.querySelector(`[data-space="${lang.code}"]`).value,
     };

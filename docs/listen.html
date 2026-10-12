@@ -7,10 +7,6 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0c1118">
   <title>나의 통역</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@500;600;700;800&family=Noto+Sans+SC:wght@500;600;700&family=Noto+Sans+TC:wght@500;600;700&family=Noto+Sans+JP:wght@500;600;700&family=Noto+Sans+KR:wght@500;600;700;800&family=Noto+Sans+Devanagari:wght@500;600;700&family=Noto+Sans+Thai:wght@500;600;700&family=Noto+Sans+Khmer:wght@500;600;700&family=Noto+Sans+Myanmar:wght@500;600;700&family=Noto+Sans+Bengali:wght@500;600;700&family=Noto+Sans+Sinhala:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
   <link rel="stylesheet" href="css/listen.css">
 </head>
 <body>
@@ -36,6 +32,7 @@
     const select = document.getElementById("langSelect");
     const scriptBox = document.getElementById("scriptBox");
     const root = document.documentElement;
+    let latestSettings = null;
     const MIN_FONT = 16;
     const MAX_FONT = 44;
     const DEFAULT_READABILITY = {
@@ -68,7 +65,8 @@
         root.style.setProperty("--letter-spacing", profile.letterSpacing);
         root.style.setProperty("--word-break", profile.wordBreak);
         root.style.setProperty("--font-weight", String(profile.fontWeight));
-        root.style.setProperty("--font-family", profile.fontFamily);
+        const savedFont = latestSettings && latestSettings[code] ? latestSettings[code].font : undefined;
+        root.style.setProperty("--font-family", LI.viewer.useSubtitleFont(savedFont, code));
         document.body.lang = code;
         scriptBox.lang = code;
       }
@@ -101,7 +99,6 @@
       }
       let prompter = null;
       let wakeHeld = false;
-      let latestSettings = null;
       let settingsUnsub = null;
       function holdWake() {
         if (wakeHeld || !navigator.wakeLock) return;
@@ -130,6 +127,7 @@
         if (!settingsUnsub) {
           settingsUnsub = LI.db.onValue("settings", (settings) => {
             latestSettings = settings;
+            applyReadability(select.value || initial);
             if (!prompter) return;
             rebuild(LI.viewer.activeLangCodesFromSettings(settings), select.value || initial);
           });

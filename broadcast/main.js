@@ -196,7 +196,9 @@ function registerIpc() {
       nameEn: lang.nameEn,
       flag: lang.flag,
       defaultSelected: !!lang.defaultSelected,
+      defaultFont: catalog.subtitleFontId(undefined, lang.code),
     })),
+    subtitleFonts: catalog.subtitleFonts.map((face) => ({ id: face.id, label: face.label })),
     pagesBase: catalog.pagesBase,
     defaultTargets: catalog.defaultSelectedTargets(),
   }));

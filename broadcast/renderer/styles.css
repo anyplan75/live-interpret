@@ -110,7 +110,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .style-grid label { font-size: 0.86rem; }
 textarea { min-height: 68px; resize: vertical; }
 input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d1218; border: 1px solid var(--line); border-radius: 10px; }
-.font-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.font-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); }
+.font-row .font-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.font-row select { width: 11.5rem; padding: 8px 10px; }
 .font-row input { width: 76px; }
 .extract { white-space: pre-wrap; background: #0d1218; border-radius: 10px; padding: 10px; max-height: 180px; overflow: auto; }
 

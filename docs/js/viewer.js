@@ -27,6 +27,31 @@ LI.viewer = (() => {
     };
   }
 
+  function useSubtitleFont(id, langCode) {
+    const face = LI.catalog.subtitleFont(id, langCode);
+    const head = document.head || document.documentElement;
+    let link = document.querySelector("link[data-subtitle-font]");
+    if (link && link.dataset.subtitleFont === face.id) return face.family;
+    if (link) link.remove();
+    if (/fonts\.(googleapis|gstatic)\.com/.test(face.href)) {
+      ["https://fonts.googleapis.com", "https://fonts.gstatic.com"].forEach((origin) => {
+        if (document.querySelector(`link[data-font-preconnect="${origin}"]`)) return;
+        const pre = document.createElement("link");
+        pre.rel = "preconnect";
+        pre.href = origin;
+        if (origin.includes("gstatic")) pre.crossOrigin = "anonymous";
+        pre.dataset.fontPreconnect = origin;
+        head.appendChild(pre);
+      });
+    }
+    link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = face.href;
+    link.dataset.subtitleFont = face.id;
+    head.appendChild(link);
+    return face.family;
+  }
+
   function paintShade(container, hex, opacity) {
     const parts = rgbFromHex(hex);
     const alpha = Number(opacity);
@@ -83,6 +108,7 @@ LI.viewer = (() => {
     let maxLines = 3;
     const meta = LI.catalog.langByCode[lang];
     subtitle.textContent = meta ? meta.waiting : "Waiting...";
+    subtitle.style.fontFamily = useSubtitleFont(undefined, lang);
 
     function applySettings(settings) {
       if (!settings) return;
@@ -97,6 +123,7 @@ LI.viewer = (() => {
         subtitle.style.background = "transparent";
       }
       const langSetting = settings[lang];
+      subtitle.style.fontFamily = useSubtitleFont(langSetting && langSetting.font, lang);
       if (langSetting) {
         container.style.display = langSetting.show === false ? "none" : "flex";
         if (langSetting.fontSize) subtitle.style.fontSize = `${langSetting.fontSize}px`;
@@ -244,6 +271,7 @@ LI.viewer = (() => {
 
   return {
     queryLang,
+    useSubtitleFont,
     startOverlay,
     startPrompter,
     fillLangSelect,

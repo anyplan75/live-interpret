@@ -30,6 +30,36 @@
   const languages = loadLanguages();
   const langByCode = Object.fromEntries(languages.map((lang) => [lang.code, lang]));
 
+  const subtitleFonts = [
+    { id: "pretendard", label: "Pretendard", family: '"Pretendard", sans-serif', href: "https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" },
+    { id: "noto-sans-kr", label: "본고딕", family: '"Noto Sans KR", sans-serif', href: "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700&display=swap" },
+    { id: "noto-serif-kr", label: "본명조", family: '"Noto Serif KR", serif', href: "https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap" },
+    { id: "ibm-plex-sans-kr", label: "IBM Plex Sans KR", family: '"IBM Plex Sans KR", sans-serif', href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@500;600;700&display=swap" },
+    { id: "noto-sans-tc", label: "Noto Sans TC", family: '"Noto Sans TC", sans-serif', href: "https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500;700&display=swap" },
+    { id: "noto-sans-sc", label: "Noto Sans SC", family: '"Noto Sans SC", sans-serif', href: "https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700&display=swap" },
+    { id: "noto-sans-jp", label: "Noto Sans JP", family: '"Noto Sans JP", sans-serif', href: "https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;700&display=swap" },
+    { id: "inter", label: "Inter", family: '"Inter", sans-serif', href: "https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap" },
+    { id: "roboto", label: "Roboto", family: '"Roboto", sans-serif', href: "https://fonts.googleapis.com/css2?family=Roboto:wght@500;700&display=swap" },
+    { id: "nanum-gothic", label: "나눔고딕", family: '"Nanum Gothic", sans-serif', href: "https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap" },
+  ];
+  const subtitleFontById = Object.fromEntries(subtitleFonts.map((face) => [face.id, face]));
+
+  function subtitleFontId(value, langCode) {
+    const id = String(value || "");
+    if (subtitleFontById[id]) return id;
+    const code = String(langCode || "");
+    if (code === "ko") return "pretendard";
+    if (code === "en") return "inter";
+    if (code === "zh-TW" || code === "zh-Hant") return "noto-sans-tc";
+    if (code === "zh-CN" || code === "zh-Hans") return "noto-sans-sc";
+    if (code === "ja") return "noto-sans-jp";
+    return "inter";
+  }
+
+  function subtitleFont(value, langCode) {
+    return subtitleFontById[subtitleFontId(value, langCode)];
+  }
+
   const firebase = {
     apiKey: "AIzaSyDsYIaoKxRjNUUOnQvwyYLpPRvNy0WLRUM",
     authDomain: "live-interpret-db65e.firebaseapp.com",
@@ -297,6 +327,7 @@
       fonts[lang.code] = {
         fontSize: num(row.fontSize, lang.defaultSize, 8, 240),
         letterSpacing: num(row.letterSpacing, lang.defaultSpacing, -20, 80),
+        font: subtitleFontId(row.font, lang.code),
       };
     });
     return {
@@ -319,6 +350,7 @@
       fonts[lang.code] = {
         fontSize: row.fontSize,
         letterSpacing: row.letterSpacing,
+        font: row.font,
       };
     });
     return sanitizeStyle({
@@ -362,6 +394,7 @@
         show: active.includes(lang.code),
         fontSize: lang.defaultSize,
         letterSpacing: lang.defaultSpacing,
+        font: subtitleFontId(undefined, lang.code),
       };
     });
     return settings;
@@ -458,6 +491,9 @@
   return {
     languages,
     langByCode,
+    subtitleFonts,
+    subtitleFontId,
+    subtitleFont,
     firebase,
     pagesBase,
     timing,

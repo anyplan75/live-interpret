@@ -10,6 +10,7 @@ const {
   contextKeywords,
   applyStyleToSettings,
   styleFromSettings,
+  subtitleFontId,
 } = require("./catalog");
 const bulletin = require("./bulletin");
 const preacherLib = require("./preacher");
@@ -452,6 +453,7 @@ class Engine {
         show: active.includes(lang.code),
         fontSize: prev.fontSize || lang.defaultSize,
         letterSpacing: prev.letterSpacing !== undefined ? prev.letterSpacing : lang.defaultSpacing,
+        font: subtitleFontId(prev.font, lang.code),
       };
     });
     await firebase.set(`churches/${churchId}/live/settings`, next);
