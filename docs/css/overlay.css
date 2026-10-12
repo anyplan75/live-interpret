@@ -14,20 +14,114 @@ html, body {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 40px;
   pointer-events: none;
   overflow: hidden;
+  --shade-r: 0;
+  --shade-g: 0;
+  --shade-b: 0;
+  --shade-a: 0.7;
 }
 
-.layout-bottom { justify-content: flex-end; align-items: center; }
-.layout-top { justify-content: flex-start; align-items: center; }
-.layout-left { justify-content: flex-end; align-items: flex-start; }
-.layout-right { justify-content: flex-end; align-items: flex-end; }
+#container::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    var(--shade-dir, to top),
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), var(--shade-a)) 0%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.9931)) 8%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.9758)) 16%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.941)) 28%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.9104)) 40%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.9)) 50%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.8871)) 56%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.8161)) 62%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.6742)) 68%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.4837)) 74%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.2857)) 80%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.1468)) 85%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.067)) 89%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.0286)) 92%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.0101)) 94.5%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.0028)) 96.5%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.0005)) 98%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), calc(var(--shade-a) * 0.0001)) 99%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), 0) 99.6%,
+    rgba(var(--shade-r), var(--shade-g), var(--shade-b), 0) 100%
+  );
+}
+
+.layout-bottom {
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 3vw 0.9vh;
+}
+
+.layout-bottom::before {
+  --shade-dir: to top;
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: calc(100vh / 6);
+}
+
+.layout-top {
+  justify-content: flex-start;
+  align-items: center;
+  padding: 0.9vh 3vw 0;
+}
+
+.layout-top::before {
+  --shade-dir: to bottom;
+  top: 0;
+  right: 0;
+  bottom: auto;
+  left: 0;
+  width: 100%;
+  height: calc(100vh / 6);
+}
+
+.layout-left {
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: 4vh 0 2.4vh 1.6vw;
+}
+
+.layout-left::before {
+  --shade-dir: to right;
+  top: 0;
+  right: auto;
+  bottom: 0;
+  left: 0;
+  width: calc(100vw / 2);
+  height: 100%;
+}
+
+.layout-right {
+  justify-content: flex-end;
+  align-items: flex-end;
+  padding: 4vh 1.6vw 2.4vh 0;
+}
+
+.layout-right::before {
+  --shade-dir: to left;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: calc(100vw / 2);
+  height: 100%;
+}
 
 #subtitle {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-  border-radius: 10px;
-  padding: 15px 25px;
+  padding: 4px 18px;
   line-height: 1.5;
   font-weight: 700;
   display: inline-block;
@@ -35,11 +129,20 @@ html, body {
   word-break: keep-all;
   overflow-wrap: break-word;
   color: #fff;
-  background: rgba(0, 0, 0, 0.7);
+  background: transparent;
   font-size: 32px;
 }
 
+.layout-bottom #subtitle,
+.layout-top #subtitle {
+  max-height: calc(100vh / 6 * 0.62 - 0.9vh);
+  overflow: hidden;
+}
+
 .layout-left #subtitle,
-.layout-right #subtitle { max-width: 40vw; }
+.layout-right #subtitle {
+  max-width: calc(100vw / 2 * 0.5 - 1.6vw);
+  overflow: hidden;
+}
 
 #subtitle .interim { color: #9e9e9e; }

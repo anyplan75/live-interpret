@@ -11,11 +11,29 @@ LI.viewer = (() => {
   }
 
   function hexToRgba(hex, opacity) {
+    const parts = rgbFromHex(hex);
+    return `rgba(${parts.r}, ${parts.g}, ${parts.b}, ${opacity})`;
+  }
+
+  function rgbFromHex(hex) {
     const h = String(hex || "#000000").replace("#", "");
-    const r = parseInt(h.substring(0, 2), 16) || 0;
-    const g = parseInt(h.substring(2, 4), 16) || 0;
-    const b = parseInt(h.substring(4, 6), 16) || 0;
-    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return {
+      r: Number.isFinite(r) ? r : 0,
+      g: Number.isFinite(g) ? g : 0,
+      b: Number.isFinite(b) ? b : 0,
+    };
+  }
+
+  function paintShade(container, hex, opacity) {
+    const parts = rgbFromHex(hex);
+    const alpha = Number(opacity);
+    container.style.setProperty("--shade-r", String(parts.r));
+    container.style.setProperty("--shade-g", String(parts.g));
+    container.style.setProperty("--shade-b", String(parts.b));
+    container.style.setProperty("--shade-a", String(Number.isFinite(alpha) ? alpha : 0.7));
   }
 
   function escapeHtml(str) {
@@ -75,7 +93,8 @@ LI.viewer = (() => {
         subtitle.style.textAlign = settings.global.align || "center";
         subtitle.style.color = settings.global.color || "#ffffff";
         const opacity = settings.global.bgOpacity !== undefined ? settings.global.bgOpacity : 0.7;
-        subtitle.style.backgroundColor = hexToRgba(settings.global.bgColor || "#000000", opacity);
+        paintShade(container, settings.global.bgColor || "#000000", opacity);
+        subtitle.style.background = "transparent";
       }
       const langSetting = settings[lang];
       if (langSetting) {
