@@ -87,9 +87,13 @@ test("overlay and listener load only the selected face", () => {
 
 test("broadcast language rows offer the font list", () => {
   const renderer = read("broadcast/renderer/renderer.js");
+  const html = read("broadcast/renderer/index.html");
   const main = read("broadcast/main.js");
   assert.match(renderer, /글꼴/);
   assert.match(renderer, /data-font/);
+  assert.match(renderer, /styleOutputLanguages/);
+  assert.match(html, /id="subtitleStyleCard"/);
+  assert.match(html, /id="pickFolder"[\s\S]*id="subtitleStyleCard"/);
   assert.match(renderer, /subtitleFonts/);
   assert.match(main, /subtitleFonts/);
   assert.match(main, /defaultFont/);

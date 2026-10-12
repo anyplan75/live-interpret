@@ -49,6 +49,11 @@ function selectedTargets() {
   return [...langsEl.querySelectorAll("input:checked")].map((input) => input.value);
 }
 
+function styleOutputLanguages() {
+  const codes = new Set(state.targets || []);
+  return (state.catalog && state.catalog.languages || []).filter((lang) => lang.code !== "ko" && codes.has(lang.code));
+}
+
 function knownSpoken(code) {
   const found = (state.catalog && state.catalog.languages || []).find((lang) => lang.code === code);
   return found ? found.code : "ko";
@@ -177,6 +182,7 @@ async function onTargetsChanged(sync = true) {
       await persist({ targets: state.targets, spoken: state.spoken });
     }
   }
+  if (state.style) fillStyle(state.style);
   await renderLinks();
 }
 
@@ -372,7 +378,14 @@ function fillStyle(style) {
   document.getElementById("opacity").value = value.global.bgOpacity !== undefined ? value.global.bgOpacity : 0.7;
   const rows = document.getElementById("fontRows");
   rows.innerHTML = "";
-  state.catalog.languages.forEach((lang) => {
+  if (!styleOutputLanguages().length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "오늘 번역할 언어에서 번역 언어를 고르면 글꼴 설정이 나타납니다.";
+    rows.append(empty);
+    return;
+  }
+  styleOutputLanguages().forEach((lang) => {
     const font = (value.fonts && value.fonts[lang.code]) || {};
     const row = document.createElement("div");
     row.className = "font-row";
@@ -413,12 +426,16 @@ function fillStyle(style) {
 }
 
 function readStyle() {
-  const fonts = {};
-  state.catalog.languages.forEach((lang) => {
+  const fonts = { ...(state.style && state.style.fonts ? state.style.fonts : {}) };
+  styleOutputLanguages().forEach((lang) => {
+    const picker = document.querySelector(`[data-font="${lang.code}"]`);
+    const size = document.querySelector(`[data-size="${lang.code}"]`);
+    const space = document.querySelector(`[data-space="${lang.code}"]`);
+    if (!picker || !size || !space) return;
     fonts[lang.code] = {
-      font: document.querySelector(`[data-font="${lang.code}"]`).value,
-      fontSize: document.querySelector(`[data-size="${lang.code}"]`).value,
-      letterSpacing: document.querySelector(`[data-space="${lang.code}"]`).value,
+      font: picker.value,
+      fontSize: size.value,
+      letterSpacing: space.value,
     };
   });
   return {
