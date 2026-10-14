@@ -67,10 +67,10 @@ function main() {
   const identities = readLoginIdentities();
   const identityLine = identities.ok ? findDeveloperIdLine(identities.output, TEAM_ID) : "";
   const env = { ...process.env };
-  const builderArgs = dist
-    ? ["--mac", "--arm64", "--publish", "never"]
-    : ["--mac", "dir", "--arm64"];
+  const builderArgs = ["--mac", "dir", "--arm64"];
   const builder = path.join(root, "node_modules", ".bin", "electron-builder");
+  const prepackagedDir = path.join(root, "dist", "mac-arm64");
+  const displayApp = path.join(prepackagedDir, "실시간 통역시스템.app");
 
   if (!fs.existsSync(builder)) {
     console.error("electron-builder 가 없습니다. 먼저 npm install 을 실행하세요.");
@@ -99,14 +99,20 @@ function main() {
     builderArgs.push("-c.mac.identity=-");
   }
 
+  if (dist) builderArgs.push("--publish", "never");
   run(builder, builderArgs, env);
-  if (!dist) {
-    run(process.execPath, [path.join(__dirname, "name-mac-app.js")], env);
-    if (!identityLine) {
-      const app = path.join(root, "dist", "mac-arm64", "실시간 통역시스템.app");
-      console.log("ad-hoc 서명: codesign --force --deep --sign - \"" + app + "\"");
-      run("codesign", ["--force", "--deep", "--sign", "-", app], env);
-    }
+  run(process.execPath, [path.join(__dirname, "name-mac-app.js")], env);
+  const signMatch = identityLine.match(/"([^"]+)"/);
+  const signName = signMatch ? signMatch[1] : "-";
+  if (!identityLine) {
+    console.log("ad-hoc 서명: codesign --force --deep --sign - \"" + displayApp + "\"");
+    run("codesign", ["--force", "--deep", "--sign", "-", displayApp], env);
+  } else {
+    console.log("표시 이름으로 다시 서명합니다: " + displayApp);
+    run("codesign", ["--force", "--deep", "--sign", signName, displayApp], env);
+  }
+  if (dist) {
+    run(builder, ["--prepackaged", prepackagedDir, "--mac", "dmg", "zip", "--arm64", "--publish", "never"], env);
   }
 }
 

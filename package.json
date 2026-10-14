@@ -48,7 +48,6 @@
     "directories": {
       "output": "dist"
     },
-    "afterPack": "scripts/after-pack-mac.js",
     "publish": [
       {
         "provider": "github",
