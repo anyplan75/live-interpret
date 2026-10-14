@@ -103,7 +103,7 @@ function main() {
   if (!dist) {
     run(process.execPath, [path.join(__dirname, "name-mac-app.js")], env);
     if (!identityLine) {
-      const app = path.join(root, "dist", "mac-arm64", "실시간 통역.app");
+      const app = path.join(root, "dist", "mac-arm64", "실시간 통역시스템.app");
       console.log("ad-hoc 서명: codesign --force --deep --sign - \"" + app + "\"");
       run("codesign", ["--force", "--deep", "--sign", "-", app], env);
     }

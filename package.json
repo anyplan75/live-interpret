@@ -34,8 +34,7 @@
   },
   "build": {
     "appId": "com.anyplan.live-interpret",
-    "productName": "Live Interpret",
-    "executableName": "live-interpret",
+    "productName": "실시간 통역시스템",
     "asar": true,
     "asarUnpack": [
       "**/node_modules/audify/build/Release/**"
@@ -77,10 +76,12 @@
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "설교 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
-        "CFBundleDisplayName": "실시간 통역"
-      }
+        "CFBundleDisplayName": "실시간 통역시스템"
+      },
+      "executableName": "live-interpret"
     },
     "win": {
+      "executableName": "live-interpret",
       "target": [
         {
           "target": "nsis",
@@ -95,8 +96,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "실시간 통역",
-      "uninstallDisplayName": "실시간 통역",
+      "shortcutName": "실시간 통역시스템",
+      "uninstallDisplayName": "실시간 통역시스템",
       "deleteAppDataOnUninstall": false
     }
   }

@@ -1,4 +1,4 @@
-# 실시간 통역
+# 실시간 통역시스템
 
 여러 교회의 예배를 방송실 PC에서 받아, 고른 언어로 교정·번역하고 성도 자막과 OBS 오버레이로 보냅니다. 음성은 저장하지 않습니다. 언어별 텍스트만 남습니다.
 
@@ -8,15 +8,15 @@
 
 ## 방송 앱
 
-맥 방송실에서는 Finder에서 `실시간 통역.app`을 더블클릭합니다. 터미널이나 `npm start`는 쓰지 않습니다.
+맥 방송실에서는 Finder에서 `실시간 통역시스템.app`을 더블클릭합니다. 터미널이나 `npm start`는 쓰지 않습니다.
 
 ```text
-dist/mac-arm64/실시간 통역.app
+dist/mac-arm64/실시간 통역시스템.app
 ```
 
 [Releases](https://github.com/anyplan75/live-interpret/releases)의 `live-interpret-버전-mac-arm64.dmg`로 설치할 수도 있습니다. GitHub Actions 러너에는 Developer ID 인증서가 없어서 그 설치 파일은 임시 서명입니다. 처음 열 때 Finder에서 앱을 Control-클릭 → **열기**를 누릅니다.
 
-처음 실행하면 마이크 권한을 묻습니다. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 **실시간 통역**을 허용합니다.
+처음 실행하면 마이크 권한을 묻습니다. 시스템 설정 → 개인정보 보호 및 보안 → 마이크에서 **실시간 통역시스템**을 허용합니다.
 
 입력 목록에는 CoreAudio 장치가 나옵니다. 장치를 고르면 채널이 나타나고, 레벨이 움직이는 채널이 설교 소리입니다. 인식은 그 채널만 사용합니다. 브라우저 기본 마이크는 쓰지 않습니다.
 
@@ -31,7 +31,7 @@ npm run pack:mac
 
 ### 윈도우 교회 PC
 
-[Releases](https://github.com/anyplan75/live-interpret/releases)에서 `live-interpret-setup-버전-x64.exe`를 받아 실행합니다. 설치 폴더를 고를 수 있고, 바탕화면과 시작 메뉴에 **실시간 통역** 바로가기가 생깁니다. 아직 코드 서명 인증서가 없어서 처음 실행할 때 Windows SmartScreen이 "알 수 없는 게시자"라고 하면 **추가 정보 → 실행**을 누릅니다.
+[Releases](https://github.com/anyplan75/live-interpret/releases)에서 `live-interpret-setup-버전-x64.exe`를 받아 실행합니다. 설치 폴더를 고를 수 있고, 바탕화면과 시작 메뉴에 **실시간 통역시스템** 바로가기가 생깁니다. 아직 코드 서명 인증서가 없어서 처음 실행할 때 Windows SmartScreen이 "알 수 없는 게시자"라고 하면 **추가 정보 → 실행**을 누릅니다.
 
 입력 목록에는 WASAPI 장치가 나옵니다. 그 PC에서 ASIO 드라이버를 볼 수 있으면 ASIO도 함께 나옵니다.
 

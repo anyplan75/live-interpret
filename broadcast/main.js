@@ -162,7 +162,7 @@ function createWindow() {
     minWidth: 980,
     minHeight: 720,
     backgroundColor: "#0f1419",
-    title: "실시간 통역 송출",
+    title: "실시간 통역시스템",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
