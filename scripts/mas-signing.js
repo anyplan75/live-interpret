@@ -22,10 +22,8 @@ function loginKeychainPath() {
 }
 
 function readCodesigningIdentities() {
-  const keychain = loginKeychainPath();
-  const result = spawnSync("security", ["find-identity", "-v", "-p", "codesigning", keychain], {
-    encoding: "utf8",
-  });
+  const cmd = "security find-identity -v -p codesigning";
+  const result = spawnSync("/bin/zsh", ["-lc", cmd], { encoding: "utf8" });
   return {
     ok: result.status === 0,
     output: result.stdout || "",
@@ -72,7 +70,7 @@ function profileNameFromXml(xml) {
 function isMacAppStoreProfile(xml, bundleId) {
   if (!xml || !xml.includes(bundleId)) return false;
   if (xml.includes("<string>iphoneos</string>") || xml.includes("<string>iOS</string>")) return false;
-  if (xml.includes("<string>macosx</string>") || xml.includes("Mac OS X")) return true;
+  if (xml.includes("<string>macosx</string>") || xml.includes("<string>OSX</string>") || xml.includes("Mac OS X")) return true;
   if (xml.includes("ProvisionedDevices")) return false;
   return xml.includes(`<string>${bundleId}</string>`) || xml.includes(`${TEAM_ID}.${bundleId}`);
 }
