@@ -71,6 +71,7 @@
       "artifactName": "live-interpret-${version}-mac-${arch}.${ext}",
       "category": "public.app-category.music",
       "identity": "ZJYZ656BL8",
+      "minimumSystemVersion": "12.0",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",

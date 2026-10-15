@@ -186,6 +186,7 @@ test("installers build per OS and publish draft releases", () => {
   assert.ok(build.mac.target.some((row) => row.target === "zip" && row.arch.includes("arm64")));
   assert.deepEqual(build.publish, [{ provider: "github", owner: "anyplan75", repo: "live-interpret", releaseType: "draft" }]);
   assert.equal(build.mac.identity, "ZJYZ656BL8");
+  assert.equal(build.mac.minimumSystemVersion, "12.0");
   assert.doesNotMatch(build.mac.identity, /Developer ID Application|:/);
   assert.equal(build.mac.hardenedRuntime, false);
   assert.equal(build.win.certificateFile, undefined);
