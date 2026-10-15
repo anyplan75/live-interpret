@@ -15,6 +15,7 @@
     "test": "node --test test/*.js",
     "pack:mac": "node scripts/pack-mac.js",
     "dist:mac": "node scripts/pack-mac.js --dist",
+    "dist:mas": "node scripts/pack-mas.js",
     "dist:win": "electron-builder --win --x64 --publish never"
   },
   "engines": {
@@ -79,6 +80,26 @@
         "CFBundleDisplayName": "실시간 통역시스템"
       },
       "executableName": "live-interpret"
+    },
+    "mas": {
+      "target": [
+        {
+          "target": "mas",
+          "arch": ["arm64"]
+        }
+      ],
+      "artifactName": "live-interpret-${version}-mas-${arch}.${ext}",
+      "category": "public.app-category.music",
+      "entitlements": "build/entitlements.mas.plist",
+      "entitlementsInherit": "build/entitlements.mas.inherit.plist",
+      "entitlementsLoginHelper": "build/entitlements.mas.inherit.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "설교 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
+        "CFBundleDisplayName": "실시간 통역시스템"
+      },
+      "executableName": "live-interpret",
+      "identity": "ZJYZ656BL8",
+      "type": "distribution"
     },
     "win": {
       "executableName": "live-interpret",

@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { EventEmitter } = require("events");
 const consent = require("../broadcast/lib/consent");
-const { startAutoUpdate, silentUpdateAllowed, isQuietUpdateFailure } = require("../broadcast/lib/updater");
+const { startAutoUpdate, masBuildActive, silentUpdateAllowed, isQuietUpdateFailure } = require("../broadcast/lib/updater");
 
 const root = path.join(__dirname, "..");
 const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
@@ -48,6 +48,9 @@ function fakeUpdater() {
 }
 
 test("auto-update checks GitHub releases and installs on next launch", async () => {
+  assert.equal(masBuildActive({ mas: true }), true);
+  assert.equal(startAutoUpdate({ mas: true, app: { isPackaged: true }, updater: fakeUpdater() }), null);
+
   assert.equal(startAutoUpdate({ app: { isPackaged: false }, updater: fakeUpdater() }), null);
 
   const logs = [];
@@ -189,6 +192,14 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(pkg.scripts["dist:win"], /--win --x64/);
   assert.equal(pkg.scripts["pack:mac"], "node scripts/pack-mac.js");
   assert.equal(pkg.scripts["dist:mac"], "node scripts/pack-mac.js --dist");
+  assert.equal(pkg.scripts["dist:mas"], "node scripts/pack-mas.js");
+  assert.ok(pkg.build.mas);
+  assert.equal(pkg.build.mas.entitlements, "build/entitlements.mas.plist");
+  assert.equal(pkg.build.mas.entitlementsInherit, "build/entitlements.mas.inherit.plist");
+  assert.match(read("build/entitlements.mas.plist"), /com\.apple\.security\.app-sandbox/);
+  assert.match(read("build/entitlements.mas.plist"), /files\.user-selected\.read-write/);
+  assert.match(read("build/entitlements.mas.inherit.plist"), /com\.apple\.security\.inherit/);
+  assert.match(read("scripts/pack-mas.js"), /--mac",\s*"mas"/);
 
   const packMac = read("scripts/pack-mac.js");
   assert.match(packMac, /--mac", "dir", "--arm64/);

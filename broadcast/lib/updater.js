@@ -45,10 +45,16 @@ function packagedUpdateConfigPath(app) {
   return path.join(resources, "app-update.yml");
 }
 
+function masBuildActive(opts) {
+  if (opts && opts.mas) return true;
+  return typeof process !== "undefined" && !!process.mas;
+}
+
 function startAutoUpdate(opts) {
   const app = opts.app;
   const log = opts.log || (() => {});
   const platform = opts.platform || process.platform;
+  if (masBuildActive(opts)) return null;
   if (!app || !app.isPackaged) return null;
   const yml = packagedUpdateConfigPath(app);
   if (yml) {
@@ -110,6 +116,7 @@ function startAutoUpdate(opts) {
 
 module.exports = {
   startAutoUpdate,
+  masBuildActive,
   silentUpdateAllowed,
   isQuietUpdateFailure,
   RELEASES_URL,
