@@ -61,7 +61,7 @@ function main() {
     "--arm64",
     "--publish",
     "never",
-    `-c.mas.identity=${identity}`,
+    `-c.mas.identity=ZJYZ656BL8`,
     `-c.mas.provisioningProfile=${profile.path}`,
   ], env);
 
