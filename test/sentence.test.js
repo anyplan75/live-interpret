@@ -44,7 +44,7 @@ test("translation keeps several sentences, then cuts near the target", () => {
   assert.equal(stretch[spaceAt], " ");
   assert.ok(Math.abs(spaceAt - sentence.TRANSLATE_MAX) <= sentence.TRANSLATE_WINDOW);
   const word = `${"가".repeat(sentence.TRANSLATE_MAX + 20)} 다음`;
-  assert.equal(word.slice(0, sentence.translateBreak(word), "가".repeat(sentence.TRANSLATE_MAX + 20));
+  assert.equal(word.slice(0, sentence.translateBreak(word)), "가".repeat(sentence.TRANSLATE_MAX + 20));
   assert.notEqual(sentence.translateBreak(word), sentence.TRANSLATE_MAX);
   assert.equal(sentence.translateBreak("가".repeat(sentence.TRANSLATE_MAX + 20)), 0);
   const verse = `${"그냥 ".repeat(20)}3.16${" 그냥 ".repeat(40)}`;
