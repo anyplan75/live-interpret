@@ -1,15 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
-const http = require("http");
-const https = require("https");
 const os = require("os");
 const path = require("path");
-const tls = require("tls");
 const { spawn } = require("child_process");
-const WebSocket = require("ws");
-const { PhoneJoin } = require("../broadcast/lib/phone-join");
-const { joinUrl, lanIPv4s } = require("../broadcast/lib/lan-address");
+const { PhoneJoin, publicMicUrl, parseIce } = require("../broadcast/lib/phone-join");
 const { downsampleFloatToPcm16 } = require("../broadcast/lib/pcm16");
 const { createSubtitleBoard } = require("../broadcast/lib/subtitle-board");
 const { Engine, normalizeChannelRows } = require("../broadcast/lib/engine");
@@ -25,33 +20,55 @@ function phoneCard(html) {
   return html.slice(start, end);
 }
 
-function getText(url, ca) {
-  return new Promise((resolve, reject) => {
-    const lib = url.startsWith("https:") ? https : http;
-    const req = lib.get(url, ca ? { ca, rejectUnauthorized: true } : {}, (res) => {
-      const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
-      res.on("end", () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString("utf8"), type: res.headers["content-type"] || "" }));
-    });
-    req.on("error", reject);
-  });
-}
-
-test("a phone joins the broadcast computer over https, not a private http page", () => {
-  assert.equal(joinUrl("192.168.0.20", 8443), "https://192.168.0.20:8443/");
-  assert.throws(() => joinUrl("http://192.168.0.20", 80));
-  const page = read("broadcast/phone/join.html");
+test("a phone joins from the public https page and keeps the name on the subtitle", () => {
+  const token = "a".repeat(32);
+  assert.equal(
+    publicMicUrl("https://anyplan75.github.io/live-interpret", token),
+    `https://anyplan75.github.io/live-interpret/mic/?s=${token}`
+  );
+  assert.throws(() => publicMicUrl("http://anyplan75.github.io/live-interpret", token));
+  assert.throws(() => publicMicUrl("https://192.168.0.20", token));
+  const page = read("docs/mic/index.html");
   const card = phoneCard(read("broadcast/renderer/index.html"));
+  const main = read("broadcast/main.js");
+  const rules = JSON.parse(read("firebase/live-interpret.rules.json"));
+  const phoneLinks = rules["live-interpret"].phoneLinks.$token;
   assert.match(page, /송출 컴퓨터/);
   assert.match(card, /송출 컴퓨터/);
   assert.match(page, /isSecureContext/);
   assert.match(page, /getUserMedia/);
-  assert.doesNotMatch(page, /설교|교회|이 컴퓨터/);
-  assert.doesNotMatch(card, /설교|교회|이 컴퓨터/);
+  assert.match(page, /id="name"/);
+  assert.match(page, /id="openMic"/);
+  assert.match(page, /RTCPeerConnection/);
+  assert.match(page, /stun:stun\.l\.google\.com:19302/);
+  assert.match(page, /downsampleFloatToPcm16/);
+  assert.doesNotMatch(page, /id="name"[^>]*\bhidden\b|id="openMic"[^>]*\bhidden\b/);
+  assert.doesNotMatch(page, /설교|교회|이 컴퓨터|인증서|certificate|unsafe|mobileconfig/i);
+  assert.doesNotMatch(card, /설교|교회|이 컴퓨터|인증서|certificate|unsafe|mobileconfig/i);
+  assert.doesNotMatch(card, /phoneCertUrl/);
+  assert.match(main, /WebRtcHideLocalIpsWithMdns/);
+  assert.doesNotMatch(main, /certDir|lan-cert|phoneCertUrl/);
+  assert.match(phoneLinks[".read"], /\[a-f0-9\]\{32\}/);
+  assert.equal(phoneLinks[".write"], undefined);
+  assert.match(phoneLinks.peers.$peerId.offer[".write"], /!data\.exists\(\)/);
+  assert.match(phoneLinks.peers.$peerId.offer[".write"], /12000/);
+  assert.match(phoneLinks.peers.$peerId.phoneIce.$iceId[".write"], /2000/);
+  assert.match(phoneLinks.peers.$peerId.macIce.$iceId[".write"], /2000/);
   assert.match(read("broadcast/renderer/renderer.js"), /renderChannels\(state\.audio\.deviceChannels\)/);
   assert.match(read("broadcast/renderer/renderer.js"), /channel-spoken/);
   assert.match(read("docs/js/viewer.js"), /LI\.speakerLines\.entries/);
   assert.match(read("docs/js/viewer.js"), /class="speaker"/);
+  const ice = parseIce(JSON.stringify({
+    candidate: "candidate:1 1 udp 2122260223 192.168.0.20 54321 typ host",
+    sdpMid: "0",
+    sdpMLineIndex: 0,
+  }));
+  assert.match(ice.candidate, /192\.168\.0\.20/);
+  assert.equal(parseIce(JSON.stringify({
+    candidate: "candidate:1 1 udp 1 1.2.3.4 9 typ relay",
+    sdpMid: "0",
+    sdpMLineIndex: 0,
+  })), null);
 });
 
 test("pcm from a phone mic is 24 kHz int16", () => {
@@ -147,85 +164,43 @@ test("a phone is an extra input and the first input stays included", async () =>
   assert.equal(phoneFed.length, 1);
 });
 
-test("the phone page is https and the http port does not serve the microphone page", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-interpret-phone-"));
+test("named phones join through data-channel messages without a certificate", async () => {
   const joined = [];
+  const sent = [];
+  let pcmCount = 0;
   const server = new PhoneJoin({
     onHello(phone) {
       joined.push(phone);
       return { index: joined.length, name: phone.name, phoneId: phone.id, listening: false };
     },
+    onPcm() { pcmCount += 1; },
+    onLeave(phoneId) { joined.push({ left: phoneId }); },
+  });
+  server.attachLink({
+    send(_peerId, text) { sent.push(JSON.parse(text)); },
+    close() {},
   });
   try {
-    const info = await server.start({
-      certDir: dir,
-      bindHost: "127.0.0.1",
-      advertiseHost: "127.0.0.1",
-      httpsPort: 0,
-      httpPort: 0,
-    });
-    assert.match(info.url, /^https:\/\/127\.0\.0\.1:\d+\/$/);
+    const info = await server.start({ signal: false });
+    assert.match(info.url, /^https:\/\/anyplan75\.github\.io\/live-interpret\/mic\/\?s=[a-f0-9]{32}$/);
+    assert.equal(info.certUrl, undefined);
     assert.equal(info.url.includes("http://"), false);
-    assert.match(info.certUrl, /^http:\/\/127\.0\.0\.1:\d+\/trust\.mobileconfig$/);
     assert.match(info.qrDataUrl, /^data:image\/png;base64,/);
-    const ca = fs.readFileSync(path.join(dir, "ca.crt"));
-    await new Promise((resolve, reject) => {
-      const socket = tls.connect({
-        host: "127.0.0.1",
-        port: Number(new URL(info.url).port),
-        ca,
-        rejectUnauthorized: true,
-        servername: "127.0.0.1",
-      }, () => {
-        try {
-          const cert = socket.getPeerCertificate();
-          assert.equal(socket.authorized, true);
-          assert.match(cert.subjectaltname, /IP Address:127\.0\.0\.1/);
-          socket.end();
-          resolve();
-        } catch (err) {
-          socket.end();
-          reject(err);
-        }
-      });
-      socket.on("error", reject);
-    });
-    const page = await getText(info.url, ca);
-    assert.equal(page.status, 200);
-    assert.match(page.body, /getUserMedia/);
-    assert.match(page.body, /downsampleFloatToPcm16/);
-    assert.match(page.body, /송출 컴퓨터/);
-    assert.doesNotMatch(page.body, /설교|교회/);
-    const blocked = await getText(info.certUrl.replace("/trust.mobileconfig", "/"));
-    assert.equal(blocked.status, 404);
-    assert.equal(blocked.body.includes("getUserMedia"), false);
-    assert.match(blocked.body, /https/);
-    const profile = await getText(info.certUrl);
-    assert.equal(profile.status, 200);
-    assert.match(profile.type, /apple-aspen-config|octet-stream|x-apple/);
-    assert.match(profile.body, /PayloadType/);
-
-    const wsUrl = info.url.replace("https://", "wss://").replace(/\/$/, "") + "/mic";
-    const openSocket = () => new Promise((resolve, reject) => {
-      const ws = new WebSocket(wsUrl, { ca, rejectUnauthorized: true });
-      const messages = [];
-      ws.on("message", (data) => messages.push(JSON.parse(data.toString())));
-      ws.on("open", () => resolve({ ws, messages }));
-      ws.on("error", reject);
-    });
-    const first = await openSocket();
-    first.ws.send(JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001" }));
-    const second = await openSocket();
-    second.ws.send(JSON.stringify({ type: "hello", name: "영희", phoneId: "phone0002" }));
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    assert.equal(first.messages.some((item) => item.type === "joined" && item.name === "민수"), true);
-    assert.equal(second.messages.some((item) => item.type === "joined" && item.name === "영희"), true);
+    server.ingestPcm("peer0001aa", Buffer.from([0, 1]));
+    assert.equal(pcmCount, 0);
+    server.ingestText("peer0001aa", JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001" }));
+    server.ingestText("peer0002bb", JSON.stringify({ type: "hello", name: "영희", phoneId: "phone0002" }));
+    server.ingestPcm("peer0001aa", Buffer.from([0, 1, 0, 2]));
+    server.setListening("phone0001", true);
+    assert.equal(sent.some((item) => item.type === "joined" && item.name === "민수"), true);
+    assert.equal(sent.some((item) => item.type === "joined" && item.name === "영희"), true);
+    assert.equal(sent.some((item) => item.type === "state" && item.listening === true), true);
     assert.deepEqual(joined.map((item) => item.name), ["민수", "영희"]);
-    first.ws.close();
-    second.ws.close();
+    assert.equal(pcmCount, 1);
+    server.peerLeft("peer0002bb");
+    assert.deepEqual(joined.at(-1), { left: "phone0002" });
   } finally {
     await server.stop();
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -318,6 +293,5 @@ test("plain http hides the microphone and https exposes it", { timeout: 60000 },
   assert.equal(insecure.isSecureContext, false);
   assert.equal(insecure.hasMedia, false);
   assert.equal(insecure.protocol, "http:");
-  const lan = lanIPv4s();
-  if (lan.primary) assert.match(joinUrl(lan.primary, 8443), /^https:\/\/(?:\d{1,3}\.){3}\d{1,3}:8443\/$/);
+  assert.match(publicMicUrl("https://anyplan75.github.io/live-interpret", "b".repeat(32)), /^https:\/\/anyplan75\.github\.io\/live-interpret\/mic\/\?s=b{32}$/);
 });

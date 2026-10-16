@@ -1,56 +1,60 @@
 const crypto = require("crypto");
-const fs = require("fs");
-const http = require("http");
-const https = require("https");
-const path = require("path");
-const { WebSocketServer } = require("ws");
 const QRCode = require("qrcode");
-const { lanIPv4s, joinUrl } = require("./lan-address");
-const { loadOrCreate, mobileconfig } = require("./lan-cert");
+const catalog = require("./catalog");
+const { netFetch } = require("./net-fetch");
 const { cleanDisplayName, cleanPhoneId } = require("./phone-name");
 
-const pageFile = path.join(__dirname, "..", "phone", "join.html");
-const pcmFile = path.join(__dirname, "pcm16.js");
+const PEER_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const ICE_ID_RE = /^[A-Za-z0-9_-]{8,32}$/;
 
-function phonePage() {
-  const html = fs.readFileSync(pageFile, "utf8");
-  const helper = fs.readFileSync(pcmFile, "utf8");
-  return html.replace("/*__PCM16__*/", helper);
+function publicMicUrl(pagesBase, token) {
+  const base = String(pagesBase || "").replace(/\/$/, "");
+  let parsed;
+  try {
+    parsed = new URL(base);
+  } catch (_) {
+    throw new Error("참여 페이지 주소가 올바르지 않습니다.");
+  }
+  if (parsed.protocol !== "https:") throw new Error("참여 페이지는 https 여야 합니다.");
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(parsed.hostname)) {
+    throw new Error("참여 페이지는 공인 https 주소여야 합니다.");
+  }
+  if (!/^[a-f0-9]{32}$/.test(token || "")) throw new Error("참여 토큰이 올바르지 않습니다.");
+  return `${parsed.origin}${parsed.pathname.replace(/\/$/, "")}/mic/?s=${token}`;
 }
 
-function secureCheckPage() {
-  return `<!DOCTYPE html>
-<meta charset="utf-8">
-<title>secure-check</title>
-<body><script>
-document.body.textContent = JSON.stringify({
-  isSecureContext: window.isSecureContext,
-  hasMedia: !!(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === "function"),
-  protocol: location.protocol
-});
-</script></body>`;
+function parseIce(value) {
+  if (typeof value !== "string" || !value || value.length > 2000) return null;
+  let body;
+  try {
+    body = JSON.parse(value);
+  } catch (_) {
+    return null;
+  }
+  if (!body || typeof body.candidate !== "string" || !body.candidate || body.candidate.length > 1500) return null;
+  if (/\btyp relay\b/.test(body.candidate)) return null;
+  return {
+    candidate: body.candidate,
+    sdpMid: typeof body.sdpMid === "string" && body.sdpMid ? body.sdpMid : "0",
+    sdpMLineIndex: Number.isInteger(body.sdpMLineIndex) ? body.sdpMLineIndex : 0,
+  };
 }
 
-function closeServer(server) {
-  if (!server) return Promise.resolve();
-  return new Promise((resolve) => {
-    server.close(() => resolve());
+function encodeIce(candidate) {
+  const text = JSON.stringify({
+    candidate: candidate.candidate,
+    sdpMid: candidate.sdpMid || "0",
+    sdpMLineIndex: Number.isInteger(candidate.sdpMLineIndex) ? candidate.sdpMLineIndex : 0,
   });
+  if (!text || text.length > 2000) return "";
+  return text;
 }
 
-function listen(server, host, port) {
-  return new Promise((resolve, reject) => {
-    const onError = (err) => {
-      server.removeListener("listening", onListen);
-      reject(err);
-    };
-    const onListen = () => {
-      server.removeListener("error", onError);
-      resolve(server.address().port);
-    };
-    server.once("error", onError);
-    server.listen(port, host, onListen);
-  });
+function asBuffer(data) {
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  if (ArrayBuffer.isView(data)) return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  return Buffer.from(data);
 }
 
 class PhoneJoin {
@@ -59,17 +63,22 @@ class PhoneJoin {
     this.onHello = extra.onHello || (() => ({ index: 0 }));
     this.onPcm = extra.onPcm || (() => {});
     this.onLeave = extra.onLeave || (() => {});
-    this.httpsServer = null;
-    this.httpServer = null;
-    this.wss = null;
-    this.sockets = new Map();
-    this.certDir = "";
-    this.bindHost = "0.0.0.0";
-    this.advertiseHost = "";
-    this.cert = null;
+    this.onError = extra.onError || (() => {});
+    this.link = null;
+    this.pending = [];
+    this.peers = new Map();
+    this.seenOffers = new Set();
+    this.seenIce = new Set();
+    this.token = "";
+    this.databaseURL = "";
+    this.started = false;
+    this.stopped = false;
+    this.watching = false;
+    this.timer = null;
+    this.lastFail = 0;
+    this.lastFailText = "";
     this.infoCache = {
       url: "",
-      certUrl: "",
       qrDataUrl: "",
       host: "",
       ips: [],
@@ -81,205 +90,276 @@ class PhoneJoin {
     return { ...this.infoCache, ips: (this.infoCache.ips || []).slice() };
   }
 
+  attachLink(link) {
+    this.link = link || null;
+    if (!this.link) return;
+    const queued = this.pending.splice(0);
+    queued.forEach((msg) => this._emitLink(msg));
+  }
+
   async start(opts) {
     const options = opts || {};
-    if (this.httpsServer) return this.info();
-    this.certDir = options.certDir;
-    if (!this.certDir) throw new Error("인증서 폴더가 없습니다.");
-    this.bindHost = options.bindHost || "0.0.0.0";
-    const lan = lanIPv4s();
-    const host = options.advertiseHost || lan.primary;
-    const ips = options.advertiseHost ? [options.advertiseHost].concat(lan.all) : lan.all.slice();
-    this.cert = loadOrCreate(this.certDir, ips);
-    const page = phonePage();
-    const check = secureCheckPage();
-    const profile = mobileconfig(this.cert.caPem);
-    const respond = (req, res, secure) => this._respond(req, res, secure, page, check, profile);
-
-    const httpsServer = https.createServer({ key: this.cert.keyPem, cert: this.cert.certPem }, (req, res) => {
-      respond(req, res, true);
-    });
-    const httpServer = http.createServer((req, res) => respond(req, res, false));
-    const preferredHttps = Number.isInteger(options.httpsPort) ? options.httpsPort : 8443;
-    const preferredHttp = Number.isInteger(options.httpPort) ? options.httpPort : 8787;
-    try {
-      try {
-        await listen(httpsServer, this.bindHost, preferredHttps);
-      } catch (err) {
-        if (!options.strictPort && err && err.code === "EADDRINUSE") await listen(httpsServer, this.bindHost, 0);
-        else throw err;
-      }
-      try {
-        await listen(httpServer, this.bindHost, preferredHttp);
-      } catch (err) {
-        if (!options.strictPort && err && err.code === "EADDRINUSE") await listen(httpServer, this.bindHost, 0);
-        else throw err;
-      }
-    } catch (err) {
-      httpsServer.close();
-      httpServer.close();
-      throw err;
-    }
-    this.httpsServer = httpsServer;
-    this.httpServer = httpServer;
-    this.wss = new WebSocketServer({ server: httpsServer, path: "/mic", maxPayload: 1024 * 1024, perMessageDeflate: false });
-    this.wss.on("connection", (socket) => this._onSocket(socket));
-    await this._publish(host, httpsServer.address().port, httpServer.address().port, lan.all);
+    if (this.started) return this.info();
+    this.started = true;
+    this.token = options.token || crypto.randomBytes(16).toString("hex");
+    const pages = options.pagesBase || catalog.pagesBase;
+    const url = publicMicUrl(pages, this.token);
+    const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
+    this.databaseURL = String((options.databaseURL || catalog.firebase.databaseURL) || "").replace(/\/$/, "");
+    this.infoCache = {
+      url,
+      qrDataUrl,
+      host: "",
+      ips: [],
+      note: "",
+    };
+    if (options.signal !== false) this._runWatch();
     return this.info();
   }
 
-  async _publish(host, httpsPort, httpPort, ips) {
-    if (!host) {
-      this.advertiseHost = "";
-      this.infoCache = {
-        url: "",
-        certUrl: "",
-        qrDataUrl: "",
-        host: "",
-        ips: ips || [],
-        note: "송출 컴퓨터를 같은 Wi-Fi에 연결하면 참여 주소가 나옵니다.",
-      };
-      return;
-    }
-    const url = joinUrl(host, httpsPort);
-    if (url.startsWith("http://")) throw new Error("참여 주소는 https 여야 합니다.");
-    const certUrl = `http://${host}:${httpPort}/trust.mobileconfig`;
-    const qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
-    this.advertiseHost = host;
-    this.infoCache = {
-      url,
-      certUrl,
-      qrDataUrl,
-      host,
-      ips: ips || [],
-      note: "",
-    };
+  async refresh() {
+    return { ...this.info(), changed: false };
   }
 
-  _respond(req, res, secure, page, check, profile) {
-    const location = new URL(req.url || "/", "https://join.local");
-    const pathname = location.pathname;
-    if (req.method !== "GET" && req.method !== "HEAD") {
-      res.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("허용되지 않는 요청입니다.");
+  ingestText(peerId, raw) {
+    if (!PEER_RE.test(peerId || "")) return;
+    let message = null;
+    try {
+      message = JSON.parse(String(raw || ""));
+    } catch (_) {
       return;
     }
-    if (pathname === "/trust.mobileconfig") {
-      res.writeHead(200, {
-        "Content-Type": "application/x-apple-aspen-config",
-        "Content-Disposition": "attachment; filename=live-interpret-mic.mobileconfig",
-        "Cache-Control": "no-store",
-      });
-      res.end(req.method === "HEAD" ? undefined : profile);
+    if (!message || message.type !== "hello") return;
+    const name = cleanDisplayName(message.name);
+    const row = this._peer(peerId);
+    if (!name) {
+      this._send(peerId, { type: "error", message: "이름을 입력해 주세요." });
       return;
     }
-    if (pathname === "/ca.crt") {
-      res.writeHead(200, {
-        "Content-Type": "application/x-x509-ca-cert",
-        "Content-Disposition": "attachment; filename=live-interpret-ca.crt",
-        "Cache-Control": "no-store",
-      });
-      res.end(req.method === "HEAD" ? undefined : this.cert.caPem);
+    const requested = cleanPhoneId(message.phoneId) || crypto.randomBytes(16).toString("hex");
+    this._retireOther(peerId, requested);
+    row.phoneId = requested;
+    let joined;
+    try {
+      joined = this.onHello({ id: requested, name }) || {};
+    } catch (err) {
+      row.phoneId = "";
+      this._send(peerId, { type: "error", message: err.message || "연결하지 못했습니다." });
       return;
     }
-    if (!secure) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
-      res.end("마이크 페이지는 송출 컴퓨터의 https 참여 주소에서만 열립니다.");
-      return;
-    }
-    if (pathname === "/" || pathname === "/join") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      res.end(req.method === "HEAD" ? undefined : page);
-      return;
-    }
-    if (pathname === "/secure-check") {
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-      res.end(req.method === "HEAD" ? undefined : check);
-      return;
-    }
-    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("없는 주소입니다.");
+    const phoneId = cleanPhoneId(joined.phoneId) || requested;
+    row.phoneId = phoneId;
+    this._send(peerId, {
+      type: "joined",
+      phoneId,
+      name: joined.name || name,
+      channel: joined.index,
+    });
+    this._send(peerId, { type: "state", listening: !!joined.listening });
   }
 
-  _onSocket(socket) {
-    let phoneId = "";
-    socket.on("message", (data, isBinary) => {
-      if (isBinary) {
-        if (!phoneId) return;
-        const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-        const even = buf.length - (buf.length % 2);
-        if (even < 2) return;
-        this.onPcm(phoneId, even === buf.length ? buf : buf.subarray(0, even));
-        return;
-      }
-      let message = null;
-      try { message = JSON.parse(data.toString()); } catch (_) { return; }
-      if (!message || message.type !== "hello") return;
-      const name = cleanDisplayName(message.name);
-      if (!name) {
-        socket.send(JSON.stringify({ type: "error", message: "이름을 입력해 주세요." }));
-        return;
-      }
-      const requested = cleanPhoneId(message.phoneId) || crypto.randomBytes(16).toString("hex");
-      let joined;
-      try {
-        joined = this.onHello({ id: requested, name });
-      } catch (err) {
-        socket.send(JSON.stringify({ type: "error", message: err.message || "연결하지 못했습니다." }));
-        return;
-      }
-      phoneId = joined.phoneId || requested;
-      const previous = this.sockets.get(phoneId);
-      this.sockets.set(phoneId, socket);
-      if (previous && previous !== socket) previous.close();
-      socket.send(JSON.stringify({
-        type: "joined",
-        phoneId,
-        name: joined.name || name,
-        channel: joined.index,
-      }));
-      socket.send(JSON.stringify({ type: "state", listening: !!joined.listening }));
-    });
-    socket.on("close", () => {
-      if (!phoneId) return;
-      if (this.sockets.get(phoneId) !== socket) return;
-      this.sockets.delete(phoneId);
-      this.onLeave(phoneId);
-    });
+  ingestPcm(peerId, data) {
+    const row = this.peers.get(peerId);
+    if (!row || !row.phoneId) return;
+    const buf = asBuffer(data);
+    const even = buf.length - (buf.length % 2);
+    if (even < 2) return;
+    this.onPcm(row.phoneId, even === buf.length ? buf : buf.subarray(0, even));
+  }
+
+  peerLeft(peerId) {
+    const row = this.peers.get(peerId);
+    this.peers.delete(peerId);
+    if (!row || !row.phoneId) return;
+    const phoneId = row.phoneId;
+    const still = [...this.peers.values()].some((item) => item.phoneId === phoneId);
+    if (!still) this.onLeave(phoneId);
   }
 
   setListening(phoneId, listening) {
-    const socket = this.sockets.get(phoneId);
-    if (!socket || socket.readyState !== 1) return;
-    socket.send(JSON.stringify({ type: "state", listening: !!listening }));
+    const id = cleanPhoneId(phoneId);
+    if (!id) return;
+    for (const [peerId, row] of this.peers) {
+      if (row.phoneId !== id) continue;
+      this._send(peerId, { type: "state", listening: !!listening });
+    }
   }
 
-  async refresh() {
-    if (!this.httpsServer) return { ...this.info(), changed: false };
-    const lan = lanIPv4s();
-    const host = lan.primary;
-    if (!host || host === this.advertiseHost) return { ...this.info(), changed: false };
-    const known = new Set((this.cert && this.cert.ips) || []);
-    if (!known.has(host)) return { ...this.info(), changed: false };
-    await this._publish(host, this.httpsServer.address().port, this.httpServer.address().port, lan.all);
-    return { ...this.info(), changed: true };
+  async publishAnswer(peerId, sdp) {
+    if (!PEER_RE.test(peerId || "") || typeof sdp !== "string" || !sdp || sdp.length > 12000) return;
+    await this._put(`peers/${peerId}/answer.json`, { type: "answer", sdp });
+  }
+
+  async publishMacIce(msg) {
+    const peerId = msg && msg.peerId;
+    const text = encodeIce(msg || {});
+    if (!PEER_RE.test(peerId || "") || !text) return;
+    const iceId = crypto.randomBytes(8).toString("hex");
+    await this._put(`peers/${peerId}/macIce/${iceId}.json`, text);
   }
 
   async stop() {
-    const sockets = [...this.sockets.values()];
-    this.sockets.clear();
-    sockets.forEach((socket) => {
-      try { socket.close(); } catch (_) { /* 이미 닫힌 연결은 무시합니다 */ }
-    });
-    if (this.wss) {
-      await new Promise((resolve) => this.wss.close(() => resolve()));
-      this.wss = null;
+    this.stopped = true;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
     }
-    await closeServer(this.httpsServer);
-    await closeServer(this.httpServer);
-    this.httpsServer = null;
-    this.httpServer = null;
+    this.peers.clear();
+  }
+
+  _peer(peerId) {
+    let row = this.peers.get(peerId);
+    if (!row) {
+      row = { phoneId: "" };
+      this.peers.set(peerId, row);
+    }
+    return row;
+  }
+
+  _retireOther(peerId, phoneId) {
+    for (const [other, row] of this.peers) {
+      if (other === peerId || row.phoneId !== phoneId) continue;
+      row.phoneId = "";
+      this._toLink({ type: "close", peerId: other });
+    }
+  }
+
+  _send(peerId, message) {
+    this._toLink({ type: "send", peerId, text: JSON.stringify(message) });
+  }
+
+  _toLink(msg) {
+    if (!this.link) {
+      this.pending.push(msg);
+      return;
+    }
+    this._emitLink(msg);
+  }
+
+  _emitLink(msg) {
+    if (!this.link) return;
+    if (msg.type === "offer" && this.link.offer) this.link.offer(msg);
+    else if (msg.type === "ice" && this.link.ice) this.link.ice(msg);
+    else if (msg.type === "send" && this.link.send) this.link.send(msg.peerId, msg.text);
+    else if (msg.type === "close" && this.link.close) this.link.close(msg.peerId);
+  }
+
+  _signalUrl(suffix) {
+    const root = catalog.firebase.rootPath;
+    return `${this.databaseURL}/${root}/phoneLinks/${this.token}/${suffix}`;
+  }
+
+  async _put(suffix, body) {
+    if (!this.databaseURL || !this.token) return;
+    const res = await netFetch(this._signalUrl(suffix), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`휴대폰 연결 신호 ${res.status}: ${text.slice(0, 160)}`);
+    }
+  }
+
+  _runWatch() {
+    if (this.watching || this.stopped) return;
+    this.watching = true;
+    this._watchLoop().catch((err) => this._fail(err));
+  }
+
+  async _watchLoop() {
+    while (!this.stopped) {
+      try {
+        await this._pollOnce();
+        await this._pause(400);
+      } catch (err) {
+        if (this.stopped) return;
+        this._fail(err);
+        await this._pause(2000);
+      }
+    }
+  }
+
+  async _pollOnce() {
+    if (!this.databaseURL || !this.token) return;
+    const res = await netFetch(this._signalUrl("peers.json"));
+    const text = await res.text();
+    if (!res.ok) throw new Error(`휴대폰 연결 신호 ${res.status}: ${text.slice(0, 160)}`);
+    if (!text || text === "null") return;
+    const data = JSON.parse(text);
+    this._applyPath("/", data);
+  }
+
+  _applyPath(path, data) {
+    const parts = String(path || "/").split("/").filter(Boolean);
+    if (!parts.length) {
+      if (!data || typeof data !== "object") return;
+      Object.entries(data).forEach(([peerId, node]) => this._applyPeer(peerId, node));
+      return;
+    }
+    const peerId = parts[0];
+    if (!PEER_RE.test(peerId)) return;
+    if (parts.length === 1) {
+      this._applyPeer(peerId, data);
+      return;
+    }
+    if (parts[1] === "offer" && data && data.sdp) this._onOffer(peerId, data.sdp);
+    if (parts[1] === "phoneIce") {
+      if (parts.length === 2 && data && typeof data === "object") {
+        Object.entries(data).forEach(([iceId, value]) => this._onPhoneIce(peerId, iceId, value));
+      } else if (parts.length === 3) this._onPhoneIce(peerId, parts[2], data);
+    }
+  }
+
+  _applyPeer(peerId, node) {
+    if (!PEER_RE.test(peerId) || !node || typeof node !== "object") return;
+    if (node.offer && node.offer.sdp) this._onOffer(peerId, node.offer.sdp);
+    if (node.phoneIce && typeof node.phoneIce === "object") {
+      Object.entries(node.phoneIce).forEach(([iceId, value]) => this._onPhoneIce(peerId, iceId, value));
+    }
+  }
+
+  _onOffer(peerId, sdp) {
+    if (!PEER_RE.test(peerId) || this.seenOffers.has(peerId)) return;
+    if (typeof sdp !== "string" || !sdp || sdp.length > 12000) return;
+    this.seenOffers.add(peerId);
+    this._toLink({ type: "offer", peerId, sdp });
+  }
+
+  _onPhoneIce(peerId, iceId, value) {
+    if (!PEER_RE.test(peerId) || !ICE_ID_RE.test(iceId || "")) return;
+    const key = `${peerId}/${iceId}`;
+    if (this.seenIce.has(key)) return;
+    const parsed = parseIce(value);
+    if (!parsed) return;
+    this.seenIce.add(key);
+    this._toLink({ type: "ice", peerId, ...parsed });
+  }
+
+  _fail(err) {
+    const text = err && err.message ? err.message : String(err);
+    const now = Date.now();
+    if (this.lastFailText === text && now - this.lastFail < 30000) return;
+    this.lastFail = now;
+    this.lastFailText = text;
+    try { this.onError(new Error(text)); } catch (_) { /* 로그 실패는 다음 신호에서 다시 보입니다 */ }
+  }
+
+  _pause(ms) {
+    if (this.stopped) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        resolve();
+      }, ms);
+    });
   }
 }
 
-module.exports = { PhoneJoin, phonePage, secureCheckPage };
+module.exports = {
+  PhoneJoin,
+  publicMicUrl,
+  parseIce,
+  encodeIce,
+};

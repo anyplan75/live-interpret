@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>phone-link</title>
+<script>
+const peers = new Map();
+const pendingIce = new Map();
+
+function stateFor(peerId) {
+  let state = peers.get(peerId);
+  if (state) return state;
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    bundlePolicy: "max-bundle",
+  });
+  state = { pc, channel: null, outbox: [] };
+  peers.set(peerId, state);
+  pc.onicecandidate = (event) => {
+    if (!event.candidate || !event.candidate.candidate) return;
+    if (/\btyp relay\b/.test(event.candidate.candidate)) return;
+    window.phoneLink.send({
+      type: "macIce",
+      peerId,
+      candidate: event.candidate.candidate,
+      sdpMid: event.candidate.sdpMid,
+      sdpMLineIndex: event.candidate.sdpMLineIndex,
+    });
+  };
+  pc.ondatachannel = (event) => {
+    const channel = event.channel;
+    state.channel = channel;
+    channel.binaryType = "arraybuffer";
+    channel.onopen = () => {
+      state.outbox.forEach((text) => channel.send(text));
+      state.outbox = [];
+    };
+    channel.onmessage = (message) => {
+      if (typeof message.data === "string") {
+        window.phoneLink.send({ type: "text", peerId, text: message.data });
+        return;
+      }
+      window.phoneLink.send({ type: "pcm", peerId, pcm: message.data });
+    };
+    channel.onclose = () => window.phoneLink.send({ type: "leave", peerId });
+  };
+  return state;
+}
+
+function sendText(state, text) {
+  if (state.channel && state.channel.readyState === "open") state.channel.send(text);
+  else state.outbox.push(text);
+}
+
+async function addIce(peerId, ice) {
+  const state = peers.get(peerId);
+  if (!state || !state.pc.remoteDescription) {
+    const queued = pendingIce.get(peerId) || [];
+    queued.push(ice);
+    pendingIce.set(peerId, queued);
+    return;
+  }
+  await state.pc.addIceCandidate(ice);
+}
+
+window.phoneLink.onSignal(async (msg) => {
+  if (!msg || typeof msg !== "object") return;
+  try {
+    if (msg.type === "offer") {
+      const state = stateFor(msg.peerId);
+      await state.pc.setRemoteDescription({ type: "offer", sdp: msg.sdp });
+      const queued = pendingIce.get(msg.peerId) || [];
+      pendingIce.delete(msg.peerId);
+      for (const ice of queued) await state.pc.addIceCandidate(ice);
+      const answer = await state.pc.createAnswer();
+      await state.pc.setLocalDescription(answer);
+      window.phoneLink.send({ type: "answer", peerId: msg.peerId, sdp: answer.sdp });
+    } else if (msg.type === "phoneIce") {
+      await addIce(msg.peerId, {
+        candidate: msg.candidate,
+        sdpMid: msg.sdpMid || "0",
+        sdpMLineIndex: Number.isInteger(msg.sdpMLineIndex) ? msg.sdpMLineIndex : 0,
+      });
+    } else if (msg.type === "send") {
+      sendText(stateFor(msg.peerId), msg.text);
+    } else if (msg.type === "close") {
+      const state = peers.get(msg.peerId);
+      if (state) {
+        try { state.pc.close(); } catch (_) { /* 이미 닫힌 연결은 무시합니다 */ }
+      }
+      peers.delete(msg.peerId);
+      pendingIce.delete(msg.peerId);
+    }
+  } catch (err) {
+    window.phoneLink.send({ type: "error", message: err && err.message ? err.message : String(err) });
+  }
+});
+
+window.phoneLink.send({ type: "ready" });
+</script>

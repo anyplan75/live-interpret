@@ -12,11 +12,15 @@ const updater = require("./lib/updater");
 const { PhoneJoin } = require("./lib/phone-join");
 
 app.setName("live-interpret");
+app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
 
 let win = null;
+let phoneWin = null;
 let engine = null;
 let phoneJoin = null;
 let phoneTimer = null;
+let phoneReady = false;
+const phoneQueue = [];
 let quitting = false;
 let idToken = "";
 let tokenExpiresAt = 0;
@@ -179,7 +183,41 @@ function createWindow() {
       log: (level, text) => send({ type: "log", level, text }),
     });
   });
+  win.on("closed", () => {
+    win = null;
+    if (phoneWin && !phoneWin.isDestroyed()) phoneWin.destroy();
+  });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
+}
+
+function sendPhone(msg) {
+  if (!phoneReady || !phoneWin || phoneWin.isDestroyed()) {
+    phoneQueue.push(msg);
+    return;
+  }
+  phoneWin.webContents.send("phone-signal", msg);
+}
+
+function flushPhone() {
+  phoneReady = true;
+  if (!phoneWin || phoneWin.isDestroyed()) return;
+  while (phoneQueue.length) phoneWin.webContents.send("phone-signal", phoneQueue.shift());
+}
+
+function createPhoneWindow() {
+  phoneWin = new BrowserWindow({
+    show: false,
+    width: 320,
+    height: 240,
+    webPreferences: {
+      preload: path.join(__dirname, "phone", "answer-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  phoneWin.webContents.setBackgroundThrottling(false);
+  phoneWin.loadFile(path.join(__dirname, "phone", "answer.html"));
 }
 
 function registerIpc() {
@@ -347,12 +385,36 @@ function registerIpc() {
   ipcMain.handle("platform:keyStatus", async () => ({ configured: Boolean(resolveKey()) }));
   ipcMain.handle("phone:info", () => (phoneJoin ? phoneJoin.info() : {
     url: "",
-    certUrl: "",
     qrDataUrl: "",
     host: "",
     ips: [],
     note: "송출 컴퓨터를 같은 Wi-Fi에 연결하면 참여 주소가 나옵니다.",
   }));
+  ipcMain.on("phone-answer", (_event, msg) => {
+    if (!phoneJoin || !msg || typeof msg !== "object") return;
+    if (msg.type === "ready") {
+      flushPhone();
+      return;
+    }
+    if (msg.type === "answer") {
+      phoneJoin.publishAnswer(msg.peerId, msg.sdp).catch((err) => {
+        send({ type: "log", level: "error", text: err.message || String(err) });
+      });
+      return;
+    }
+    if (msg.type === "macIce") {
+      phoneJoin.publishMacIce(msg).catch((err) => {
+        send({ type: "log", level: "error", text: err.message || String(err) });
+      });
+      return;
+    }
+    if (msg.type === "text") phoneJoin.ingestText(msg.peerId, msg.text);
+    else if (msg.type === "pcm") phoneJoin.ingestPcm(msg.peerId, msg.pcm);
+    else if (msg.type === "leave") phoneJoin.peerLeft(msg.peerId);
+    else if (msg.type === "error" && msg.message) {
+      send({ type: "log", level: "error", text: String(msg.message) });
+    }
+  });
   ipcMain.handle("devices:list", () => {
     try {
       return engine.listDevices();
@@ -462,11 +524,25 @@ if (!gotLock) {
       onHello: (phone) => engine.addPhone(phone),
       onPcm: (phoneId, pcm) => engine.pushPhonePcm(phoneId, pcm),
       onLeave: (phoneId) => engine.markPhoneAway(phoneId),
+      onError: (err) => send({ type: "log", level: "error", text: err.message || String(err) }),
+    });
+    phoneJoin.attachLink({
+      offer: (msg) => sendPhone({ type: "offer", peerId: msg.peerId, sdp: msg.sdp }),
+      ice: (msg) => sendPhone({
+        type: "phoneIce",
+        peerId: msg.peerId,
+        candidate: msg.candidate,
+        sdpMid: msg.sdpMid,
+        sdpMLineIndex: msg.sdpMLineIndex,
+      }),
+      send: (peerId, text) => sendPhone({ type: "send", peerId, text }),
+      close: (peerId) => sendPhone({ type: "close", peerId }),
     });
     engine.bindPhoneLink((phoneId, listening) => phoneJoin.setListening(phoneId, listening));
     registerIpc();
     createWindow();
-    phoneJoin.start({ certDir: path.join(userDir(), "lan-cert") }).then((info) => {
+    createPhoneWindow();
+    phoneJoin.start().then((info) => {
       send({ type: "phone-join", info });
       if (info.url) send({ type: "log", level: "info", text: `휴대폰 마이크 참여 주소: ${info.url}` });
       phoneTimer = setInterval(() => {
@@ -486,6 +562,13 @@ if (!gotLock) {
     if (phoneTimer) {
       clearInterval(phoneTimer);
       phoneTimer = null;
+    }
+    phoneReady = false;
+    phoneQueue.length = 0;
+    if (phoneWin && !phoneWin.isDestroyed()) {
+      const closingWindow = phoneWin;
+      phoneWin = null;
+      closingWindow.destroy();
     }
     if (!phoneJoin) return;
     const closing = phoneJoin;

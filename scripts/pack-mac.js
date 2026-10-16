@@ -2,6 +2,7 @@
 
 const { spawnSync } = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
@@ -69,8 +70,7 @@ function main() {
   const env = { ...process.env };
   const builderArgs = ["--mac", "dir", "--arm64"];
   const builder = path.join(root, "node_modules", ".bin", "electron-builder");
-  const prepackagedDir = path.join(root, "dist", "mac-arm64");
-  const displayApp = path.join(prepackagedDir, "실시간 통역시스템.app");
+  const displayApp = path.join(root, "dist", "mac-arm64", "실시간 통역시스템.app");
 
   if (!fs.existsSync(builder)) {
     console.error("electron-builder 가 없습니다. 먼저 npm install 을 실행하세요.");
@@ -104,15 +104,40 @@ function main() {
   run(process.execPath, [path.join(__dirname, "name-mac-app.js")], env);
   const signMatch = identityLine.match(/"([^"]+)"/);
   const signName = signMatch ? signMatch[1] : "-";
+  const entitlements = path.join(root, "build", "entitlements.mac.plist");
   if (!identityLine) {
     console.log("ad-hoc 서명: codesign --force --deep --sign - \"" + displayApp + "\"");
-    run("codesign", ["--force", "--deep", "--sign", "-", displayApp], env);
+    run("codesign", ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, displayApp], env);
   } else {
     console.log("표시 이름으로 다시 서명합니다: " + displayApp);
-    run("codesign", ["--force", "--deep", "--sign", signName, displayApp], env);
+    run("codesign", ["--force", "--deep", "--sign", signName, "--entitlements", entitlements, displayApp], env);
   }
   if (dist) {
-    run(builder, ["--prepackaged", prepackagedDir, "--mac", "dmg", "zip", "--arm64", "--publish", "never"], env);
+    const dmg = path.join(root, "dist", `실시간 통역시스템-${pkg.version}-mac-arm64.dmg`);
+    makeDirectDmg(displayApp, dmg);
+    console.log(dmg);
+  }
+}
+
+function makeDirectDmg(appPath, outPath) {
+  const staging = fs.mkdtempSync(path.join(os.tmpdir(), "live-interpret-dmg-"));
+  try {
+    const copied = spawnSync("ditto", [appPath, path.join(staging, path.basename(appPath))], { stdio: "inherit" });
+    if (copied.status !== 0) process.exit(copied.status == null ? 1 : copied.status);
+    fs.symlinkSync("/Applications", path.join(staging, "Applications"));
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+    const created = spawnSync("hdiutil", [
+      "create",
+      "-volname", "실시간 통역시스템",
+      "-srcfolder", staging,
+      "-ov",
+      "-format", "UDZO",
+      outPath,
+    ], { stdio: "inherit" });
+    if (created.status !== 0) process.exit(created.status == null ? 1 : created.status);
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
   }
 }
 

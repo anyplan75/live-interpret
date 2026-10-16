@@ -287,9 +287,8 @@ function renderChannels(count) {
 function showPhoneJoin(info) {
   state.phoneJoin = info || {};
   const url = document.getElementById("phoneJoinUrl");
-  const cert = document.getElementById("phoneCertUrl");
   const img = document.getElementById("phoneQr");
-  if (!url || !cert || !img) return;
+  if (!url || !img) return;
   if (info && info.url) {
     url.value = info.url;
     if (info.qrDataUrl) {
@@ -301,7 +300,6 @@ function showPhoneJoin(info) {
     img.hidden = true;
     url.placeholder = (info && info.note) || "송출 컴퓨터를 같은 Wi-Fi에 연결하면 참여 주소가 나옵니다.";
   }
-  cert.value = info && info.certUrl ? info.certUrl : "";
 }
 
 function mapChannel(row) {

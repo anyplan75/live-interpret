@@ -31,6 +31,36 @@
         ".write": false
       }
     },
+    "phoneLinks": {
+      "$token": {
+        ".read": "$token.matches(/^[a-f0-9]{32}$/)",
+        "peers": {
+          "$peerId": {
+            ".validate": "$token.matches(/^[a-f0-9]{32}$/) && $peerId.matches(/^[A-Za-z0-9_-]{8,64}$/)",
+            "offer": {
+              ".write": "!data.exists() && newData.hasChildren(['type', 'sdp']) && newData.child('type').val() === 'offer' && newData.child('sdp').isString() && newData.child('sdp').val().length > 0 && newData.child('sdp').val().length <= 12000",
+              ".validate": "newData.hasChildren(['type', 'sdp']) && newData.child('type').val() === 'offer' && newData.child('sdp').isString() && newData.child('sdp').val().length > 0 && newData.child('sdp').val().length <= 12000"
+            },
+            "answer": {
+              ".write": "!data.exists() && newData.hasChildren(['type', 'sdp']) && newData.child('type').val() === 'answer' && newData.child('sdp').isString() && newData.child('sdp').val().length > 0 && newData.child('sdp').val().length <= 12000",
+              ".validate": "newData.hasChildren(['type', 'sdp']) && newData.child('type').val() === 'answer' && newData.child('sdp').isString() && newData.child('sdp').val().length > 0 && newData.child('sdp').val().length <= 12000"
+            },
+            "phoneIce": {
+              "$iceId": {
+                ".write": "!data.exists() && $iceId.matches(/^[A-Za-z0-9_-]{8,32}$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 2000",
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2000"
+              }
+            },
+            "macIce": {
+              "$iceId": {
+                ".write": "!data.exists() && $iceId.matches(/^[A-Za-z0-9_-]{8,32}$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 2000",
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2000"
+              }
+            }
+          }
+        }
+      }
+    },
     "churches": {
       "$churchId": {
         ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
