@@ -22,6 +22,8 @@ const { SpeechSession } = require("./stt");
 const { Pipeline } = require("./pipeline");
 const { UsageMeter } = require("./usage");
 const cost = require("./cost");
+const { createSubtitleBoard } = require("./subtitle-board");
+const { cleanDisplayName, cleanPhoneId } = require("./phone-name");
 const { createSessionWriter } = require("./files");
 const firebase = require("./firebase");
 
@@ -29,15 +31,41 @@ function cleanTargets(targets) {
   return [...new Set((targets || []).filter((code) => code !== "ko" && langByCode[code]))];
 }
 
+function deviceRow(row, index, fallbackSpoken) {
+  const spoken = spokenLanguage(row && row.spoken ? row.spoken : (index === 0 ? fallbackSpoken : "ko"));
+  const on = row && row.on != null ? !!row.on : index === 0;
+  return { spoken, on, source: "device", name: "", phoneId: "", connected: true };
+}
+
+function phoneRow(row) {
+  const name = cleanDisplayName(row && row.name);
+  const phoneId = cleanPhoneId(row && row.phoneId);
+  if (!name || !phoneId) return null;
+  return {
+    spoken: spokenLanguage(row.spoken || "ko"),
+    on: !!row.on,
+    source: "phone",
+    name,
+    phoneId,
+    connected: row.connected !== false,
+  };
+}
+
 function normalizeChannelRows(list, count, fallbackSpoken) {
   const n = Math.max(1, Number(count) || 1);
+  const source = Array.isArray(list) ? list : [];
+  const deviceSrc = [];
+  const phoneSrc = [];
+  source.forEach((row) => {
+    if (row && row.source === "phone") phoneSrc.push(row);
+    else deviceSrc.push(row);
+  });
   const rows = [];
-  for (let i = 0; i < n; i += 1) {
-    const row = Array.isArray(list) ? list[i] : null;
-    const spoken = spokenLanguage(row && row.spoken ? row.spoken : (i === 0 ? fallbackSpoken : "ko"));
-    const on = row && row.on != null ? !!row.on : i === 0;
-    rows.push({ spoken, on });
-  }
+  for (let i = 0; i < n; i += 1) rows.push(deviceRow(deviceSrc[i], i, fallbackSpoken));
+  phoneSrc.forEach((row) => {
+    const phone = phoneRow(row);
+    if (phone) rows.push(phone);
+  });
   if (!rows.some((row) => row.on)) rows[0].on = true;
   return rows;
 }
@@ -66,6 +94,8 @@ class Engine {
     this.channelRows = [];
     this.channelSessions = new Map();
     this.paidChannels = new Set();
+    this.phoneLink = null;
+    this.subtitleBoard = null;
     this.sharedTexts = null;
     this.running = false;
     this.lastLevelAt = 0;
@@ -489,11 +519,11 @@ class Engine {
       }
       if (info.mode === "single") {
         const session = this.channelSessions.get(info.deviceChannel);
-        if (session) session.speech.push(resampleInt16(buffer, rate, 24000));
+        if (session && session.source !== "phone") session.speech.push(resampleInt16(buffer, rate, 24000));
         return;
       }
       this.channelSessions.forEach((session, index) => {
-        if (index >= info.nChannels) return;
+        if (!session || session.source === "phone" || index >= info.nChannels) return;
         const mono = extractChannel(buffer, info.nChannels, index);
         session.speech.push(resampleInt16(mono, rate, 24000));
       });
@@ -598,8 +628,10 @@ class Engine {
     if (churchId) await this.syncSettings(churchId, this.outputs || []);
     if (changed && this.running) {
       const name = langByCode[code] ? langByCode[code].name : code;
-      this.emit({ type: "log", level: "info", text: `채널 ${i + 1} 인식 언어를 ${name}로 바꿨습니다.` });
+      const label = this.channelFeeLabel(i);
+      this.emit({ type: "log", level: "info", text: `${label} 인식 언어를 ${name}로 바꿨습니다.` });
     }
+    this.emitPhones();
     return code;
   }
 
@@ -618,7 +650,7 @@ class Engine {
         balanceAfter: plan.balance,
         at,
         who: this.church.accountUid || "",
-        note: `추가 채널 ${newly.map((index) => index + 1).join(", ")}`,
+        note: `추가 채널 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}`,
         churchId: this.church.id,
       });
       await this.writeBilling(this.church.id, plan.balance, entry, null);
@@ -628,7 +660,7 @@ class Engine {
       this.emit({
         type: "log",
         level: "info",
-        text: `추가 채널 ${newly.map((index) => index + 1).join(", ")}에서 ${cost.formatKrw(plan.charged)}을 뺐습니다. 이 요금은 한 번만 빠집니다.`,
+        text: `추가 입력 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}에서 ${cost.formatKrw(plan.charged)}을 뺐습니다. 이 요금은 한 번만 빠집니다.`,
       });
     }
     plan.started.forEach((index) => this.paidChannels.add(index));
@@ -643,6 +675,8 @@ class Engine {
     if (!on) {
       this.channelRows[i].on = false;
       if (this.running) await this.closeChannel(i);
+      this.notifyPhone(i, false);
+      this.emitPhones();
       if (churchId) await this.syncSettings(churchId, this.outputs || []);
       return { index: i, on: false, charged: 0 };
     }
@@ -650,13 +684,16 @@ class Engine {
       const plan = await this.chargeChannelFees([i]);
       if (plan.blocked.includes(i)) {
         this.channelRows[i].on = false;
-        const message = `채널 ${i + 1}은 충전금이 부족해 시작하지 못했습니다.`;
+        const message = `${this.channelFeeLabel(i)}은 충전금이 부족해 시작하지 못했습니다.`;
         this.emit({ type: "log", level: "error", text: message });
+        this.emitPhones();
         return { index: i, on: false, blocked: true, message, balance: plan.balance };
       }
     }
     this.channelRows[i].on = true;
     if (this.running) await this.openChannel(i);
+    this.notifyPhone(i, !!(this.running && this.channelSessions && this.channelSessions.has(i)));
+    this.emitPhones();
     if (churchId) await this.syncSettings(churchId, this.outputs || []);
     return { index: i, on: true, charged: 0 };
   }
@@ -677,8 +714,11 @@ class Engine {
     if (!this.channelSessions) this.channelSessions = new Map();
     if (!this.sharedTexts) this.sharedTexts = { texts: {}, chain: Promise.resolve() };
     if (this.channelSessions.has(index)) return this.channelSessions.get(index);
-    const row = this.channelRows[index] || { spoken: "ko", on: true };
+    const row = this.channelRows[index] || { spoken: "ko", on: true, source: "device" };
     const spoken = spokenLanguage(row.spoken);
+    const phone = row.source === "phone";
+    const speaker = phone ? cleanDisplayName(row.name) : "";
+    const channelKey = phone ? `p${row.phoneId}` : `d${index}`;
     const targets = translationTargets(this.outputs || [], spoken);
     const bits = this.channelBroadcastBits();
     const cloud = this.sessionCloud;
@@ -687,6 +727,9 @@ class Engine {
       model: bits.model,
       sourceLang: spoken,
       targets,
+      speaker,
+      channelKey,
+      sentenceSeed: Date.now() + (index + 1) * 1000003,
       glossary: bits.glossary,
       sessionContext: bits.sessionContext,
       pauseTails: bits.pauseTails,
@@ -694,9 +737,9 @@ class Engine {
       usage: this.usage,
       cloud,
       sharedTexts: this.sharedTexts,
-      onLive: (text) => this.emit({ type: "live", channel: index, text }),
-      onHeard: (heard) => this.emit({ type: "heard", channel: index, ...heard }),
-      onLine: (line) => this.emit({ type: "line", channel: index, ...line }),
+      onLive: (text) => this.emit({ type: "live", channel: index, name: speaker, text }),
+      onHeard: (heard) => this.emit({ type: "heard", channel: index, name: speaker, ...heard }),
+      onLine: (line) => this.emit({ type: "line", channel: index, ...line, name: speaker }),
       onLog: (text) => this.emit({ type: "log", level: "info", text }),
     });
     pipeline.startTicker();
@@ -719,7 +762,7 @@ class Engine {
       } : null,
     });
     await speech.start();
-    const session = { speech, pipeline, spoken, index };
+    const session = { speech, pipeline, spoken, index, source: phone ? "phone" : "device", name: speaker };
     this.channelSessions.set(index, session);
     if (!this.speech) {
       this.speech = speech;
@@ -744,6 +787,123 @@ class Engine {
   async closeAllChannels() {
     const indexes = [...this.channelSessions.keys()];
     for (const index of indexes) await this.closeChannel(index);
+    (this.channelRows || []).forEach((row, index) => {
+      if (row && row.source === "phone") this.notifyPhone(index, false);
+    });
+  }
+
+  bindPhoneLink(fn) {
+    this.phoneLink = typeof fn === "function" ? fn : null;
+  }
+
+  deviceSlotCount() {
+    if (this.device && Number(this.device.inputChannels) > 0) return this.device.inputChannels;
+    return (this.channelRows || []).filter((row) => !row || row.source !== "phone").length;
+  }
+
+  ensureDeviceSlots() {
+    const count = this.deviceSlotCount();
+    const current = this.channelRows || [];
+    const devices = current.filter((row) => !row || row.source !== "phone");
+    const phones = current.filter((row) => row && row.source === "phone");
+    const rows = [];
+    for (let i = 0; i < count; i += 1) rows.push(deviceRow(devices[i], i, this.spoken || "ko"));
+    phones.forEach((row) => {
+      const phone = phoneRow(row);
+      if (phone) rows.push(phone);
+    });
+    this.channelRows = rows;
+  }
+
+  publicChannels() {
+    return (this.channelRows || []).map((row, index) => ({
+      index,
+      spoken: row.spoken || "ko",
+      on: !!row.on,
+      source: row.source === "phone" ? "phone" : "device",
+      name: row.source === "phone" ? (row.name || "") : "",
+      phoneId: row.source === "phone" ? (row.phoneId || "") : "",
+      connected: row.source === "phone" ? row.connected !== false : true,
+    }));
+  }
+
+  emitPhones() {
+    this.emit({ type: "phones", channels: this.publicChannels() });
+  }
+
+  channelFeeLabel(index) {
+    const row = this.channelRows && this.channelRows[index];
+    if (row && row.source === "phone" && row.name) return row.name;
+    return `채널 ${index + 1}`;
+  }
+
+  notifyPhone(index, listening) {
+    const row = this.channelRows && this.channelRows[index];
+    if (!row || row.source !== "phone" || !row.phoneId || !this.phoneLink) return;
+    try { this.phoneLink(row.phoneId, !!listening); } catch (_) { /* 휴대폰 상태 전달 실패는 다음 연결에서 다시 보냅니다 */ }
+  }
+
+  addPhone(phone) {
+    const name = cleanDisplayName(phone && phone.name);
+    const phoneId = cleanPhoneId(phone && phone.id);
+    if (!name || !phoneId) throw new Error("이름을 입력해 주세요.");
+    if (!this.channelRows) this.channelRows = [];
+    const known = this.channelRows.find((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    const phoneCount = this.channelRows.filter((row) => row && row.source === "phone").length;
+    if (!known && phoneCount >= 8) throw new Error("휴대폰 입력은 8개까지입니다.");
+    this.ensureDeviceSlots();
+    let index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    if (index < 0) {
+      index = this.channelRows.length;
+      this.channelRows.push({
+        spoken: "ko",
+        on: false,
+        source: "phone",
+        name,
+        phoneId,
+        connected: true,
+      });
+    } else {
+      this.channelRows[index].name = name;
+      this.channelRows[index].connected = true;
+      const session = this.channelSessions && this.channelSessions.get(index);
+      if (session) {
+        session.name = name;
+        if (session.pipeline) session.pipeline.speaker = name;
+      }
+    }
+    const row = this.channelRows[index];
+    const listening = !!(this.running && row.on && this.channelSessions && this.channelSessions.has(index));
+    this.notifyPhone(index, listening);
+    this.emitPhones();
+    this.emit({ type: "log", level: "info", text: `${name} 휴대폰이 송출 컴퓨터에 연결되었습니다.` });
+    return { index, name, phoneId, on: !!row.on, listening };
+  }
+
+  markPhoneAway(phoneId) {
+    const index = (this.channelRows || []).findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    if (index < 0) return;
+    this.channelRows[index].connected = false;
+    this.emitPhones();
+    this.emit({ type: "log", level: "info", text: `${this.channelRows[index].name} 휴대폰 연결이 끊겼습니다.` });
+  }
+
+  pushPhonePcm(phoneId, pcm) {
+    if (!pcm || !this.channelRows) return;
+    const index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    if (index < 0) return;
+    const session = this.channelSessions && this.channelSessions.get(index);
+    if (!session || session.source !== "phone" || !session.speech) return;
+    session.speech.push(pcm);
+    const now = Date.now();
+    if (session.lastLevelAt && now - session.lastLevelAt < 80) return;
+    session.lastLevelAt = now;
+    let peak = 0;
+    for (let i = 0; i + 1 < pcm.length; i += 2) {
+      const value = Math.abs(pcm.readInt16LE(i));
+      if (value > peak) peak = value;
+    }
+    this.emit({ type: "level", channel: index, peak: peak / 32768 });
   }
 
   async start(opts) {
@@ -840,8 +1000,12 @@ class Engine {
     this.usageChain = Promise.resolve();
     this.lastUsageWrite = 0;
     this.sessionCharge = null;
+    this.subtitleBoard = createSubtitleBoard();
     this.sessionCloud = {
-      updateSubtitles: (payload) => firebase.update(`churches/${church.id}/live/subtitles`, payload),
+      updateSubtitles: (payload) => firebase.update(
+        `churches/${church.id}/live/subtitles`,
+        this.subtitleBoard.merge(payload),
+      ),
       setText: (lang, text) => firebase.setSessionText(church.id, this.folderName, lang, text),
       appendSentence: (lang, id, text) => firebase.appendSessionSentence(church.id, this.folderName, lang, id, text),
       recordUsage: (record) => this.flushUsage(true, record),
@@ -860,7 +1024,7 @@ class Engine {
         this.emit({
           type: "log",
           level: "error",
-          text: `채널 ${index + 1}은 충전금이 부족해 시작하지 못했습니다.`,
+          text: `${this.channelFeeLabel(index)}은 충전금이 부족해 시작하지 못했습니다.`,
         });
       });
       for (const index of [...active].sort((a, b) => a - b)) {
@@ -904,7 +1068,7 @@ class Engine {
       folderName: this.folderName,
       dir: this.sessionDir,
       targets,
-      channels: this.channelRows.map((row) => ({ spoken: row.spoken, on: row.on })),
+      channels: this.publicChannels(),
     };
   }
 
@@ -1050,4 +1214,4 @@ class Engine {
   }
 }
 
-module.exports = { Engine, cleanTargets };
+module.exports = { Engine, cleanTargets, normalizeChannelRows };

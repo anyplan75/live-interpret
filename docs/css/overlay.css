@@ -136,4 +136,6 @@ html, body {
   overflow: hidden;
 }
 
+#subtitle .line { display: block; }
+#subtitle .speaker { font-weight: 800; }
 #subtitle .interim { color: #9e9e9e; }

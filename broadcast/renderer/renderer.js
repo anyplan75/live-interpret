@@ -68,15 +68,24 @@ function activeChannelRows() {
   return (state.channels || []).map((row, index) => ({ ...row, index })).filter((row) => row.on);
 }
 
+function channelTitle(row) {
+  if (row && row.name) return row.name;
+  return `채널 ${row.index + 1}`;
+}
+
 function renderHeardTitle() {
   if (!heardTitleEl) return;
   const on = activeChannelRows();
+  if (on.length === 1 && on[0].name) {
+    heardTitleEl.textContent = `지금 듣는 ${on[0].name} · ${spokenName(on[0].spoken)}`;
+    return;
+  }
   if (on.length <= 1) {
     const code = on.length ? on[0].spoken : state.spoken;
     heardTitleEl.textContent = `지금 듣는 ${spokenName(code)}`;
     return;
   }
-  heardTitleEl.textContent = `지금 듣는 ${on.map((row) => `채널 ${row.index + 1} ${spokenName(row.spoken)}`).join(" · ")}`;
+  heardTitleEl.textContent = `지금 듣는 ${on.map((row) => `${channelTitle(row)} ${spokenName(row.spoken)}`).join(" · ")}`;
 }
 
 function billingSpoken() {
@@ -91,15 +100,19 @@ function extraChannelIndexes() {
 function ensureChannels(count) {
   const saved = Array.isArray(state.settings && state.settings.channels) ? state.settings.channels : [];
   const current = Array.isArray(state.channels) ? state.channels : [];
+  const phones = current.filter((row) => row && row.source === "phone");
+  const devices = current.filter((row) => !row || row.source !== "phone");
   const rows = [];
-  for (let i = 0; i < count; i += 1) {
-    const prev = current[i] || saved[i] || {};
+  const n = Math.max(0, Number(count) || 0);
+  for (let i = 0; i < n; i += 1) {
+    const prev = devices[i] || saved[i] || {};
+    if (prev.source === "phone") continue;
     const fallback = i === 0 && state.settings ? state.settings.spoken : "ko";
     const spoken = knownSpoken(prev.spoken || fallback);
     const on = prev.on != null ? !!prev.on : i === 0;
-    rows.push({ spoken, on });
+    rows.push({ spoken, on, source: "device", name: "", phoneId: "", connected: true });
   }
-  state.channels = rows;
+  state.channels = rows.concat(phones);
   if (rows[0]) state.spoken = rows[0].spoken;
 }
 
@@ -125,7 +138,13 @@ function selectedPreacherId() {
 }
 
 async function persist(patch) {
-  state.settings = await window.broadcast.saveSettings(patch);
+  const next = { ...(patch || {}) };
+  if (Array.isArray(next.channels)) {
+    next.channels = next.channels
+      .filter((row) => !row || row.source !== "phone")
+      .map((row) => ({ spoken: row.spoken, on: !!row.on }));
+  }
+  state.settings = await window.broadcast.saveSettings(next);
 }
 
 function renderLangs(selected) {
@@ -217,7 +236,7 @@ function renderDevices() {
 
 function fillSpokenSelect(select, code) {
   select.innerHTML = "";
-  (state.catalog.languages || []).forEach((lang) => {
+  ((state.catalog && state.catalog.languages) || []).forEach((lang) => {
     const option = document.createElement("option");
     option.value = lang.code;
     option.textContent = `${lang.flag} ${lang.name}`;
@@ -226,17 +245,26 @@ function fillSpokenSelect(select, code) {
   select.value = knownSpoken(code);
 }
 
+function deviceChannelCount() {
+  if (state.audio && state.audio.deviceChannels) return state.audio.deviceChannels;
+  return state.channels.filter((row) => row.source !== "phone").length;
+}
+
 function renderChannels(count) {
-  const total = count || 0;
+  const total = Number.isInteger(count) ? count : deviceChannelCount();
   ensureChannels(total);
   channelsEl.innerHTML = "";
-  for (let i = 0; i < total; i += 1) {
-    const row = state.channels[i];
+  state.channels.forEach((row, i) => {
     const wrap = document.createElement("div");
-    wrap.className = `channel${row.on ? " on" : ""}`;
+    wrap.className = `channel${row.on ? " on" : ""}${row.source === "phone" ? " phone" : ""}`;
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
+    if (row.source === "phone") {
+      const mark = row.connected === false ? " 끊김" : (row.on ? " 켜짐" : " 꺼짐");
+      button.textContent = `${row.name}${mark}`;
+    } else {
+      button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
+    }
     button.addEventListener("click", () => toggleChannel(i));
     const meter = document.createElement("div");
     meter.className = "meter";
@@ -246,14 +274,67 @@ function renderChannels(count) {
     const select = document.createElement("select");
     select.className = "channel-spoken";
     select.dataset.channel = String(i);
-    select.setAttribute("aria-label", `채널 ${i + 1} 말하는 언어`);
+    select.setAttribute("aria-label", row.source === "phone" ? `${row.name} 말하는 언어` : `채널 ${i + 1} 말하는 언어`);
     if (i === 0) select.id = "spoken";
     fillSpokenSelect(select, row.spoken);
     select.addEventListener("change", () => onChannelSpoken(i, select.value));
     wrap.append(button, meter, select);
     channelsEl.append(wrap);
-  }
+  });
   renderHeardTitle();
+}
+
+function showPhoneJoin(info) {
+  state.phoneJoin = info || {};
+  const url = document.getElementById("phoneJoinUrl");
+  const cert = document.getElementById("phoneCertUrl");
+  const img = document.getElementById("phoneQr");
+  if (!url || !cert || !img) return;
+  if (info && info.url) {
+    url.value = info.url;
+    if (info.qrDataUrl) {
+      img.src = info.qrDataUrl;
+      img.hidden = false;
+    }
+  } else {
+    url.value = "";
+    img.hidden = true;
+    url.placeholder = (info && info.note) || "송출 컴퓨터를 같은 Wi-Fi에 연결하면 참여 주소가 나옵니다.";
+  }
+  cert.value = info && info.certUrl ? info.certUrl : "";
+}
+
+function mapChannel(row) {
+  return {
+    spoken: knownSpoken(row && row.spoken),
+    on: !!(row && row.on),
+    source: row && row.source === "phone" ? "phone" : "device",
+    name: row && row.source === "phone" ? (row.name || "") : "",
+    phoneId: row && row.source === "phone" ? (row.phoneId || "") : "",
+    connected: !(row && row.source === "phone") || row.connected !== false,
+  };
+}
+
+function applyPhoneRoster(channels) {
+  const mapped = (channels || []).map(mapChannel);
+  if (state.running) {
+    state.channels = mapped;
+    const deviceCount = mapped.filter((row) => row.source !== "phone").length;
+    renderChannels(deviceCount);
+    return;
+  }
+  const deviceCount = state.audio && state.audio.deviceChannels
+    ? state.audio.deviceChannels
+    : state.channels.filter((row) => row.source !== "phone").length;
+  ensureChannels(deviceCount);
+  const previous = new Map(state.channels.filter((row) => row.source === "phone").map((row) => [row.phoneId, row]));
+  const phones = mapped.filter((row) => row.source === "phone").map((row) => {
+    const old = previous.get(row.phoneId);
+    if (!old) return row;
+    return { ...row, spoken: old.spoken, on: old.on };
+  });
+  state.channels = state.channels.filter((row) => row.source !== "phone").concat(phones);
+  renderChannels(deviceCount);
 }
 
 async function toggleChannel(index) {
@@ -262,18 +343,18 @@ async function toggleChannel(index) {
     state.channels[index].on = next;
     if (!state.channels.some((row) => row.on)) state.channels[0].on = true;
     await persist({ channels: state.channels });
-    renderChannels(state.channels.length);
+    renderChannels(deviceChannelCount());
     return;
   }
   try {
     const result = await window.broadcast.setChannelOn(index, next);
     state.channels[index].on = !!(result && result.on);
     await persist({ channels: state.channels });
-    renderChannels(state.channels.length);
+    renderChannels(deviceChannelCount());
     if (result && result.blocked) log(result.message, "error");
   } catch (err) {
     log(err.message || String(err), "error");
-    renderChannels(state.channels.length);
+    renderChannels(deviceChannelCount());
   }
 }
 
@@ -294,13 +375,23 @@ async function onChannelSpoken(index, code) {
   }
 }
 
+function paintLevel(index, peak) {
+  const bar = channelsEl.querySelector(`[data-channel="${index}"]`);
+  if (!bar) return;
+  const width = Math.max(0, Math.min(100, Math.round(peak * 140)));
+  bar.style.width = `${width}%`;
+}
+
 function applyLevels(peaks) {
-  peaks.forEach((peak, index) => {
-    const bar = channelsEl.querySelector(`[data-channel="${index}"]`);
-    if (!bar) return;
-    const width = Math.max(0, Math.min(100, Math.round(peak * 140)));
-    bar.style.width = `${width}%`;
-  });
+  peaks.forEach((peak, index) => paintLevel(index, peak));
+}
+
+function speakerCaption(name, text) {
+  const body = String(text || "").trim();
+  const who = String(name || "").trim();
+  if (!body) return "";
+  if (!who) return body;
+  return `${who}: ${body}`;
 }
 
 async function renderLinks() {
@@ -695,14 +786,26 @@ async function boot() {
     await loadChurch();
   }
   await reloadDevices();
+  try { showPhoneJoin(await window.broadcast.phoneJoin()); }
+  catch (err) { log(err.message || String(err), "error"); }
   window.broadcast.onEvent((event) => {
     if (event.type === "levels") applyLevels(event.peaks || []);
-    if (event.type === "live") hearing.live(channelPrefix(event.channel, event.text));
-    if (event.type === "heard") hearing.heard(event.id, channelPrefix(event.channel, event.text));
+    if (event.type === "level") paintLevel(event.channel, event.peak || 0);
+    if (event.type === "phone-join") showPhoneJoin(event.info);
+    if (event.type === "phones") applyPhoneRoster(event.channels);
+    if (event.type === "live") hearing.live(channelPrefix(event.channel, event.text, event.name));
+    if (event.type === "heard") hearing.heard(event.id, channelPrefix(event.channel, event.text, event.name));
     if (event.type === "line" && event.lang) {
-      state.lines[event.lang] = event.text || "";
+      const caption = speakerCaption(event.name, event.text);
+      if (!state.captions) state.captions = {};
+      if (!state.captions[event.lang]) state.captions[event.lang] = new Map();
+      const key = Number.isInteger(event.channel) ? event.channel : 0;
+      if (!event.text) state.captions[event.lang].delete(key);
+      else state.captions[event.lang].set(key, caption);
+      const joined = [...state.captions[event.lang].values()].filter(Boolean).join("\n");
+      state.lines[event.lang] = joined;
       const card = cardsEl.querySelector(`[data-lang="${event.lang}"] .text`);
-      if (card) card.textContent = event.text || "대기 중...";
+      if (card) card.textContent = joined || "대기 중...";
       const row = Number.isInteger(event.channel) ? state.channels[event.channel] : null;
       const source = row ? row.spoken : state.spoken;
       if (event.lang === source && event.isFinal && event.text && event.text !== event.raw) {
@@ -859,12 +962,24 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
   }
 });
 
-function channelPrefix(index, text) {
+function channelPrefix(index, text, name) {
   const value = String(text || "");
-  if (!value || !Number.isInteger(index) || activeChannelRows().length < 2) return value;
+  if (!value) return value;
+  const row = Number.isInteger(index) ? state.channels[index] : null;
+  const who = String(name || (row && row.name) || "").trim();
+  if (who) return `${who}: ${value}`;
+  if (!Number.isInteger(index) || activeChannelRows().length < 2) return value;
   return `채널 ${index + 1} ${value}`;
 }
 
+document.getElementById("copyPhoneJoin").addEventListener("click", async () => {
+  const url = state.phoneJoin && state.phoneJoin.url;
+  if (!url) return;
+  await window.broadcast.copy(url);
+  const button = document.getElementById("copyPhoneJoin");
+  button.textContent = "복사됨";
+  setTimeout(() => { button.textContent = "참여 주소 복사"; }, 1200);
+});
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 deviceEl.addEventListener("change", chooseDevice);
 sensitivityEl.addEventListener("change", () => persist({ sensitivity: sensitivityEl.value }));
@@ -891,6 +1006,7 @@ async function beginBroadcast() {
     preacherId: selectedPreacherId(),
   });
   state.lines = {};
+  state.captions = {};
   const started = await window.broadcast.start({
     sensitivity: sensitivityEl.value,
     folder: state.settings.folder,
@@ -902,12 +1018,10 @@ async function beginBroadcast() {
     channel: state.audio ? state.audio.deviceChannel : 0,
   });
   if (started && Array.isArray(started.channels) && started.channels.length) {
-    state.channels = started.channels.map((row) => ({
-      spoken: knownSpoken(row.spoken),
-      on: !!row.on,
-    }));
+    state.channels = started.channels.map(mapChannel);
     if (state.channels[0]) state.spoken = state.channels[0].spoken;
-    renderChannels(state.channels.length);
+    const deviceCount = state.channels.filter((row) => row.source !== "phone").length;
+    renderChannels(deviceCount);
   }
   log("방송을 시작했습니다. 언어별 텍스트만 저장합니다.");
 }

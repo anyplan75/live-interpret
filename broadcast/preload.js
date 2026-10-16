@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   savePreacher: (preacher) => ipcRenderer.invoke("preachers:save", preacher),
   pickBulletin: () => ipcRenderer.invoke("bulletin:pick"),
   listDevices: () => ipcRenderer.invoke("devices:list"),
+  phoneJoin: () => ipcRenderer.invoke("phone:info"),
   pickFolder: () => ipcRenderer.invoke("dialog:folder"),
   monitor: (deviceKey, channel) => ipcRenderer.invoke("audio:monitor", deviceKey, channel),
   setChannel: (index) => ipcRenderer.invoke("audio:channel", index),

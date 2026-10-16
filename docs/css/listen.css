@@ -68,5 +68,6 @@ select { width: 100%; padding: 12px 14px; font-size: 16px; }
 }
 
 #scriptBox p:last-child { color: var(--latest); font-weight: 800; border-bottom: none; }
+#scriptBox .speaker { font-weight: 800; }
 #scriptBox p.interim { color: var(--interim); font-weight: 600; }
 #scriptBox p.waiting { color: var(--muted); border: none; text-align: center; margin-top: 18vh; }

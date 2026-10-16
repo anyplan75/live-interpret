@@ -72,7 +72,9 @@ class Pipeline {
     this.recentContext = [];
     this.sharedTexts = opts.sharedTexts || null;
     this.sessionTexts = this.sharedTexts ? this.sharedTexts.texts : {};
-    this.sentenceId = Date.now();
+    this.speaker = String(opts.speaker || "").trim();
+    this.channelKey = String(opts.channelKey || "").trim();
+    this.sentenceId = Number.isFinite(Number(opts.sentenceSeed)) ? Number(opts.sentenceSeed) : Date.now();
     this.lastSpeechTime = Date.now();
     this.lastLivePush = 0;
     this.chain = Promise.resolve();
@@ -279,6 +281,18 @@ class Pipeline {
     }
   }
 
+  decoratePayload(payload) {
+    if (!this.speaker && !this.channelKey) return payload;
+    const next = { ...payload };
+    Object.keys(next).forEach((key) => {
+      if (key === "_timestamp" || !next[key] || typeof next[key] !== "object") return;
+      next[key] = { ...next[key] };
+      if (this.speaker) next[key].name = this.speaker;
+      if (this.channelKey) next[key].channelKey = this.channelKey;
+    });
+    return next;
+  }
+
   setSourceLang(code, targets) {
     this.sourceLang = spokenLanguage(code);
     if (Array.isArray(targets)) {
@@ -381,7 +395,7 @@ class Pipeline {
     }
     if (Object.keys(payload).some((key) => key !== "_timestamp") && this.cloud) {
       try {
-        await this.cloud.updateSubtitles(payload);
+        await this.cloud.updateSubtitles(this.decoratePayload(payload));
       } catch (err) {
         this.onLog(`실시간 자막 전송 실패: ${err.message || err}`);
       }
@@ -399,19 +413,19 @@ class Pipeline {
     if (!force && now - this.lastLivePush < timing.livePushMinInterval) return;
     if (!text) return;
     this.lastLivePush = now;
-    this.cloud.updateSubtitles({
+    this.cloud.updateSubtitles(this.decoratePayload({
       _timestamp: now,
       [this.sourceLang]: { text, id: this.sentenceId, isFinal: false },
-    }).catch(() => {});
+    })).catch(() => {});
   }
 
   pushKorean(text, id, isFinal) {
     if (!this.cloud) return;
     this.lastLivePush = Date.now();
-    this.cloud.updateSubtitles({
+    this.cloud.updateSubtitles(this.decoratePayload({
       _timestamp: this.lastLivePush,
       [this.sourceLang]: { text, id, isFinal: !!isFinal },
-    }).catch(() => {});
+    })).catch(() => {});
   }
 
   async stop() {

@@ -9,11 +9,14 @@ const googleAuth = require("./lib/google-auth");
 const bulletinLib = require("./lib/bulletin");
 const consent = require("./lib/consent");
 const updater = require("./lib/updater");
+const { PhoneJoin } = require("./lib/phone-join");
 
 app.setName("live-interpret");
 
 let win = null;
 let engine = null;
+let phoneJoin = null;
+let phoneTimer = null;
 let quitting = false;
 let idToken = "";
 let tokenExpiresAt = 0;
@@ -342,6 +345,14 @@ function registerIpc() {
     }
   });
   ipcMain.handle("platform:keyStatus", async () => ({ configured: Boolean(resolveKey()) }));
+  ipcMain.handle("phone:info", () => (phoneJoin ? phoneJoin.info() : {
+    url: "",
+    certUrl: "",
+    qrDataUrl: "",
+    host: "",
+    ips: [],
+    note: "송출 컴퓨터를 같은 Wi-Fi에 연결하면 참여 주소가 나옵니다.",
+  }));
   ipcMain.handle("devices:list", () => {
     try {
       return engine.listDevices();
@@ -447,11 +458,43 @@ if (!gotLock) {
       readLocalPrepaid,
       writeLocalPrepaid,
     });
+    phoneJoin = new PhoneJoin({
+      onHello: (phone) => engine.addPhone(phone),
+      onPcm: (phoneId, pcm) => engine.pushPhonePcm(phoneId, pcm),
+      onLeave: (phoneId) => engine.markPhoneAway(phoneId),
+    });
+    engine.bindPhoneLink((phoneId, listening) => phoneJoin.setListening(phoneId, listening));
     registerIpc();
     createWindow();
+    phoneJoin.start({ certDir: path.join(userDir(), "lan-cert") }).then((info) => {
+      send({ type: "phone-join", info });
+      if (info.url) send({ type: "log", level: "info", text: `휴대폰 마이크 참여 주소: ${info.url}` });
+      phoneTimer = setInterval(() => {
+        if (!phoneJoin) return;
+        phoneJoin.refresh().then((next) => {
+          if (next && next.changed) send({ type: "phone-join", info: next });
+        }).catch((err) => {
+          send({ type: "log", level: "error", text: err.message || String(err) });
+        });
+      }, 15000);
+    }).catch((err) => {
+      send({ type: "log", level: "error", text: err.message || String(err) });
+    });
   });
   app.on("window-all-closed", () => app.quit());
+  function closePhones() {
+    if (phoneTimer) {
+      clearInterval(phoneTimer);
+      phoneTimer = null;
+    }
+    if (!phoneJoin) return;
+    const closing = phoneJoin;
+    phoneJoin = null;
+    closing.stop().catch(() => {});
+  }
+
   app.on("before-quit", (event) => {
+    closePhones();
     if (quitting || !engine) return;
     if (engine.running) {
       event.preventDefault();

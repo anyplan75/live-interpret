@@ -69,6 +69,40 @@ LI.viewer = (() => {
       .replace(/"/g, "&quot;");
   }
 
+  function lineHtml(line) {
+    const body = escapeHtml(line.text || "");
+    if (!line.name) return body;
+    return `<span class="speaker">${escapeHtml(line.name)}:</span> ${body}`;
+  }
+
+  function captionEntries(row) {
+    if (LI.speakerLines && LI.speakerLines.entries) return LI.speakerLines.entries(row);
+    if (!row) return [];
+    const text = typeof row === "object" ? row.text : row;
+    if (!String(text || "").trim()) return [];
+    return [{
+      id: typeof row === "object" ? row.id : 0,
+      text: String(text || ""),
+      name: "",
+      isFinal: typeof row === "object" && row.isFinal !== undefined ? row.isFinal : true,
+    }];
+  }
+
+  function upsertCaption(list, entry, maxLines) {
+    const next = {
+      id: entry.id,
+      text: entry.text,
+      name: entry.name || "",
+      isFinal: entry.isFinal !== false,
+    };
+    const existing = list.findIndex((line) => line.id === next.id);
+    if (existing !== -1) list[existing] = next;
+    else {
+      list.push(next);
+      while (list.length > maxLines) list.shift();
+    }
+  }
+
   function activeLangCodesFromSettings(settings) {
     const fallback = ["ko", ...LI.catalog.defaultSelectedTargets()];
     if (!settings) return fallback;
@@ -138,23 +172,15 @@ LI.viewer = (() => {
       lastTime = subtitles._timestamp;
       const row = subtitles[lang];
       if (!row) return;
-      const text = typeof row === "object" ? row.text : row;
-      const msgId = typeof row === "object" ? row.id : lastTime;
-      const isFinal = typeof row === "object" && row.isFinal !== undefined ? row.isFinal : true;
-      const existingIndex = subtitleLines.findIndex((line) => line.id === msgId);
-      if (existingIndex !== -1) {
-        subtitleLines[existingIndex].text = text;
-        subtitleLines[existingIndex].isFinal = isFinal;
-      } else {
-        subtitleLines.push({ id: msgId, text, isFinal });
-        while (subtitleLines.length > maxLines) subtitleLines.shift();
-      }
+      const incoming = captionEntries(row);
+      if (!incoming.length) return;
+      incoming.forEach((entry) => upsertCaption(subtitleLines, entry, maxLines));
       subtitle.innerHTML = subtitleLines
         .map((line) => {
-          if (line.isFinal === false) return `<span class="interim">${escapeHtml(line.text)}</span>`;
-          return escapeHtml(line.text);
+          const cls = line.isFinal === false ? "line interim" : "line";
+          return `<span class="${cls}">${lineHtml(line)}</span>`;
         })
-        .join("<br>");
+        .join("");
     }
 
     let unsubSettings = null;
@@ -198,7 +224,7 @@ LI.viewer = (() => {
       scriptBox.innerHTML = lines
         .map((line) => {
           const cls = line.isFinal === false ? "interim" : "";
-          return `<p class="${cls}">${escapeHtml(line.text)}</p>`;
+          return `<p class="${cls}">${lineHtml(line)}</p>`;
         })
         .join("");
       window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
@@ -208,22 +234,19 @@ LI.viewer = (() => {
       if (!latestPayload) return false;
       const row = latestPayload[currentLang];
       if (!row) return false;
-      const text = typeof row === "object" ? row.text : row;
-      const msgId = typeof row === "object" ? row.id : latestPayload._timestamp;
-      const isFinal = typeof row === "object" && row.isFinal !== undefined ? row.isFinal : true;
+      const incoming = captionEntries(row);
+      if (!incoming.length) return false;
       if (force) {
-        lines = [{ id: msgId, text, isFinal }];
+        lines = incoming.map((entry) => ({
+          id: entry.id,
+          text: entry.text,
+          name: entry.name || "",
+          isFinal: entry.isFinal !== false,
+        }));
         renderLines();
         return true;
       }
-      const existingIndex = lines.findIndex((line) => line.id === msgId);
-      if (existingIndex !== -1) {
-        lines[existingIndex].text = text;
-        lines[existingIndex].isFinal = isFinal;
-      } else {
-        lines.push({ id: msgId, text, isFinal });
-        if (lines.length > maxLines) lines.shift();
-      }
+      incoming.forEach((entry) => upsertCaption(lines, entry, maxLines));
       renderLines();
       return true;
     }

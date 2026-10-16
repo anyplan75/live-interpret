@@ -1,0 +1,323 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("fs");
+const http = require("http");
+const https = require("https");
+const os = require("os");
+const path = require("path");
+const tls = require("tls");
+const { spawn } = require("child_process");
+const WebSocket = require("ws");
+const { PhoneJoin } = require("../broadcast/lib/phone-join");
+const { joinUrl, lanIPv4s } = require("../broadcast/lib/lan-address");
+const { downsampleFloatToPcm16 } = require("../broadcast/lib/pcm16");
+const { createSubtitleBoard } = require("../broadcast/lib/subtitle-board");
+const { Engine, normalizeChannelRows } = require("../broadcast/lib/engine");
+const speakerLines = require("../docs/js/speaker-lines");
+
+const root = path.join(__dirname, "..");
+const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
+
+function phoneCard(html) {
+  const start = html.indexOf('id="phoneJoinCard"');
+  const end = html.indexOf('<div class="card">', start);
+  assert.ok(start > 0 && end > start);
+  return html.slice(start, end);
+}
+
+function getText(url, ca) {
+  return new Promise((resolve, reject) => {
+    const lib = url.startsWith("https:") ? https : http;
+    const req = lib.get(url, ca ? { ca, rejectUnauthorized: true } : {}, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString("utf8"), type: res.headers["content-type"] || "" }));
+    });
+    req.on("error", reject);
+  });
+}
+
+test("a phone joins the broadcast computer over https, not a private http page", () => {
+  assert.equal(joinUrl("192.168.0.20", 8443), "https://192.168.0.20:8443/");
+  assert.throws(() => joinUrl("http://192.168.0.20", 80));
+  const page = read("broadcast/phone/join.html");
+  const card = phoneCard(read("broadcast/renderer/index.html"));
+  assert.match(page, /송출 컴퓨터/);
+  assert.match(card, /송출 컴퓨터/);
+  assert.match(page, /isSecureContext/);
+  assert.match(page, /getUserMedia/);
+  assert.doesNotMatch(page, /설교|교회|이 컴퓨터/);
+  assert.doesNotMatch(card, /설교|교회|이 컴퓨터/);
+  assert.match(read("broadcast/renderer/renderer.js"), /renderChannels\(state\.audio\.deviceChannels\)/);
+  assert.match(read("broadcast/renderer/renderer.js"), /channel-spoken/);
+  assert.match(read("docs/js/viewer.js"), /LI\.speakerLines\.entries/);
+  assert.match(read("docs/js/viewer.js"), /class="speaker"/);
+});
+
+test("pcm from a phone mic is 24 kHz int16", () => {
+  const pcm = downsampleFloatToPcm16(new Float32Array(480), 48000, 24000);
+  assert.equal(pcm.length, 240);
+  assert.equal(pcm.constructor, Int16Array);
+  const full = downsampleFloatToPcm16(Float32Array.from([1, -1]), 16000, 16000);
+  assert.equal(full[0], 32767);
+  assert.equal(full[1], -32768);
+});
+
+test("two named lines stay together when both phones speak", () => {
+  const board = createSubtitleBoard();
+  board.merge({
+    _timestamp: 1,
+    en: { text: "hello", id: "a1", isFinal: false, name: "민수", channelKey: "pphone0001" },
+  });
+  const both = board.merge({
+    _timestamp: 2,
+    en: { text: "hola", id: "b1", isFinal: true, name: "영희", channelKey: "pphone0002" },
+  });
+  assert.equal(both.en.lines.pphone0001.text, "hello");
+  assert.equal(both.en.lines.pphone0001.name, "민수");
+  assert.equal(both.en.lines.pphone0002.text, "hola");
+  assert.equal(both.en.lines.pphone0002.name, "영희");
+  const shown = speakerLines.entries(both.en);
+  assert.deepEqual(shown.map((line) => line.caption), ["민수: hello", "영희: hola"]);
+  const single = board.merge({
+    ko: { text: "안녕", id: "k1", isFinal: true },
+  });
+  assert.equal(single.ko.lines, undefined);
+  assert.equal(single.ko.text, "안녕");
+});
+
+test("a phone is an extra input and the first input stays included", async () => {
+  const rows = normalizeChannelRows([
+    { spoken: "ko", on: true },
+    { source: "phone", name: "민수", phoneId: "phone0001", spoken: "en", on: true },
+  ], 1, "ko");
+  assert.equal(rows[0].source, "device");
+  assert.equal(rows[1].name, "민수");
+  assert.equal(rows[1].on, true);
+
+  const engine = new Engine(() => {});
+  engine.device = { inputChannels: 1 };
+  engine.channelRows = [{ spoken: "ko", on: true, source: "device" }];
+  const added = engine.addPhone({ id: "phone0001", name: "민수" });
+  assert.equal(added.index, 1);
+  assert.equal(engine.channelRows[0].source, "device");
+  assert.equal(engine.channelRows[1].name, "민수");
+  const second = engine.addPhone({ id: "phone0002", name: "영희" });
+  assert.equal(second.index, 2);
+
+  engine.running = true;
+  engine.church = { id: "grace-ab", accountUid: "user" };
+  engine.sessionCharge = { charged: 15000, balance: 40000 };
+  engine.outputs = ["en"];
+  engine.paidChannels = new Set();
+  const opened = [];
+  engine.openChannel = async (index) => { opened.push(index); };
+  engine.writeBilling = async (_id, balance) => {
+    engine.sessionCharge.balance = balance;
+  };
+  const included = await engine.setChannelOn("", 0, true);
+  assert.equal(included.on, true);
+  assert.equal(engine.sessionCharge.charged, 15000);
+  const phone = await engine.setChannelOn("", 1, true);
+  assert.equal(phone.on, true);
+  assert.equal(engine.sessionCharge.charged, 25000);
+  assert.equal(engine.sessionCharge.balance, 30000);
+  await engine.setChannelOn("", 1, true);
+  assert.equal(engine.sessionCharge.charged, 25000);
+  assert.deepEqual(opened, [0, 1, 1]);
+
+  const deviceFed = [];
+  const phoneFed = [];
+  engine.channelSessions = new Map([
+    [0, { source: "device", speech: { push(buf) { deviceFed.push(buf); } } }],
+    [1, { source: "phone", speech: { push(buf) { phoneFed.push(buf); } } }],
+  ]);
+  engine.pushPhonePcm("phone0001", Buffer.from([0, 16, 0, 32]));
+  assert.equal(phoneFed.length, 1);
+  assert.equal(deviceFed.length, 0);
+  engine._onPcm(Buffer.alloc(3 * 2 * 8), {
+    nChannels: 3,
+    sampleRate: 48000,
+    mode: "all",
+    deviceChannels: 3,
+    deviceChannel: 0,
+    selected: 0,
+  });
+  assert.equal(deviceFed.length, 1);
+  assert.equal(phoneFed.length, 1);
+});
+
+test("the phone page is https and the http port does not serve the microphone page", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-interpret-phone-"));
+  const joined = [];
+  const server = new PhoneJoin({
+    onHello(phone) {
+      joined.push(phone);
+      return { index: joined.length, name: phone.name, phoneId: phone.id, listening: false };
+    },
+  });
+  try {
+    const info = await server.start({
+      certDir: dir,
+      bindHost: "127.0.0.1",
+      advertiseHost: "127.0.0.1",
+      httpsPort: 0,
+      httpPort: 0,
+    });
+    assert.match(info.url, /^https:\/\/127\.0\.0\.1:\d+\/$/);
+    assert.equal(info.url.includes("http://"), false);
+    assert.match(info.certUrl, /^http:\/\/127\.0\.0\.1:\d+\/trust\.mobileconfig$/);
+    assert.match(info.qrDataUrl, /^data:image\/png;base64,/);
+    const ca = fs.readFileSync(path.join(dir, "ca.crt"));
+    await new Promise((resolve, reject) => {
+      const socket = tls.connect({
+        host: "127.0.0.1",
+        port: Number(new URL(info.url).port),
+        ca,
+        rejectUnauthorized: true,
+        servername: "127.0.0.1",
+      }, () => {
+        try {
+          const cert = socket.getPeerCertificate();
+          assert.equal(socket.authorized, true);
+          assert.match(cert.subjectaltname, /IP Address:127\.0\.0\.1/);
+          socket.end();
+          resolve();
+        } catch (err) {
+          socket.end();
+          reject(err);
+        }
+      });
+      socket.on("error", reject);
+    });
+    const page = await getText(info.url, ca);
+    assert.equal(page.status, 200);
+    assert.match(page.body, /getUserMedia/);
+    assert.match(page.body, /downsampleFloatToPcm16/);
+    assert.match(page.body, /송출 컴퓨터/);
+    assert.doesNotMatch(page.body, /설교|교회/);
+    const blocked = await getText(info.certUrl.replace("/trust.mobileconfig", "/"));
+    assert.equal(blocked.status, 404);
+    assert.equal(blocked.body.includes("getUserMedia"), false);
+    assert.match(blocked.body, /https/);
+    const profile = await getText(info.certUrl);
+    assert.equal(profile.status, 200);
+    assert.match(profile.type, /apple-aspen-config|octet-stream|x-apple/);
+    assert.match(profile.body, /PayloadType/);
+
+    const wsUrl = info.url.replace("https://", "wss://").replace(/\/$/, "") + "/mic";
+    const openSocket = () => new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl, { ca, rejectUnauthorized: true });
+      const messages = [];
+      ws.on("message", (data) => messages.push(JSON.parse(data.toString())));
+      ws.on("open", () => resolve({ ws, messages }));
+      ws.on("error", reject);
+    });
+    const first = await openSocket();
+    first.ws.send(JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001" }));
+    const second = await openSocket();
+    second.ws.send(JSON.stringify({ type: "hello", name: "영희", phoneId: "phone0002" }));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(first.messages.some((item) => item.type === "joined" && item.name === "민수"), true);
+    assert.equal(second.messages.some((item) => item.type === "joined" && item.name === "영희"), true);
+    assert.deepEqual(joined.map((item) => item.name), ["민수", "영희"]);
+    first.ws.close();
+    second.ws.close();
+  } finally {
+    await server.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function chromeBin() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  ].filter(Boolean);
+  return candidates.find((item) => fs.existsSync(item)) || "";
+}
+
+function browserSecureContext(bin, url) {
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), "live-interpret-chrome-"));
+  const chrome = spawn(bin, [
+    "--headless=old",
+    "--disable-gpu",
+    "--no-first-run",
+    "--no-proxy-server",
+    "--remote-debugging-port=0",
+    `--user-data-dir=${profile}`,
+    "about:blank",
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  const done = new Promise((resolve, reject) => {
+    let buf = "";
+    const timer = setTimeout(() => reject(new Error("browser debug port did not open")), 8000);
+    chrome.stderr.on("data", (chunk) => {
+      buf += chunk.toString();
+      const match = buf.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/);
+      if (!match) return;
+      clearTimeout(timer);
+      resolve(Number(match[1]));
+    });
+    chrome.on("exit", () => {
+      clearTimeout(timer);
+      reject(new Error("browser exited before the debug port opened"));
+    });
+  });
+  return done.then(async (port) => {
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+    const page = targets.find((item) => item.type === "page");
+    const BrowserSocket = globalThis.WebSocket;
+    if (!BrowserSocket) throw new Error("this Node has no WebSocket client");
+    const ws = new BrowserSocket(page.webSocketDebuggerUrl);
+    let seq = 0;
+    const pending = new Map();
+    ws.addEventListener("message", (event) => {
+      const message = JSON.parse(event.data);
+      if (message.id && pending.has(message.id)) pending.get(message.id)(message);
+    });
+    await new Promise((resolve, reject) => {
+      ws.addEventListener("open", resolve);
+      ws.addEventListener("error", reject);
+    });
+    const send = (method, params) => new Promise((resolve) => {
+      const id = ++seq;
+      pending.set(id, resolve);
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+    await send("Page.enable");
+    await send("Page.navigate", { url });
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const evaluated = await send("Runtime.evaluate", {
+      expression: "JSON.stringify({ isSecureContext: window.isSecureContext, hasMedia: !!(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function'), protocol: location.protocol, host: location.host })",
+      returnByValue: true,
+    });
+    ws.close();
+    chrome.kill("SIGKILL");
+    fs.rmSync(profile, { recursive: true, force: true });
+    return JSON.parse(evaluated.result.result.value);
+  }).catch((err) => {
+    chrome.kill("SIGKILL");
+    fs.rmSync(profile, { recursive: true, force: true });
+    throw err;
+  });
+}
+
+test("plain http hides the microphone and https exposes it", { timeout: 60000 }, async (t) => {
+  const bin = chromeBin();
+  if (!bin) {
+    t.skip("this machine has no desktop browser to check the secure-context rule");
+    return;
+  }
+  const secure = await browserSecureContext(bin, "https://example.com/");
+  const insecure = await browserSecureContext(bin, "http://neverssl.com/");
+  assert.equal(secure.isSecureContext, true);
+  assert.equal(secure.hasMedia, true);
+  assert.equal(secure.protocol, "https:");
+  assert.equal(insecure.isSecureContext, false);
+  assert.equal(insecure.hasMedia, false);
+  assert.equal(insecure.protocol, "http:");
+  const lan = lanIPv4s();
+  if (lan.primary) assert.match(joinUrl(lan.primary, 8443), /^https:\/\/(?:\d{1,3}\.){3}\d{1,3}:8443\/$/);
+});
