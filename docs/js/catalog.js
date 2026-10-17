@@ -60,8 +60,25 @@
     return subtitleFontById[subtitleFontId(value, langCode)];
   }
 
+  function readFirebaseApiKey() {
+    try {
+      const browser = typeof globalThis !== "undefined" && globalThis.LI_ENV
+        ? globalThis.LI_ENV.FIREBASE_API_KEY
+        : "";
+      if (typeof browser === "string" && browser.trim()) return browser.trim();
+    } catch (_) { /* 브라우저 설정이 없으면 환경 변수로 갑니다 */ }
+    try {
+      if (typeof process !== "undefined" && process.versions && process.versions.node) {
+        require("../../broadcast/lib/load-env");
+        const value = process.env.FIREBASE_API_KEY;
+        if (typeof value === "string" && value.trim()) return value.trim();
+      }
+    } catch (_) { /* 키 파일이 없으면 빈 값입니다 */ }
+    return "";
+  }
+
   const firebase = {
-    apiKey: "AIzaSyDsYIaoKxRjNUUOnQvwyYLpPRvNy0WLRUM",
+    apiKey: readFirebaseApiKey(),
     authDomain: "live-interpret-db65e.firebaseapp.com",
     databaseURL: "https://live-interpret-db65e-default-rtdb.asia-southeast1.firebasedatabase.app",
     projectId: "live-interpret-db65e",

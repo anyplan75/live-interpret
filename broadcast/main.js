@@ -1,3 +1,4 @@
+require("./lib/load-env");
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard } = require("electron");
 const fs = require("fs");
 const path = require("path");

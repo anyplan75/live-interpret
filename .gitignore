@@ -5,3 +5,4 @@ out/
 *.log
 user-data/
 .electron-cache/
+.env

@@ -53,7 +53,10 @@ test("one platform key and church activation", () => {
   assert.match(catalog.authErrorMessage({ code: "auth/unauthorized-domain" }), /anyplan75\.github\.io/);
   assert.equal(catalog.firebase.projectId, "live-interpret-db65e");
   assert.equal(catalog.firebase.authDomain, "live-interpret-db65e.firebaseapp.com");
-  assert.match(catalog.firebase.apiKey, /^AIza/);
+  const expectedKey = process.env.FIREBASE_API_KEY || "";
+  assert.equal(catalog.firebase.apiKey === expectedKey, true);
+  const catalogSource = fs.readFileSync(path.join(__dirname, "../docs/js/catalog.js"), "utf8");
+  assert.equal(/AIza[0-9A-Za-z\-_]{20,}/.test(catalogSource), false);
   assert.equal(catalog.isPlatformKey(sample), true);
   assert.equal(catalog.isPlatformKey("short"), false);
   assert.equal(catalog.redactSecrets(`err ${sample} tail`).includes(sample), false);
@@ -165,6 +168,33 @@ test("firebase paths stay under live-interpret", () => {
   assert.equal(style.global.layout, "bottom");
   assert.equal(style.global.color, "#ffffff");
   assert.equal(style.global.bgOpacity, 1);
+});
+
+test("firebase api key is not committed", () => {
+  const root = path.join(__dirname, "..");
+  const ignore = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
+  assert.match(ignore, /^\.env$/m);
+  const example = fs.readFileSync(path.join(root, ".env.example"), "utf8");
+  assert.match(example, /^FIREBASE_API_KEY=$/m);
+  assert.match(example, /^DEPOSIT_HMAC_SECRET=$/m);
+  assert.equal(/AIza[0-9A-Za-z\-_]{20,}/.test(example), false);
+  const skip = new Set(["node_modules", ".git", "dist", "out"]);
+  const hits = [];
+  function walk(dir) {
+    for (const name of fs.readdirSync(dir)) {
+      if (skip.has(name) || name === ".env") continue;
+      const full = path.join(dir, name);
+      const stat = fs.statSync(full);
+      if (stat.isDirectory()) walk(full);
+      else if (stat.isFile() && stat.size < 2_000_000) {
+        const text = fs.readFileSync(full);
+        if (text.includes(0)) continue;
+        if (/AIza[0-9A-Za-z\-_]{20,}/.test(text.toString("utf8"))) hits.push(path.relative(root, full));
+      }
+    }
+  }
+  walk(root);
+  assert.deepEqual(hits, []);
 });
 
 test("source does not target cheil or jifc firebase paths", () => {
