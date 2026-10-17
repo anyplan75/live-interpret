@@ -202,6 +202,10 @@ https://anyplan75.github.io/live-interpret/overlay.html?church=교회아이디&l
 
 Firebase Authentication 에서 이메일/비밀번호 로그인을 켜고, Authorized domains 에 `anyplan75.github.io` 가 있어야 관리 페이지 로그인이 됩니다. 프로젝트는 `live-interpret-db65e` 입니다.
 
+## 매일 복제
+
+Firebase의 교회·계정·방송 기록은 `npm run mirror:firebase` 가 하루 한 번 개인 보관 폴더에 복제합니다. 같은 경로를 n8n에서 가져오는 파일은 `n8n/firebase-daily-mirror.json` 입니다. n8n 워크플로 설계를 비공개 GitHub에 남기는 절차와 함께 [docs/firebase-n8n-daily-mirror.md](docs/firebase-n8n-daily-mirror.md) 에 있습니다.
+
 ## 개발 확인
 
 ```bash
