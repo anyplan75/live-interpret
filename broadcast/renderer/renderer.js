@@ -137,6 +137,48 @@ function selectedPreacherId() {
   return preacherEl.value || "";
 }
 
+function currentSetupInput() {
+  return {
+    folder: state.settings && state.settings.folder,
+    preacherId: selectedPreacherId(),
+    targets: selectedTargets(),
+    deviceKey: deviceEl.value,
+  };
+}
+
+function paintSetupState() {
+  const gaps = window.SetupReady.missingSetup(currentSetupInput());
+  const list = document.getElementById("setupGaps");
+  const summary = document.getElementById("setupSummary");
+  const ready = document.getElementById("setupReady");
+  if (!list || !summary || !ready) return;
+  list.innerHTML = "";
+  if (!gaps.length) {
+    list.hidden = true;
+    ready.textContent = "필요한 항목이 모두 채워졌습니다. 닫은 뒤 시작을 누르세요.";
+    summary.textContent = "설정이 끝났습니다. 시작과 종료만 누르면 됩니다.";
+    return;
+  }
+  list.hidden = false;
+  gaps.forEach((label) => {
+    const item = document.createElement("li");
+    item.textContent = label;
+    list.append(item);
+  });
+  ready.textContent = "아래 항목을 모두 채우면 시작이 됩니다.";
+  summary.textContent = "시작을 누르면 설정이 열리고, 비어 있는 항목을 한 번에 보여 줍니다.";
+}
+
+function openSettings() {
+  document.getElementById("startConfirm").hidden = true;
+  document.getElementById("settingsPanel").hidden = false;
+  paintSetupState();
+}
+
+function closeSettings() {
+  document.getElementById("settingsPanel").hidden = true;
+}
+
 async function persist(patch) {
   const next = { ...(patch || {}) };
   if (Array.isArray(next.channels)) {
@@ -203,6 +245,7 @@ async function onTargetsChanged(sync = true) {
   }
   if (state.style) fillStyle(state.style);
   await renderLinks();
+  paintSetupState();
 }
 
 function renderDevices() {
@@ -454,6 +497,7 @@ function setRunning(running) {
   document.getElementById("pickFolder").disabled = running;
   document.getElementById("pickBulletin").disabled = running;
   preacherEl.disabled = running;
+  if (running) closeSettings();
   setStatus(running ? "방송 중" : (state.audio ? "장치 듣는 중" : "대기"), running ? "on" : "");
 }
 
@@ -580,7 +624,7 @@ function fillPreacherForm(preacher) {
 }
 
 function renderPreachers() {
-  const previous = preacherEl.value || state.settings.preacherId || "";
+  const previous = preacherEl.value || (state.settings && state.settings.preacherId) || "";
   preacherEl.innerHTML = "";
   const empty = document.createElement("option");
   empty.value = "";
@@ -592,9 +636,17 @@ function renderPreachers() {
     option.textContent = preacher.name;
     preacherEl.append(option);
   });
-  if ([...preacherEl.options].some((option) => option.value === previous)) preacherEl.value = previous;
-  const current = state.preachers.find((item) => item.id === preacherEl.value) || null;
+  const pick = window.SetupReady.preacherToSelect(state.preachers, previous);
+  preacherEl.value = pick;
+  const current = state.preachers.find((item) => item.id === pick) || null;
   fillPreacherForm(current);
+  if (pick && (!state.settings || pick !== state.settings.preacherId)) {
+    if (!state.settings) state.settings = {};
+    state.settings.preacherId = pick;
+    persist({ preacherId: pick }).then(() => paintSetupState()).catch((err) => log(err.message || String(err), "error"));
+    return;
+  }
+  paintSetupState();
 }
 
 function formatKrw(value) {
@@ -698,7 +750,10 @@ async function chooseDevice() {
   let key = deviceEl.value;
   if (!key) {
     const fallback = defaultInputDevice();
-    if (!fallback) return;
+    if (!fallback) {
+      paintSetupState();
+      return;
+    }
     key = fallback.key;
     deviceEl.value = key;
   }
@@ -716,6 +771,7 @@ async function chooseDevice() {
     log(err.message || String(err), "error");
     setStatus("장치 오류", "err");
   }
+  paintSetupState();
 }
 
 function setSignedIn(auth) {
@@ -846,6 +902,7 @@ async function reloadDevices() {
     if (fallback) deviceEl.value = fallback.key;
   }
   if (deviceEl.value || state.devices.length) await chooseDevice();
+  else paintSetupState();
 }
 
 document.getElementById("churchSignIn").addEventListener("click", async () => {
@@ -906,9 +963,12 @@ document.getElementById("pickBulletin").addEventListener("click", async () => {
 });
 
 preacherEl.addEventListener("change", async () => {
+  const pick = window.SetupReady.preacherToSelect(state.preachers, preacherEl.value);
+  if (pick && pick !== preacherEl.value) preacherEl.value = pick;
   const current = state.preachers.find((item) => item.id === preacherEl.value) || null;
   fillPreacherForm(current);
   await persist({ preacherId: preacherEl.value });
+  paintSetupState();
 });
 
 document.getElementById("addPreacher").addEventListener("click", async () => {
@@ -986,11 +1046,14 @@ document.getElementById("pickAll").addEventListener("click", () => {
   renderLangs(state.catalog.languages.filter((lang) => lang.code !== "ko").map((lang) => lang.code));
 });
 document.getElementById("pickNone").addEventListener("click", () => renderLangs([]));
+document.getElementById("openSettings").addEventListener("click", () => openSettings());
+document.getElementById("closeSettings").addEventListener("click", () => closeSettings());
 document.getElementById("pickFolder").addEventListener("click", async () => {
   const folder = await window.broadcast.pickFolder();
   if (!folder) return;
   folderHint.textContent = folder;
   await persist({ folder });
+  paintSetupState();
 });
 async function beginBroadcast() {
   if (state.channels[0]) state.spoken = state.channels[0].spoken;
@@ -1025,6 +1088,12 @@ async function beginBroadcast() {
 }
 
 document.getElementById("start").addEventListener("click", async () => {
+  const gaps = window.SetupReady.missingSetup(currentSetupInput());
+  if (gaps.length) {
+    openSettings();
+    return;
+  }
+  closeSettings();
   try {
     const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraChannelIndexes());
     paintConfirm(preview);

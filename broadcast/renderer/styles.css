@@ -106,6 +106,8 @@ button.danger { background: var(--danger); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .hint { color: var(--muted); font-size: 0.86rem; margin: 8px 0 0; }
+.setup-gaps { margin: 8px 0 0; padding-left: 1.2rem; color: var(--text); font-weight: 750; }
+.setup-gaps li { margin: 4px 0; }
 .style-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .style-grid label { font-size: 0.86rem; }
 textarea { min-height: 68px; resize: vertical; }
