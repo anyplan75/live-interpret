@@ -102,6 +102,10 @@ function main() {
   if (dist) builderArgs.push("--publish", "never");
   run(builder, builderArgs, env);
   run(process.execPath, [path.join(__dirname, "name-mac-app.js")], env);
+  // 워크트리의 .env 는 git에 올리지 않는다. 앱이 실행될 때 Resources/.env 를 읽는다.
+  const envInstalled = installPackagedEnv(displayApp, path.join(root, ".env"));
+  if (envInstalled) console.log("앱 리소스에 .env 를 넣었습니다. 값은 출력하지 않습니다.");
+  else console.log(".env 가 없어 패키징된 앱의 Firebase API 키는 비어 있습니다.");
   const signMatch = identityLine.match(/"([^"]+)"/);
   const signName = signMatch ? signMatch[1] : "-";
   const entitlements = path.join(root, "build", "entitlements.mac.plist");
@@ -117,6 +121,14 @@ function main() {
     makeDirectDmg(displayApp, dmg);
     console.log(dmg);
   }
+}
+
+function installPackagedEnv(appPath, source) {
+  if (!source || !fs.existsSync(source) || !fs.statSync(source).isFile()) return false;
+  const destDir = path.join(appPath, "Contents", "Resources");
+  fs.mkdirSync(destDir, { recursive: true });
+  fs.copyFileSync(source, path.join(destDir, ".env"));
+  return true;
 }
 
 function makeDirectDmg(appPath, outPath) {
@@ -147,4 +159,5 @@ module.exports = {
   TEAM_ID,
   findDeveloperIdLine,
   notarizationCredentials,
+  installPackagedEnv,
 };

@@ -210,6 +210,9 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(packMac, /-c\.mac\.identity=-/);
   assert.match(packMac, /-c\.mac\.hardenedRuntime=true/);
   assert.match(packMac, /--options", "runtime"/);
+  assert.match(packMac, /installPackagedEnv/);
+  assert.match(packMac, /Contents", "Resources"/);
+  assert.match(packMac, /값은 출력하지 않습니다/);
   assert.doesNotMatch(packMac, /\.p12|CSC_LINK|CSC_KEY_PASSWORD|APPLE_APP_SPECIFIC_PASSWORD\s*[:=]\s*["'][^"']|BEGIN CERTIFICATE/);
 
   const workflow = read(".github/workflows/desktop.yml");
@@ -221,6 +224,21 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(workflow, /-c\.mac\.identity=-/);
   assert.doesNotMatch(workflow, /CSC_LINK|APPLE_APP_SPECIFIC_PASSWORD|CSC_KEY_PASSWORD|\.p12/);
   assert.match(read("README.md"), /ZJYZ656BL8/);
+});
+
+test("packaged env file is copied into Resources and the key is not printed", () => {
+  const { installPackagedEnv } = require("../scripts/pack-mac.js");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "live-interpret-env-"));
+  const app = path.join(dir, "앱.app");
+  const source = path.join(dir, ".env");
+  fs.writeFileSync(source, "FIREBASE_API_KEY=test-firebase-key\nDEPOSIT_HMAC_SECRET=\n");
+  assert.equal(installPackagedEnv(app, source), true);
+  const packed = fs.readFileSync(path.join(app, "Contents", "Resources", ".env"), "utf8");
+  const line = packed.split(/\n/).find((row) => row.startsWith("FIREBASE_API_KEY="));
+  const value = line ? line.slice("FIREBASE_API_KEY=".length).trim() : "";
+  assert.equal(value.length > 0, true);
+  assert.equal(installPackagedEnv(app, path.join(dir, "missing.env")), false);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("Mac signing selects a Developer ID cert by team id and falls back only when it is absent", () => {
