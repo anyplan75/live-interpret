@@ -123,7 +123,11 @@
             <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
           </div>
           <div id="channels" class="channels"></div>
-          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 채널 1은 기본 요금에 포함됩니다. 다른 채널을 켜면 채널당 10,000원이 한 번 빠지고, 30분 추가 요금에는 다시 포함되지 않습니다.</p>
+          <label class="check-line" for="showChannelNames">
+            <input id="showChannelNames" type="checkbox" checked>
+            <span>자막에 입력 채널 이름 표시</span>
+          </label>
+          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 각 칸의 이름 칸에 채널 이름을 적습니다. 채널 1은 기본 요금에 포함됩니다. 같은 언어의 다른 채널은 5,000원, 새 입력 언어는 10,000원이며, 이번 방송에서 한 번만 빠집니다. 30분 추가 요금에는 다시 포함되지 않습니다.</p>
         </div>
 
         <div class="card" id="phoneJoinCard">
@@ -136,7 +140,7 @@
             <button type="button" class="ghost" id="copyPhoneJoin">참여 주소 복사</button>
           </div>
           <p class="hint">같은 Wi-Fi에서 QR을 스캔하면 이름과 마이크가 열립니다. 추가 설치는 없습니다.</p>
-          <p class="hint">입력 채널 1은 기본 요금에 포함됩니다. 휴대폰처럼 입력을 더하면 추가 입력마다 10,000원이 이 세션에서 한 번 빠집니다. 말하는 언어는 채널마다 그대로 고릅니다.</p>
+          <p class="hint">입력 채널 1은 기본 요금에 포함됩니다. 같은 언어의 다른 채널은 5,000원, 새 입력 언어는 10,000원이며, 이번 방송에서 한 번만 빠집니다. 말하는 언어는 채널마다 그대로 고릅니다.</p>
         </div>
 
         <div class="card">

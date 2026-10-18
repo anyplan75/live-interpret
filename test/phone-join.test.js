@@ -137,10 +137,10 @@ test("a phone is an extra input and the first input stays included", async () =>
   assert.equal(engine.sessionCharge.charged, 15000);
   const phone = await engine.setChannelOn("", 1, true);
   assert.equal(phone.on, true);
-  assert.equal(engine.sessionCharge.charged, 25000);
-  assert.equal(engine.sessionCharge.balance, 30000);
+  assert.equal(engine.sessionCharge.charged, 20000);
+  assert.equal(engine.sessionCharge.balance, 35000);
   await engine.setChannelOn("", 1, true);
-  assert.equal(engine.sessionCharge.charged, 25000);
+  assert.equal(engine.sessionCharge.charged, 20000);
   assert.deepEqual(opened, [0, 1, 1]);
 
   const deviceFed = [];

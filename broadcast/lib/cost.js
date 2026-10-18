@@ -14,6 +14,7 @@
   const HOUR_BASE_KRW = 15000;
   const EXTRA_LANG_HOUR_KRW = 5000;
   const EXTRA_CHANNEL_KRW = 10000;
+  const SAME_LANGUAGE_CHANNEL_KRW = 5000;
   const HOUR_SECONDS = 3600;
   const HALF_SECONDS = 1800;
   const CHARS_PER_MINUTE = 750;
@@ -116,26 +117,49 @@
     return out;
   }
 
+  function spokenFeeKey(code) {
+    const text = String(code || "").trim().toLowerCase();
+    return text || "ko";
+  }
+
   function channelFeePlan(input) {
-    const balance = Math.round(Number(input && input.balance) || 0);
-    const requested = extraChannelIndexes(input && input.channels);
-    const paid = new Set(extraChannelIndexes(input && input.paid));
+    const source = input && typeof input === "object" ? input : {};
+    const balance = Math.round(Number(source.balance) || 0);
+    const counted = new Set([spokenFeeKey(source.baseSpoken)]);
+    const paidIndexes = new Set();
+    (Array.isArray(source.paidRows) ? source.paidRows : []).forEach((row) => {
+      const index = Number(row && row.index);
+      if (!Number.isInteger(index) || index <= 0) return;
+      paidIndexes.add(index);
+      counted.add(spokenFeeKey(row.spoken));
+    });
+    const requested = (Array.isArray(source.rows) ? source.rows : [])
+      .map((row) => ({ index: Number(row && row.index), spoken: spokenFeeKey(row && row.spoken) }))
+      .filter((row) => Number.isInteger(row.index) && row.index > 0)
+      .sort((a, b) => a.index - b.index);
+    const seen = new Set();
     const started = [];
     const blocked = [];
     let left = balance;
     let charged = 0;
-    requested.forEach((index) => {
-      if (paid.has(index)) {
-        started.push(index);
+    requested.forEach((row) => {
+      if (seen.has(row.index)) return;
+      seen.add(row.index);
+      if (paidIndexes.has(row.index)) {
+        counted.add(row.spoken);
+        started.push(row.index);
         return;
       }
-      if (left < EXTRA_CHANNEL_KRW) {
-        blocked.push(index);
+      const freshLanguage = !counted.has(row.spoken);
+      const fee = freshLanguage ? EXTRA_CHANNEL_KRW : SAME_LANGUAGE_CHANNEL_KRW;
+      if (left < fee) {
+        blocked.push(row.index);
         return;
       }
-      left -= EXTRA_CHANNEL_KRW;
-      charged += EXTRA_CHANNEL_KRW;
-      started.push(index);
+      left -= fee;
+      charged += fee;
+      counted.add(row.spoken);
+      started.push(row.index);
     });
     return {
       started,
@@ -143,6 +167,7 @@
       charged,
       balance: left,
       feeKrw: EXTRA_CHANNEL_KRW,
+      sameLanguageKrw: SAME_LANGUAGE_CHANNEL_KRW,
     };
   }
 
@@ -687,6 +712,7 @@
       "한국어 인식과 영어는 기본 1시간 15,000원입니다. 영어를 꺼도 5,000원을 더하지 않습니다.",
       "한국어와 영어가 아닌 목표 언어는 시간당 5,000원입니다.",
       "60분 이하는 1시간입니다. 61분부터 30분마다 기본 7,500원과 추가 언어당 2,500원이 더해집니다.",
+      "입력 채널 1은 기본 요금에 포함됩니다. 같은 입력 언어의 다른 채널은 이번 방송에 한 번 5,000원, 새 입력 언어는 한 번 10,000원입니다.",
       `50분, 영어만: ${formatKrw(english)}.`,
       `60분, 영어와 중국어: ${formatKrw(chinese)}.`,
       `90분, 영어만: ${formatKrw(ninety)}.`,
@@ -702,6 +728,7 @@
     HOUR_BASE_KRW,
     EXTRA_LANG_HOUR_KRW,
     EXTRA_CHANNEL_KRW,
+    SAME_LANGUAGE_CHANNEL_KRW,
     extraChannelIndexes,
     channelFeePlan,
     HOUR_SECONDS,

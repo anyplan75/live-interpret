@@ -93,8 +93,20 @@ function billingSpoken() {
   return on.length ? on.map((row) => row.spoken) : [state.spoken || "ko"];
 }
 
-function extraChannelIndexes() {
-  return (state.channels || []).map((row, index) => (row.on ? index : -1)).filter((index) => index > 0);
+function cleanChannelName(value) {
+  const text = String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
+  return Array.from(text).slice(0, 40).join("");
+}
+
+function extraInputPlan() {
+  const channels = state.channels || [];
+  return {
+    baseSpoken: (channels[0] && channels[0].spoken) || state.spoken || "ko",
+    rows: channels
+      .map((row, index) => ({ index, spoken: row && row.spoken, on: !!(row && row.on) }))
+      .filter((row) => row.index > 0 && row.on)
+      .map((row) => ({ index: row.index, spoken: row.spoken })),
+  };
 }
 
 function ensureChannels(count) {
@@ -110,7 +122,7 @@ function ensureChannels(count) {
     const fallback = i === 0 && state.settings ? state.settings.spoken : "ko";
     const spoken = knownSpoken(prev.spoken || fallback);
     const on = prev.on != null ? !!prev.on : i === 0;
-    rows.push({ spoken, on, source: "device", name: "", phoneId: "", connected: true });
+    rows.push({ spoken, on, source: "device", name: cleanChannelName(prev.name), phoneId: "", connected: true });
   }
   state.channels = rows.concat(phones);
   if (rows[0]) state.spoken = rows[0].spoken;
@@ -184,7 +196,7 @@ async function persist(patch) {
   if (Array.isArray(next.channels)) {
     next.channels = next.channels
       .filter((row) => !row || row.source !== "phone")
-      .map((row) => ({ spoken: row.spoken, on: !!row.on }));
+      .map((row) => ({ spoken: row.spoken, on: !!row.on, name: cleanChannelName(row.name) }));
   }
   state.settings = await window.broadcast.saveSettings(next);
 }
@@ -309,6 +321,17 @@ function renderChannels(count) {
       button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
     }
     button.addEventListener("click", () => toggleChannel(i));
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "channel-name";
+    nameInput.maxLength = 40;
+    nameInput.placeholder = "이름";
+    nameInput.value = row.name || "";
+    nameInput.setAttribute("aria-label", `채널 ${i + 1} 이름`);
+    nameInput.addEventListener("change", () => onChannelName(i, nameInput.value));
+    nameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") nameInput.blur();
+    });
     const meter = document.createElement("div");
     meter.className = "meter";
     const bar = document.createElement("span");
@@ -321,7 +344,7 @@ function renderChannels(count) {
     if (i === 0) select.id = "spoken";
     fillSpokenSelect(select, row.spoken);
     select.addEventListener("change", () => onChannelSpoken(i, select.value));
-    wrap.append(button, meter, select);
+    wrap.append(button, nameInput, meter, select);
     channelsEl.append(wrap);
   });
   renderHeardTitle();
@@ -350,7 +373,7 @@ function mapChannel(row) {
     spoken: knownSpoken(row && row.spoken),
     on: !!(row && row.on),
     source: row && row.source === "phone" ? "phone" : "device",
-    name: row && row.source === "phone" ? (row.name || "") : "",
+    name: cleanChannelName(row && row.name),
     phoneId: row && row.source === "phone" ? (row.phoneId || "") : "",
     connected: !(row && row.source === "phone") || row.connected !== false,
   };
@@ -396,6 +419,19 @@ async function toggleChannel(index) {
   } catch (err) {
     log(err.message || String(err), "error");
     renderChannels(deviceChannelCount());
+  }
+}
+
+async function onChannelName(index, raw) {
+  if (!state.channels[index]) return;
+  const cleaned = cleanChannelName(raw);
+  state.channels[index].name = cleaned;
+  renderHeardTitle();
+  await persist({ channels: state.channels });
+  renderChannels(deviceChannelCount());
+  if (state.signedIn) {
+    try { await window.broadcast.setChannelName(index, cleaned); }
+    catch (err) { log(err.message || String(err), "error"); }
   }
 }
 
@@ -710,7 +746,9 @@ function paintConfirm(preview) {
     price.textContent = `첫 시간 요금: ${formatKrw(preview.firstHourKrw)}. 영어는 기본 요금에 포함됩니다.`;
   }
   if (preview.channelFeeKrw) {
-    price.textContent += ` 추가 채널: ${formatKrw(preview.channelFeeKrw)} (채널당 ${formatKrw(preview.channelFeeEachKrw || 10000)}, 한 번).`;
+    const same = formatKrw(preview.sameLanguageKrw || 5000);
+    const fresh = formatKrw(preview.channelFeeEachKrw || 10000);
+    price.textContent += ` 추가 입력: ${formatKrw(preview.channelFeeKrw)} (같은 언어의 다른 채널 ${same}, 새 입력 언어 ${fresh}, 이번 방송에서 한 번).`;
   }
   if (preview.blockedChannels && preview.blockedChannels.length) {
     const names = preview.blockedChannels.map((index) => `채널 ${index + 1}`).join(", ");
@@ -811,7 +849,7 @@ async function loadChurch() {
   if (!state.running) {
     if (current.balanceKrw != null) showBalance(current.balanceKrw);
     try {
-      const preview = await window.broadcast.previewBilling(state.targets, billingSpoken(), extraChannelIndexes());
+      const preview = await window.broadcast.previewBilling(state.targets, billingSpoken(), extraInputPlan());
       showBalance(preview.balanceKrw);
       showPrepaid({ remainingSeconds: preview.remainingSeconds, running: false });
     } catch (err) {
@@ -828,6 +866,9 @@ async function loadChurch() {
 async function boot() {
   state.catalog = await window.broadcast.catalog();
   state.settings = await window.broadcast.getSettings();
+  const showNames = document.getElementById("showChannelNames");
+  if (showNames) showNames.checked = state.settings.showChannelNames !== false;
+  if (state.settings.showChannelNames == null) await persist({ showChannelNames: true });
   sensitivityEl.value = state.settings.sensitivity || "normal";
   if (state.settings.folder) folderHint.textContent = state.settings.folder;
   renderSpoken(state.settings.spoken);
@@ -1023,11 +1064,11 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
 function channelPrefix(index, text, name) {
   const value = String(text || "");
   if (!value) return value;
+  if (!state.settings || state.settings.showChannelNames === false) return value;
   const row = Number.isInteger(index) ? state.channels[index] : null;
-  const who = String(name || (row && row.name) || "").trim();
-  if (who) return `${who}: ${value}`;
-  if (!Number.isInteger(index) || activeChannelRows().length < 2) return value;
-  return `채널 ${index + 1} ${value}`;
+  const who = String((row && row.name) || name || "").trim();
+  if (!who) return value;
+  return `${who}: ${value}`;
 }
 
 document.getElementById("copyPhoneJoin").addEventListener("click", async () => {
@@ -1046,6 +1087,14 @@ document.getElementById("pickAll").addEventListener("click", () => {
   renderLangs(state.catalog.languages.filter((lang) => lang.code !== "ko").map((lang) => lang.code));
 });
 document.getElementById("pickNone").addEventListener("click", () => renderLangs([]));
+document.getElementById("showChannelNames").addEventListener("change", async () => {
+  const on = document.getElementById("showChannelNames").checked;
+  await persist({ showChannelNames: on });
+  if (state.signedIn) {
+    try { await window.broadcast.setShowChannelNames(on); }
+    catch (err) { log(err.message || String(err), "error"); }
+  }
+});
 document.getElementById("openSettings").addEventListener("click", () => openSettings());
 document.getElementById("closeSettings").addEventListener("click", () => closeSettings());
 document.getElementById("pickFolder").addEventListener("click", async () => {
@@ -1065,6 +1114,7 @@ async function beginBroadcast() {
     spoken: state.spoken,
     channels: state.channels,
     preacherId: selectedPreacherId(),
+    showChannelNames: !state.settings || state.settings.showChannelNames !== false,
   });
   state.lines = {};
   state.captions = {};
@@ -1074,6 +1124,7 @@ async function beginBroadcast() {
     targets: selectedTargets(),
     spoken: state.spoken,
     channels: state.channels,
+    showChannelNames: !state.settings || state.settings.showChannelNames !== false,
     preacherId: selectedPreacherId(),
     deviceKey: deviceEl.value,
     channel: state.audio ? state.audio.deviceChannel : 0,
@@ -1095,7 +1146,7 @@ document.getElementById("start").addEventListener("click", async () => {
   }
   closeSettings();
   try {
-    const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraChannelIndexes());
+    const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraInputPlan());
     paintConfirm(preview);
     document.getElementById("startConfirm").hidden = false;
   } catch (err) {
@@ -1109,7 +1160,7 @@ document.getElementById("confirmCancel").addEventListener("click", () => {
 });
 document.getElementById("confirmStart").addEventListener("click", async () => {
   try {
-    const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraChannelIndexes());
+    const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraInputPlan());
     paintConfirm(preview);
     if (preview.short) return;
     document.getElementById("startConfirm").hidden = true;

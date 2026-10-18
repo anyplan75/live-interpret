@@ -34,7 +34,7 @@ function cleanTargets(targets) {
 function deviceRow(row, index, fallbackSpoken) {
   const spoken = spokenLanguage(row && row.spoken ? row.spoken : (index === 0 ? fallbackSpoken : "ko"));
   const on = row && row.on != null ? !!row.on : index === 0;
-  return { spoken, on, source: "device", name: "", phoneId: "", connected: true };
+  return { spoken, on, source: "device", name: cleanDisplayName(row && row.name), phoneId: "", connected: true };
 }
 
 function phoneRow(row) {
@@ -94,6 +94,7 @@ class Engine {
     this.channelRows = [];
     this.channelSessions = new Map();
     this.paidChannels = new Set();
+    this.showChannelNames = true;
     this.phoneLink = null;
     this.subtitleBoard = null;
     this.sharedTexts = null;
@@ -135,9 +136,17 @@ class Engine {
     const plan = cost.planBroadcastStart({ balance, languages, prepaid });
     const remaining = prepaid ? prepaid.remainingSeconds : 0;
     const balanceAfterHour = plan.short ? balance : (plan.charged > 0 ? plan.balance : balance);
+    const extra = extraChannels && typeof extraChannels === "object" && !Array.isArray(extraChannels)
+      ? extraChannels
+      : {};
     const channelPlan = plan.short
-      ? { started: [], blocked: [], charged: 0, balance: balanceAfterHour, feeKrw: cost.EXTRA_CHANNEL_KRW }
-      : cost.channelFeePlan({ balance: balanceAfterHour, channels: extraChannels, paid: [] });
+      ? { started: [], blocked: [], charged: 0, balance: balanceAfterHour, feeKrw: cost.EXTRA_CHANNEL_KRW, sameLanguageKrw: cost.SAME_LANGUAGE_CHANNEL_KRW }
+      : cost.channelFeePlan({
+        balance: balanceAfterHour,
+        baseSpoken: extra.baseSpoken ? extra.baseSpoken : (Array.isArray(spoken) ? spoken[0] : spoken),
+        rows: Array.isArray(extra.rows) ? extra.rows : [],
+        paidRows: [],
+      });
     return {
       balance,
       balanceKrw: balance,
@@ -160,6 +169,7 @@ class Engine {
       extraChannels: channelPlan.started,
       blockedChannels: channelPlan.blocked,
       channelFeeEachKrw: cost.EXTRA_CHANNEL_KRW,
+      sameLanguageKrw: cost.SAME_LANGUAGE_CHANNEL_KRW,
     };
   }
 
@@ -638,8 +648,13 @@ class Engine {
   async chargeChannelFees(extraIndexes) {
     if (!this.paidChannels) this.paidChannels = new Set();
     const balance = this.sessionCharge ? this.sessionCharge.balance : await this.readBalance(this.church.id);
-    const paid = [...this.paidChannels];
-    const plan = cost.channelFeePlan({ balance, channels: extraIndexes, paid });
+    const spokenOf = (index) => (this.channelRows && this.channelRows[index] && this.channelRows[index].spoken) || "ko";
+    const plan = cost.channelFeePlan({
+      balance,
+      baseSpoken: spokenOf(0),
+      rows: extraIndexes.map((index) => ({ index, spoken: spokenOf(index) })),
+      paidRows: [...this.paidChannels].map((index) => ({ index, spoken: spokenOf(index) })),
+    });
     const newly = plan.started.filter((index) => !this.paidChannels.has(index));
     if (plan.charged > 0 && newly.length) {
       const at = Date.now();
@@ -650,7 +665,7 @@ class Engine {
         balanceAfter: plan.balance,
         at,
         who: this.church.accountUid || "",
-        note: `추가 채널 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}`,
+        note: `추가 입력 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}`,
         churchId: this.church.id,
       });
       await this.writeBilling(this.church.id, plan.balance, entry, null);
@@ -660,7 +675,7 @@ class Engine {
       this.emit({
         type: "log",
         level: "info",
-        text: `추가 입력 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}에서 ${cost.formatKrw(plan.charged)}을 뺐습니다. 이 요금은 한 번만 빠집니다.`,
+        text: `추가 입력 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}에서 ${cost.formatKrw(plan.charged)}을 뺐습니다. 같은 언어의 다른 채널은 5,000원, 새 입력 언어는 10,000원이고, 이번 방송에서 한 번만 빠집니다.`,
       });
     }
     plan.started.forEach((index) => this.paidChannels.add(index));
@@ -717,7 +732,7 @@ class Engine {
     const row = this.channelRows[index] || { spoken: "ko", on: true, source: "device" };
     const spoken = spokenLanguage(row.spoken);
     const phone = row.source === "phone";
-    const speaker = phone ? cleanDisplayName(row.name) : "";
+    const speaker = this.subtitleName(row);
     const channelKey = phone ? `p${row.phoneId}` : `d${index}`;
     const targets = translationTargets(this.outputs || [], spoken);
     const bits = this.channelBroadcastBits();
@@ -737,9 +752,9 @@ class Engine {
       usage: this.usage,
       cloud,
       sharedTexts: this.sharedTexts,
-      onLive: (text) => this.emit({ type: "live", channel: index, name: speaker, text }),
-      onHeard: (heard) => this.emit({ type: "heard", channel: index, name: speaker, ...heard }),
-      onLine: (line) => this.emit({ type: "line", channel: index, ...line, name: speaker }),
+      onLive: (text) => this.emit({ type: "live", channel: index, name: pipeline.speaker || "", text }),
+      onHeard: (heard) => this.emit({ type: "heard", channel: index, name: pipeline.speaker || "", ...heard }),
+      onLine: (line) => this.emit({ type: "line", channel: index, ...line, name: pipeline.speaker || "" }),
       onLog: (text) => this.emit({ type: "log", level: "info", text }),
     });
     pipeline.startTicker();
@@ -821,7 +836,7 @@ class Engine {
       spoken: row.spoken || "ko",
       on: !!row.on,
       source: row.source === "phone" ? "phone" : "device",
-      name: row.source === "phone" ? (row.name || "") : "",
+      name: cleanDisplayName(row.name),
       phoneId: row.source === "phone" ? (row.phoneId || "") : "",
       connected: row.source === "phone" ? row.connected !== false : true,
     }));
@@ -833,8 +848,39 @@ class Engine {
 
   channelFeeLabel(index) {
     const row = this.channelRows && this.channelRows[index];
-    if (row && row.source === "phone" && row.name) return row.name;
+    const name = cleanDisplayName(row && row.name);
+    if (name) return name;
     return `채널 ${index + 1}`;
+  }
+
+  subtitleName(row) {
+    if (this.showChannelNames === false) return "";
+    return cleanDisplayName(row && row.name);
+  }
+
+  applySubtitleNames() {
+    if (!this.channelSessions) return;
+    this.channelSessions.forEach((session, index) => {
+      const name = this.subtitleName(this.channelRows && this.channelRows[index]);
+      session.name = name;
+      if (session.pipeline) session.pipeline.speaker = name;
+    });
+  }
+
+  setShowChannelNames(on) {
+    this.showChannelNames = on !== false;
+    this.applySubtitleNames();
+    return this.showChannelNames;
+  }
+
+  setChannelName(index, name) {
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0) throw new Error("채널이 올바르지 않습니다.");
+    if (!this.channelRows || !this.channelRows[i]) return cleanDisplayName(name);
+    this.channelRows[i].name = cleanDisplayName(name);
+    this.applySubtitleNames();
+    this.emitPhones();
+    return this.channelRows[i].name;
   }
 
   notifyPhone(index, listening) {
@@ -866,11 +912,7 @@ class Engine {
     } else {
       this.channelRows[index].name = name;
       this.channelRows[index].connected = true;
-      const session = this.channelSessions && this.channelSessions.get(index);
-      if (session) {
-        session.name = name;
-        if (session.pipeline) session.pipeline.speaker = name;
-      }
+      this.applySubtitleNames();
     }
     const row = this.channelRows[index];
     const listening = !!(this.running && row.on && this.channelSessions && this.channelSessions.has(index));
@@ -923,6 +965,7 @@ class Engine {
     }
     const channelCount = this.device && this.device.inputChannels ? this.device.inputChannels : 1;
     this.channelRows = normalizeChannelRows(opts.channels, channelCount, opts.spoken);
+    this.showChannelNames = opts.showChannelNames !== false;
     this.paidChannels = new Set();
     this.channelSessions = new Map();
     this.sharedTexts = { texts: {}, chain: Promise.resolve() };

@@ -445,6 +445,14 @@ function registerIpc() {
     const church = await requireChurch();
     return engine.setChannelOn(church.id, index, on);
   });
+  ipcMain.handle("channel:name", async (_event, index, name) => {
+    await requireChurch();
+    return engine.setChannelName(index, name);
+  });
+  ipcMain.handle("channel:showNames", async (_event, on) => {
+    await requireChurch();
+    return engine.setShowChannelNames(on);
+  });
   ipcMain.handle("targets:set", async (_event, _churchId, targets, spoken) => {
     const church = await requireChurch();
     return engine.setTargets(church.id, targets, spoken);

@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("broadcast", {
   setSpoken: (spoken) => ipcRenderer.invoke("spoken:set", spoken),
   setChannelSpoken: (index, spoken) => ipcRenderer.invoke("channel:spoken", index, spoken),
   setChannelOn: (index, on) => ipcRenderer.invoke("channel:on", index, on),
+  setChannelName: (index, name) => ipcRenderer.invoke("channel:name", index, name),
+  setShowChannelNames: (on) => ipcRenderer.invoke("channel:showNames", on),
   links: (targets, spoken) => ipcRenderer.invoke("links", "", targets, spoken),
   start: (opts) => ipcRenderer.invoke("broadcast:start", opts),
   stop: () => ipcRenderer.invoke("broadcast:stop"),
