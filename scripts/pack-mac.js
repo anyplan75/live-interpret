@@ -110,7 +110,7 @@ function main() {
     run("codesign", ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, displayApp], env);
   } else {
     console.log("표시 이름으로 다시 서명합니다: " + displayApp);
-    run("codesign", ["--force", "--deep", "--sign", signName, "--entitlements", entitlements, displayApp], env);
+    run("codesign", ["--force", "--deep", "--sign", signName, "--options", "runtime", "--entitlements", entitlements, displayApp], env);
   }
   if (dist) {
     const dmg = path.join(root, "dist", `실시간 통역시스템-${pkg.version}-mac-arm64.dmg`);

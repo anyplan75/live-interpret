@@ -209,6 +209,7 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(packMac, /APPLE_TEAM_ID/);
   assert.match(packMac, /-c\.mac\.identity=-/);
   assert.match(packMac, /-c\.mac\.hardenedRuntime=true/);
+  assert.match(packMac, /--options", "runtime"/);
   assert.doesNotMatch(packMac, /\.p12|CSC_LINK|CSC_KEY_PASSWORD|APPLE_APP_SPECIFIC_PASSWORD\s*[:=]\s*["'][^"']|BEGIN CERTIFICATE/);
 
   const workflow = read(".github/workflows/desktop.yml");
