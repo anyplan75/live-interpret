@@ -67,6 +67,25 @@
       <p id="addMsg" class="msg"></p>
     </section>
 
+    <section class="card stack" id="companyCard">
+      <h2>기업 추가</h2>
+      <label for="companyName">기업 이름</label>
+      <input id="companyName" type="text" placeholder="기업 이름" maxlength="80">
+      <label for="companyEmail">기업 로그인 이메일</label>
+      <input id="companyEmail" type="email" autocomplete="off">
+      <label for="companyPassword">기업 로그인 비밀번호</label>
+      <input id="companyPassword" type="password" autocomplete="new-password">
+      <label for="companyPassword2">비밀번호 확인</label>
+      <input id="companyPassword2" type="password" autocomplete="new-password">
+      <label class="hint" for="companyLecture"><input id="companyLecture" type="checkbox"> 강연·회의</label>
+      <label class="hint" for="companyFace"><input id="companyFace" type="checkbox"> 대면 통역</label>
+      <div class="row" style="margin-top:12px;">
+        <button type="button" id="addCompany">기업과 계정 추가</button>
+      </div>
+      <p class="hint">교회 추가 바로 아래입니다. 강연·회의와 대면 통역은 따로 켭니다. 계정을 만들어도 관리자 로그인은 유지됩니다.</p>
+      <p id="companyMsg" class="msg"></p>
+    </section>
+
     <section class="card">
       <h2>통역 요금</h2>
       <pre id="rateCardBody" class="hint rate-card"></pre>
@@ -119,6 +138,15 @@
         <button type="button" id="toggleActive">비활성화</button>
         <span id="activeState" class="hint"></span>
       </div>
+      <div id="companyServices" hidden>
+        <h2 style="margin-top:22px;">강연·회의와 대면 통역</h2>
+        <label class="hint" for="serviceLecture"><input id="serviceLecture" type="checkbox"> 강연·회의</label>
+        <label class="hint" for="serviceFace"><input id="serviceFace" type="checkbox"> 대면 통역</label>
+        <div class="row" style="margin-top:8px;">
+          <button type="button" id="saveCompanyServices">통역 등록 저장</button>
+        </div>
+        <p id="serviceMsg" class="msg"></p>
+      </div>
       <div id="links"></div>
 
       <h2 style="margin-top:22px;">번역 모델</h2>
@@ -167,6 +195,7 @@
   <script src="js/phone-firebase-env.js"></script>
   <script src="js/catalog.js"></script>
   <script src="js/cost.js"></script>
+  <script src="js/org-services.js"></script>
   <script src="js/db.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/identity.js"></script>

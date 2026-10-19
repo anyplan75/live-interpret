@@ -89,6 +89,23 @@
           ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
           ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
         },
+        "orgKind": {
+          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+          ".validate": "newData.isString() && (newData.val() == 'church' || newData.val() == 'company')"
+        },
+        "services": {
+          "lecture": {
+            ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+            ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+            ".validate": "newData.hasChildren(['registered', 'registeredAt']) && newData.child('registered').isBoolean() && newData.child('registeredAt').isNumber() && newData.child('registeredAt').val() >= 0 && !newData.child('rate').exists() && !newData.child('text').exists()"
+          },
+          "face": {
+            ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+            ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
+            ".validate": "newData.hasChildren(['registered', 'registeredAt']) && newData.child('registered').isBoolean() && newData.child('registeredAt').isNumber() && newData.child('registeredAt').val() >= 0 && !newData.child('rate').exists() && !newData.child('text').exists()"
+          }
+        },
         "account": {
           ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
           ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"

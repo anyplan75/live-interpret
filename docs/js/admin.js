@@ -79,6 +79,7 @@ async function loadChurches() {
       createdAt: row.createdAt || 0,
       active: LI.catalog.churchIsActive(row),
       region: LI.churchFind.normalizeRegion(row.region),
+      kind: row.orgKind === "company" ? "company" : "church",
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   renderChurchList();
@@ -132,7 +133,7 @@ function churchCard(church) {
   open.type = "button";
   open.className = "church-open";
   const name = document.createElement("span");
-  name.textContent = church.name;
+  name.textContent = church.kind === "company" ? `${church.name} · 기업` : church.name;
   const state = document.createElement("span");
   state.className = "state";
   state.textContent = church.active ? "활성" : "비활성";
@@ -382,13 +383,18 @@ async function openChurch(id) {
   [...listEl.children].forEach((node) => {
     if (node.classList) node.classList.toggle("on", node.dataset && node.dataset.id === id);
   });
-  const [glossary, sessionIndex, model, account, preachers] = await Promise.all([
+  const [glossary, sessionIndex, model, account, preachers, orgKind, services] = await Promise.all([
     LI.db.get(`churches/${id}/glossary`),
     LI.db.get(`churches/${id}/sessionIndex`),
     LI.db.get(`churches/${id}/model`),
     LI.db.get(`churches/${id}/account`),
     LI.db.get(`churches/${id}/preachers`),
+    LI.db.get(`churches/${id}/orgKind`),
+    LI.db.get(`churches/${id}/services`),
   ]);
+  const kind = orgKind === "company" ? "company" : "church";
+  if (church) church.kind = kind;
+  renderCompanyServices(kind, services);
   document.getElementById("glossary").value = typeof glossary === "string" && glossary.trim()
     ? glossary
     : LI.catalog.defaultGlossary(church ? church.name : id);
@@ -421,6 +427,25 @@ function fillModel(model) {
     select.append(option);
   });
   select.value = LI.catalog.isModelId(model) ? model : LI.catalog.defaultModel;
+}
+
+function renderCompanyServices(kind, services) {
+  const box = document.getElementById("companyServices");
+  if (!box) return;
+  const company = kind === "company";
+  box.hidden = !company;
+  if (!company) return;
+  const lecture = services && services.lecture && services.lecture.registered === true;
+  const face = services && services.face && services.face.registered === true;
+  document.getElementById("serviceLecture").checked = lecture;
+  document.getElementById("serviceFace").checked = face;
+  document.getElementById("serviceMsg").textContent = "";
+}
+
+async function applyRootWrites(writes) {
+  await LI.db.init();
+  LI.db.clearChurch();
+  await firebase.database().ref(LI.catalog.firebase.rootPath).update(writes);
 }
 
 function renderAccount(account) {
@@ -701,6 +726,96 @@ document.getElementById("addChurch").addEventListener("click", async () => {
       }
     }
     msg.textContent = LI.catalog.authErrorMessage(err);
+  }
+});
+
+document.getElementById("addCompany").addEventListener("click", async () => {
+  if (!signedIn) return;
+  const name = document.getElementById("companyName").value.trim();
+  const email = document.getElementById("companyEmail").value.trim();
+  const password = document.getElementById("companyPassword").value;
+  const confirm = document.getElementById("companyPassword2").value;
+  const msg = document.getElementById("companyMsg");
+  msg.textContent = "";
+  if (!name) {
+    msg.textContent = "기업 이름을 입력해 주세요.";
+    return;
+  }
+  if (!LI.catalog.validAdminEmail(email) || !LI.catalog.validAdminPassword(password)) {
+    msg.textContent = "이메일과 비밀번호를 확인해 주세요. 비밀번호는 6자 이상입니다.";
+    return;
+  }
+  if (password !== confirm) {
+    msg.textContent = "비밀번호가 서로 다릅니다.";
+    return;
+  }
+  const id = LI.catalog.makeChurchId(name);
+  const existing = await LI.db.get(`churches/${id}/name`);
+  if (existing) {
+    msg.textContent = "같은 이름의 계정이 이미 있습니다. 이름을 조금 바꿔 주세요.";
+    return;
+  }
+  const identity = LI.identity.createClient({ apiKey: LI.catalog.firebase.apiKey });
+  let created = null;
+  try {
+    created = await identity.signUp(email, password);
+    const writes = LI.orgServices.newOrgWrites({
+      id,
+      now: Date.now(),
+      kind: "company",
+      name,
+      lecture: document.getElementById("companyLecture").checked,
+      face: document.getElementById("companyFace").checked,
+      glossary: LI.catalog.defaultGlossary(name),
+      model: LI.catalog.defaultModel,
+      uid: created.localId,
+      email: created.email,
+      settings: LI.catalog.defaultLiveSettings(),
+    });
+    await applyRootWrites(writes);
+    document.getElementById("companyName").value = "";
+    document.getElementById("companyEmail").value = "";
+    document.getElementById("companyPassword").value = "";
+    document.getElementById("companyPassword2").value = "";
+    document.getElementById("companyLecture").checked = false;
+    document.getElementById("companyFace").checked = false;
+    await loadChurches();
+    await openChurch(id);
+    msg.textContent = "기업과 로그인 계정을 만들었습니다. 관리자 로그인은 그대로입니다.";
+  } catch (err) {
+    if (created && created.idToken) {
+      try { await identity.deleteAccount(created.idToken); } catch (_) { /* 이미 지운 계정은 무시합니다 */ }
+    }
+    msg.textContent = LI.catalog.authErrorMessage(err);
+  }
+});
+
+document.getElementById("saveCompanyServices").addEventListener("click", async () => {
+  if (!signedIn || !currentId) return;
+  const msg = document.getElementById("serviceMsg");
+  msg.textContent = "";
+  const row = churches.find((item) => item.id === currentId);
+  if (!row || row.kind !== "company") {
+    msg.textContent = "기업 계정을 연 다음 통역을 등록해 주세요.";
+    return;
+  }
+  try {
+    const previous = await LI.db.get(`churches/${currentId}/services`);
+    const result = LI.orgServices.serviceWrites({
+      id: currentId,
+      kind: "company",
+      lecture: document.getElementById("serviceLecture").checked,
+      face: document.getElementById("serviceFace").checked,
+      now: Date.now(),
+      previous: previous || {},
+    });
+    await applyRootWrites(result.writes);
+    await LI.db.update(`churchIndex/${currentId}`, result.index);
+    row.lecture = result.lecture.registered;
+    row.face = result.face.registered;
+    msg.textContent = "강연·회의와 대면 통역 등록을 저장했습니다.";
+  } catch (err) {
+    msg.textContent = err && err.message ? err.message : "저장하지 못했습니다.";
   }
 });
 

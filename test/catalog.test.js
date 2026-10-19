@@ -91,6 +91,14 @@ test("owner and church logins split the controls", () => {
   assert.match(admin, /id="saveKey"/);
   assert.match(admin, /id="churchModel"/);
   assert.match(admin, /id="churchEmail"/);
+  assert.match(admin, /id="addCompany"/);
+  assert.match(admin, /id="companyLecture"/);
+  assert.match(admin, /id="companyFace"/);
+  assert.match(admin, /id="saveCompanyServices"/);
+  assert.equal(admin.indexOf('id="addChurch"') < admin.indexOf('id="addCompany"'), true);
+  assert.match(adminJs, /newOrgWrites/);
+  assert.match(adminJs, /serviceWrites/);
+  assert.match(adminJs, /kind: "company"/);
   assert.match(admin, /id="saveAccount"/);
   assert.match(admin, /id="preachers"/);
   assert.match(admin, /id="gate"/);
@@ -155,6 +163,35 @@ test("firebase paths stay under live-interpret", () => {
   assert.equal(catalog.isChurchId("cheil"), false);
   assert.equal(catalog.isChurchId("jifc"), false);
   assert.equal(catalog.isChurchId(catalog.makeChurchId("새 교회")), true);
+  const orgServices = require("../docs/js/org-services.js");
+  const companyWrites = orgServices.newOrgWrites({
+    id: "acme-ab12",
+    kind: "company",
+    name: "에이씨엠이",
+    uid: "uid-company",
+    email: "ops@example.com",
+    model: "gpt-4o-mini",
+    settings: { targets: ["en"] },
+    lecture: true,
+    face: false,
+    now: 10,
+  });
+  assert.equal(companyWrites["churches/acme-ab12/orgKind"], "company");
+  assert.equal(companyWrites["churches/acme-ab12/services/lecture"].registered, true);
+  assert.equal(companyWrites["churches/acme-ab12/services/face"].registered, false);
+  const toggled = orgServices.serviceWrites({
+    id: "acme-ab12",
+    kind: "company",
+    lecture: false,
+    face: true,
+    now: 20,
+    previous: { lecture: companyWrites["churches/acme-ab12/services/lecture"] },
+  });
+  assert.equal(toggled.writes["churches/acme-ab12/orgKind"], "company");
+  assert.equal(toggled.writes["churches/acme-ab12/services/lecture"].registered, false);
+  assert.equal(toggled.writes["churches/acme-ab12/services/lecture"].registeredAt, 0);
+  assert.equal(toggled.writes["churches/acme-ab12/services/face"].registered, true);
+  assert.equal(toggled.writes["churches/acme-ab12/services/face"].registeredAt, 20);
   assert.equal(catalog.isPreacherId(catalog.makePreacherId("김 목사")), true);
   assert.equal(catalog.isModelId("gpt-4o-mini"), true);
   assert.equal(catalog.isModelId("other"), false);
