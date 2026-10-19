@@ -83,6 +83,7 @@
     const onJson = options.onJson || (() => {});
     const onLevel = options.onLevel || (() => {});
     let phoneId = storedPhone();
+    let sending = true;
     let audioContext = options.audioContext || null;
     let mediaStream = null;
     let active = null;
@@ -105,6 +106,7 @@
         if (value > peak) peak = value;
       }
       onLevel(Math.max(0, Math.min(100, Math.round(peak * 140))));
+      if (!sending) return;
       const current = active && active.channel;
       if (!current || current.readyState !== "open") return;
       const pcm = LI.pcm.downsampleFloatToPcm16(input, audioContext.sampleRate, 24000);
@@ -220,6 +222,7 @@
 
     startLink();
     return {
+      setPaused(next) { sending = !next; },
       stop() {
         closed = true;
         clearTimeout(reconnectTimer);

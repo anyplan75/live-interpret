@@ -248,6 +248,58 @@
     };
   }
 
+  const FACE_PERSON_KRW = 5000;
+  const FACE_BLOCK_SECONDS = 3600;
+
+  function facePeopleKrw(count) {
+    const people = Math.max(0, Math.round(Number(count) || 0));
+    return FACE_PERSON_KRW * people;
+  }
+
+  function faceChargePatch(input) {
+    const cost = costLib();
+    const source = input || {};
+    const people = Math.max(0, Math.round(Number(source.people) || 0));
+    const amount = facePeopleKrw(people);
+    const charged = cost.applyCharge(source.balance, amount);
+    if (!charged.ok) {
+      return { ok: false, short: true, amount, people, balance: charged.balance, patch: null };
+    }
+    const entry = cost.ledgerEntry({
+      id: source.entryId,
+      type: "charge",
+      deltaKrw: -charged.deducted,
+      balanceAfter: charged.balance,
+      at: source.now,
+      who: source.who || "",
+      note: source.note || `대면 통역 ${people}명`,
+      churchId: source.churchId || "",
+    });
+    return {
+      ok: true,
+      short: false,
+      amount,
+      people,
+      balance: charged.balance,
+      entry,
+      remainingSeconds: FACE_BLOCK_SECONDS,
+      patch: {
+        balance: charged.balance,
+        lastEntryId: entry.id,
+        [`ledger/${entry.id}`]: ledgerRow(entry),
+      },
+    };
+  }
+
+  function faceRemainingSeconds(state, now) {
+    const base = Math.max(0, Math.round(Number(state && state.remainingSeconds) || 0));
+    if (!state || state.paused) return base;
+    const anchor = Math.round(Number(state.anchor) || 0);
+    if (!anchor) return base;
+    const elapsed = Math.max(0, Math.floor((Math.round(Number(now) || Date.now()) - anchor) / 1000));
+    return Math.max(0, base - elapsed);
+  }
+
   function creditPatch(input) {
     const cost = costLib();
     const source = input || {};
@@ -352,6 +404,11 @@
     chargePatch,
     halfPatch,
     tickPatch,
+    FACE_PERSON_KRW,
+    FACE_BLOCK_SECONDS,
+    facePeopleKrw,
+    faceChargePatch,
+    faceRemainingSeconds,
     creditPatch,
     newOrgWrites,
     serviceWrites,

@@ -29,12 +29,17 @@
 
     <section id="host" class="card" hidden>
       <p id="orgLine" class="hint"></p>
+      <p id="rateLine"></p>
+      <label for="hostName">내 이름</label>
+      <input id="hostName" maxlength="40" autocomplete="name" enterkeyhint="done" required>
       <label for="hostLang">내 언어</label>
       <select id="hostLang"></select>
       <label for="guestLang">상대 언어</label>
       <select id="guestLang"></select>
-      <p id="rateLine"></p>
+      <p id="faceClock" class="clock">남은 시간 0:00</p>
+      <p id="peopleLine" class="hint"></p>
       <button type="button" id="startFace">통역 시작</button>
+      <button type="button" class="ghost" id="pauseFace" hidden>잠시 멈추기</button>
       <p id="status"></p>
       <img id="qr" alt="상대가 스캔할 QR" hidden>
       <label for="joinUrl">상대 참여 주소</label>
@@ -44,14 +49,22 @@
       <button type="button" class="ghost" id="signOut">로그아웃</button>
     </section>
 
+    <section id="history" class="card" hidden>
+      <h2>지난 대화</h2>
+      <p class="hint">이 계정으로 저장한 대면 통역을 다시 엽니다.</p>
+      <div id="talkList"></div>
+      <pre id="talkView" class="captions" hidden></pre>
+    </section>
+
     <section id="guest" class="card" hidden>
       <h2>통역에 들어가기</h2>
       <p class="hint">QR로 열린 주소입니다. 이름을 입력하면 상대와 통역이 연결됩니다. 이 휴대폰은 요금을 시작하지 않습니다.</p>
       <form id="guestForm">
         <label for="guestName">이름</label>
-        <input id="guestName" maxlength="40" autocomplete="name" required>
+        <input id="guestName" maxlength="40" autocomplete="name" enterkeyhint="done" required>
         <button type="submit" id="guestJoin">들어가기</button>
       </form>
+      <p id="guestClock" class="clock">남은 시간 0:00</p>
       <p id="guestStatus"></p>
       <div id="guestCaptions" class="captions">대기 중...</div>
       <div class="meter" aria-hidden="true"><span id="guestLevel"></span></div>
@@ -88,10 +101,17 @@
     let signedUser = null;
     let platformKey = "";
     let room = null;
-    let prepaid = null;
-    let tickAnchor = 0;
-    let tickTimer = null;
     let localStop = null;
+    let paused = true;
+    let remainingSeconds = 0;
+    let tickAnchor = 0;
+    let clockTimer = null;
+    let paidPeople = [];
+    let lines = [];
+    let folder = "";
+    let amountKrw = 0;
+    let sessionLive = false;
+    let chargeChain = Promise.resolve();
 
     function say(text) { document.getElementById("status").textContent = text; }
 
@@ -107,15 +127,43 @@
     }
 
     function paintRate() {
-      const rate = LI.orgServices.rateFor("face", [
-        document.getElementById("hostLang").value,
-        document.getElementById("guestLang").value,
-      ]);
-      document.getElementById("rateLine").textContent = rate.text;
+      const one = LI.cost.formatKrw(LI.orgServices.FACE_PERSON_KRW);
+      const two = LI.cost.formatKrw(LI.orgServices.facePeopleKrw(2));
+      const three = LI.cost.formatKrw(LI.orgServices.facePeopleKrw(3));
+      document.getElementById("rateLine").textContent = `한 사람 ${one}입니다. 앱을 연 사람도 포함됩니다. 두 사람은 ${two}, 세 사람은 ${three}입니다. 결제한 시간은 1시간입니다.`;
+    }
+
+    function clockState() {
+      return { remainingSeconds, paused, anchor: tickAnchor };
+    }
+
+    function shownSeconds() {
+      return LI.orgServices.faceRemainingSeconds(clockState(), Date.now());
+    }
+
+    function paintClock() {
+      const text = `남은 시간 ${LI.cost.formatClock(shownSeconds())}`;
+      const hostClock = document.getElementById("faceClock");
+      const guestClock = document.getElementById("guestClock");
+      if (hostClock) hostClock.textContent = text;
+      if (guestClock && guestMode) guestClock.textContent = text;
+    }
+
+    function paintPeople() {
+      const names = paidPeople.map((person) => person.name).join(", ");
+      const line = document.getElementById("peopleLine");
+      if (!line) return;
+      line.textContent = paidPeople.length
+        ? `${paidPeople.length}명 · ${LI.cost.formatKrw(amountKrw)} · ${names}`
+        : "이름을 입력한 사람만 참여합니다.";
     }
 
     function showCaption(board, title, text) {
-      board.textContent = text ? `${title}: ${text}` : "대기 중...";
+      if (!text) return;
+      const line = `${title}: ${text}`;
+      board.textContent = board.textContent && board.textContent !== "대기 중..."
+        ? `${board.textContent}\n${line}`
+        : line;
     }
 
     function uint8ToInt16(bytes) {
@@ -131,6 +179,7 @@
       let busy = false;
       return {
         push(int16) {
+          if (paused || shownSeconds() <= 0) return;
           if (!int16 || !int16.length) return;
           chunks.push(int16);
           samples += int16.length;
@@ -153,22 +202,30 @@
       return platformKey;
     }
 
-    async function interpret(pcm, sourceLang, targetLang, source) {
+    async function interpret(pcm, sourceLang, targetLang, source, speakerName) {
+      if (paused || shownSeconds() <= 0) return;
       const key = await ensureKey();
       const heard = await LI.speechTurn.transcribePcm(pcm, {
         apiKey: key,
         transcriptionLanguage: LI.catalog.transcriptionLanguage(sourceLang),
       });
-      if (!heard) return;
+      if (!heard || paused || shownSeconds() <= 0) return;
       const translated = await LI.speechTurn.translateLine(heard, {
         apiKey: key,
         sourceLang,
         targetLang,
         model: churchModel,
       });
+      const speaker = speakerName || (source === "guest" ? "상대" : hostSpeaker());
       const message = LI.orgServices.captionMessage(source, targetLang, translated || heard);
+      message.speaker = speaker;
       if (room) room.sendAll(message);
-      if (source === "guest") showCaption(document.getElementById("captions"), "상대", message.text);
+      rememberLine(speaker, message.text, targetLang);
+      showCaption(document.getElementById("captions"), speaker, message.text);
+    }
+
+    function hostSpeaker() {
+      return LI.orgServices.cleanName(document.getElementById("hostName").value) || "나";
     }
 
     async function openLocalMic(onPcm) {
@@ -208,42 +265,140 @@
     }
 
     function stopSession(text) {
-      if (tickTimer) clearInterval(tickTimer);
-      tickTimer = null;
+      if (clockTimer) clearInterval(clockTimer);
+      clockTimer = null;
+      sessionLive = false;
+      paused = true;
+      settleElapsed();
+      saveTalk().catch(() => {});
       if (room) room.stop();
       room = null;
       if (localStop) localStop();
       localStop = null;
+      const pauseButton = document.getElementById("pauseFace");
+      if (pauseButton) pauseButton.hidden = true;
       if (text) say(text);
     }
 
-    async function tickTime() {
-      if (!prepaid || !churchId) return;
-      const elapsed = Math.floor((Date.now() - tickAnchor) / 1000);
-      if (elapsed < 1) return;
-      const tick = LI.orgServices.tickPatch(prepaid, elapsed, Date.now());
-      if (!tick.expired) {
-        await LI.db.update(`churches/${churchId}/billing`, tick.patch);
-        prepaid = tick.prepaid;
-        tickAnchor = Date.now();
-        return;
-      }
-      const billing = (await LI.db.get(`churches/${churchId}/billing`)) || {};
-      const half = LI.orgServices.halfPatch({
-        balance: billing.balance,
+    function seoulFolder(now) {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(now);
+      const pick = (type) => parts.find((part) => part.type === type).value;
+      return `${pick("year")}-${pick("month")}-${pick("day")}_${pick("hour")}-${pick("minute")}-${pick("second")}`;
+    }
+
+    function rememberLine(name, text, lang) {
+      const clean = String(text || "").trim();
+      if (!clean) return;
+      lines.push({ at: Date.now(), name, lang: lang || "", text: clean });
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => { saveTalk().catch(() => {}); }, 400);
+    }
+
+    async function saveTalk() {
+      if (!churchId || !folder) return;
+      const body = lines.map((line) => `${line.name}: ${line.text}`).join("\n");
+      const left = shownSeconds();
+      await LI.db.set(`churches/${churchId}/sessions/${folder}/texts/face`, body);
+      const hostLang = document.getElementById("hostLang").value;
+      if (hostLang) await LI.db.set(`churches/${churchId}/sessions/${folder}/texts/${hostLang}`, body);
+      await LI.db.update(`churches/${churchId}/sessionIndex/${folder}`, {
+        startedAt: lines[0] ? lines[0].at : Date.now(),
+        folderName: folder,
+        churchName: org ? org.name : "",
         languages: [document.getElementById("hostLang").value, document.getElementById("guestLang").value],
-        now: Date.now(),
-        who: signedUser ? signedUser.uid : "",
-        churchId,
-        note: "대면 통역 30분",
+        kind: "face",
+        people: paidPeople.length,
+        amountKrw,
+        remainingSeconds: left,
+        paused,
+        endedAt: sessionLive ? 0 : Date.now(),
       });
-      if (!half.ok) {
-        stopSession("선불 시간이 끝났고 잔액이 부족합니다.");
+    }
+
+    async function loadHistory() {
+      const list = document.getElementById("talkList");
+      const card = document.getElementById("history");
+      if (!list || !churchId) return;
+      card.hidden = false;
+      const index = await LI.db.get(`churches/${churchId}/sessionIndex`);
+      list.innerHTML = "";
+      const rows = !index || typeof index !== "object" ? [] : Object.entries(index)
+        .filter(([, row]) => row && row.kind === "face" && /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/.test(String(row.folderName || "")))
+        .sort((a, b) => String(b[0]).localeCompare(String(a[0])));
+      if (!rows.length) {
+        list.innerHTML = '<p class="hint">아직 저장된 대화가 없습니다.</p>';
         return;
       }
-      await LI.db.update(`churches/${churchId}/billing`, half.patch);
-      prepaid = half.prepaid;
-      tickAnchor = Date.now();
+      rows.forEach(([id, row]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ghost";
+        const when = row.startedAt ? new Date(row.startedAt).toLocaleString("ko-KR") : id;
+        button.textContent = `${when} · ${row.people || 0}명`;
+        button.addEventListener("click", () => openTalk(row.folderName || id));
+        list.append(button);
+      });
+    }
+
+    async function openTalk(name) {
+      const view = document.getElementById("talkView");
+      const text = await LI.db.get(`churches/${churchId}/sessions/${name}/texts/face`);
+      view.hidden = false;
+      view.textContent = typeof text === "string" && text.trim() ? text : "저장된 문장이 없습니다.";
+    }
+
+    function broadcastClock() {
+      if (!room) return;
+      room.sendAll({ type: "session", paused, remainingSeconds: shownSeconds() });
+    }
+
+    function settleElapsed() {
+      remainingSeconds = shownSeconds();
+      tickAnchor = paused ? 0 : Date.now();
+    }
+
+    async function chargePeople(count, note) {
+      const run = chargeChain.then(async () => {
+        const billing = (await LI.db.get(`churches/${churchId}/billing`)) || {};
+        const charge = LI.orgServices.faceChargePatch({
+          balance: billing.balance,
+          people: count,
+          now: Date.now(),
+          who: signedUser ? signedUser.uid : "",
+          churchId,
+          note,
+        });
+        if (!charge.ok) return charge;
+        await LI.db.update(`churches/${churchId}/billing`, charge.patch);
+        amountKrw += charge.amount;
+        paintPeople();
+        return charge;
+      });
+      chargeChain = run.then(() => {}, () => {});
+      return run;
+    }
+
+    async function setRunning(nextPaused) {
+      settleElapsed();
+      paused = nextPaused || shownSeconds() <= 0;
+      tickAnchor = paused ? 0 : Date.now();
+      const button = document.getElementById("pauseFace");
+      button.hidden = false;
+      button.textContent = paused ? "이어서 통역" : "잠시 멈추기";
+      paintClock();
+      broadcastClock();
+      if (shownSeconds() <= 0) say("결제한 시간이 끝났습니다. 통역과 남은 시간이 멈췄습니다.");
+      else say(paused ? "통역과 남은 시간을 멈췄습니다." : "통역을 이어 갑니다. 남은 시간이 줄어듭니다.");
+      await saveTalk();
     }
 
     async function loadOrg(user) {
@@ -269,6 +424,9 @@
       gate.hidden = true;
       hostCard.hidden = false;
       paintRate();
+      paintPeople();
+      paintClock();
+      await loadHistory();
     }
 
     function showQr(url) {
@@ -299,7 +457,7 @@
         }
         document.getElementById("guestJoin").disabled = true;
         try {
-          await LI.phoneOffer.open({
+          const link = await LI.phoneOffer.open({
             databaseURL: LI.catalog.firebase.databaseURL,
             rootPath: LI.catalog.firebase.rootPath,
             token: invite,
@@ -308,8 +466,16 @@
             onStatus(text) { document.getElementById("guestStatus").textContent = text; },
             onLevel(width) { document.getElementById("guestLevel").style.width = `${width}%`; },
             onJson(message) {
-              if (!message || message.type !== "caption" || message.source !== "host") return;
-              showCaption(document.getElementById("guestCaptions"), "통역", message.text);
+              if (!message) return;
+              if (message.type === "session") {
+                link.setPaused(!!message.paused || Number(message.remainingSeconds) <= 0);
+                const clock = document.getElementById("guestClock");
+                clock.textContent = `남은 시간 ${LI.cost.formatClock(message.remainingSeconds || 0)}`;
+                if (message.paused) document.getElementById("guestStatus").textContent = "통역이 잠시 멈췄습니다.";
+                return;
+              }
+              if (message.type !== "caption") return;
+              showCaption(document.getElementById("guestCaptions"), message.speaker || "통역", message.text);
             },
           });
         } catch (err) {
@@ -320,8 +486,10 @@
     } else {
       fillLanguages(document.getElementById("hostLang"), "ko");
       fillLanguages(document.getElementById("guestLang"), "en");
-      document.getElementById("hostLang").addEventListener("change", paintRate);
-      document.getElementById("guestLang").addEventListener("change", paintRate);
+      document.getElementById("pauseFace").addEventListener("click", () => {
+        if (!sessionLive) return;
+        setRunning(!paused).catch((err) => say(err && err.message ? err.message : "잠시 멈추지 못했습니다."));
+      });
       document.getElementById("orgSignIn").addEventListener("click", async () => {
         const msg = document.getElementById("gateMsg");
         msg.textContent = "";
@@ -352,46 +520,83 @@
           say(gateResult.reason);
           return;
         }
+        const hostName = LI.orgServices.cleanName(document.getElementById("hostName").value);
         const hostLang = document.getElementById("hostLang").value;
         const guestLang = document.getElementById("guestLang").value;
+        if (!hostName) {
+          say("내 이름을 입력해 주세요.");
+          return;
+        }
         if (hostLang === guestLang) {
           say("두 언어가 같습니다. 상대 언어를 다르게 고르세요.");
           return;
         }
         document.getElementById("startFace").disabled = true;
         try {
-          const billing = (await LI.db.get(`churches/${churchId}/billing`)) || {};
-          const charge = LI.orgServices.chargePatch({
-            balance: billing.balance,
-            languages: [hostLang, guestLang],
-            prepaid: billing.prepaid,
-            now: Date.now(),
-            who: signedUser ? signedUser.uid : "",
-            churchId,
-            note: "대면 통역",
-          });
+          const charge = await chargePeople(1, `대면 통역 ${hostName}`);
           if (!charge.ok) {
-            say(`선불 잔액이 부족합니다. ${LI.orgServices.rateFor("face", [hostLang, guestLang]).text}`);
+            say(`선불 잔액이 부족합니다. 한 사람 ${LI.cost.formatKrw(LI.orgServices.FACE_PERSON_KRW)}이 필요합니다.`);
             document.getElementById("startFace").disabled = false;
             return;
           }
-          if (charge.patch) await LI.db.update(`churches/${churchId}/billing`, charge.patch);
-          prepaid = charge.prepaid;
+          paidPeople = [{ name: hostName, role: "host" }];
+          lines = [];
+          folder = seoulFolder(Date.now());
+          remainingSeconds = LI.orgServices.FACE_BLOCK_SECONDS;
+          paused = false;
           tickAnchor = Date.now();
+          sessionLive = true;
+          amountKrw = charge.amount;
+          paintPeople();
+          paintClock();
+          await saveTalk();
+          const names = new Map();
+          const guestCollectors = new Map();
           const token = LI.faceHost.randomHex(16);
           const url = LI.orgServices.faceJoinUrl(LI.catalog.pagesBase, token);
           showQr(url);
-          const guestAudio = collector((pcm) => interpret(pcm, guestLang, hostLang, "guest"));
-          const hostAudio = collector((pcm) => interpret(pcm, hostLang, guestLang, "host"));
+          const hostAudio = collector((pcm) => interpret(pcm, hostLang, guestLang, "host", hostName));
           room = LI.faceHost.start({
             token,
             databaseURL: LI.catalog.firebase.databaseURL,
             rootPath: LI.catalog.firebase.rootPath,
-            onPcm(_peerId, bytes) { guestAudio.push(uint8ToInt16(bytes)); },
+            onPcm(peerId, bytes) {
+              const speaker = names.get(peerId);
+              if (!speaker) return;
+              let bucket = guestCollectors.get(peerId);
+              if (!bucket) {
+                bucket = collector((pcm) => interpret(pcm, guestLang, hostLang, "guest", speaker));
+                guestCollectors.set(peerId, bucket);
+              }
+              bucket.push(uint8ToInt16(bytes));
+            },
+            onText(peerId, message) {
+              if (!message || message.type !== "hello") return;
+              const name = LI.orgServices.cleanName(message.name);
+              if (!name || names.has(peerId)) return;
+              chargePeople(1, `대면 통역 ${name}`).then((extra) => {
+                if (!extra || !extra.ok) {
+                  room.sendCaption(peerId, { type: "error", message: "선불 잔액이 부족해 들어갈 수 없습니다." });
+                  return;
+                }
+                names.set(peerId, name);
+                paidPeople.push({ name, role: "guest" });
+                paintPeople();
+                room.sendCaption(peerId, { type: "joined", phoneId: peerId });
+                broadcastClock();
+                saveTalk().catch(() => {});
+              }).catch(() => {});
+            },
           });
           localStop = await openLocalMic((pcm) => hostAudio.push(pcm));
-          tickTimer = setInterval(() => { tickTime().catch(() => {}); }, 15000);
-          say("QR을 상대에게 보여 주세요. 말하는 동안 선불 시간이 줄어듭니다.");
+          document.getElementById("pauseFace").hidden = false;
+          if (clockTimer) clearInterval(clockTimer);
+          clockTimer = setInterval(() => {
+            paintClock();
+            if (shownSeconds() <= 0 && !paused) setRunning(true).catch(() => {});
+            else if (!paused) broadcastClock();
+          }, 1000);
+          say("QR을 상대에게 보여 주세요. 잠시 멈추면 통역과 남은 시간이 같이 멈춥니다.");
         } catch (err) {
           document.getElementById("startFace").disabled = false;
           say(LI.catalog.redactSecrets(err && err.message ? err.message : "통역을 시작하지 못했습니다."));

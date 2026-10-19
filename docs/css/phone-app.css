@@ -47,6 +47,7 @@ button:disabled { opacity: 0.45; }
   background: #172033;
 }
 #status, #rateLine { min-height: 1.4em; font-weight: 700; }
+.clock { margin: 12px 0 0; font-size: 2rem; font-weight: 800; letter-spacing: 0.03em; }
 .meter { height: 10px; margin-top: 16px; border-radius: 99px; background: #121a24; overflow: hidden; }
 .meter span { display: block; height: 100%; width: 0%; background: #7dcea0; }
 #qr { display: block; width: min(100%, 280px); margin: 12px auto; background: white; border-radius: 12px; }
