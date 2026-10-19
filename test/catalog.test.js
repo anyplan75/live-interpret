@@ -179,7 +179,7 @@ test("firebase api key is not committed", () => {
   assert.match(example, /^DEPOSIT_HMAC_SECRET=$/m);
   assert.equal(/AIza[0-9A-Za-z\-_]{20,}/.test(example), false);
   const skip = new Set(["node_modules", ".git", "dist", "out"]);
-  // 강연·회의와 대면 페이지는 브라우저 로그인에 이 파일 하나만 쓴다.
+  // 강연·회의, 대면, 전체 관리자 페이지는 브라우저 로그인에 이 파일 하나만 쓴다.
   const phoneKeyFile = path.join("docs", "js", "phone-firebase-env.js");
   const hits = [];
   let phoneKeySeen = false;
@@ -205,10 +205,10 @@ test("firebase api key is not committed", () => {
   assert.match(phoneKey, /FIREBASE_API_KEY/);
   assert.equal((phoneKey.match(/AIza[0-9A-Za-z\-_]{20,}/g) || []).length, 1);
   assert.equal(/AIza/.test(fs.readFileSync(path.join(root, "docs/js/runtime-env.js"), "utf8")), false);
-  for (const page of ["docs/lecture/index.html", "docs/face/index.html"]) {
+  for (const page of ["docs/lecture/index.html", "docs/face/index.html", "docs/admin.html"]) {
     const html = fs.readFileSync(path.join(root, page), "utf8");
-    const envAt = html.indexOf("../js/phone-firebase-env.js");
-    const catalogAt = html.indexOf("../js/catalog.js");
+    const envAt = html.indexOf("phone-firebase-env.js");
+    const catalogAt = html.indexOf("catalog.js");
     assert.equal(envAt > 0 && catalogAt > envAt, true);
   }
   assert.deepEqual(hits, []);

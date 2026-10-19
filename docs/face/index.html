@@ -250,7 +250,13 @@
       signedUser = user;
       LI.db.clearChurch();
       const row = await LI.db.get(`accounts/${user.uid}`);
-      if (!row || !LI.catalog.isChurchId(row.churchId)) throw new Error("등록된 교회나 기업 계정이 아닙니다.");
+      if (!row || !LI.catalog.isChurchId(row.churchId)) {
+        const adminUid = await LI.db.get(LI.catalog.adminUidRel);
+        if (LI.catalog.isCurrentAdmin(adminUid, user.uid)) {
+          throw new Error("이 계정은 전체 관리자입니다. 대면 통역 페이지가 아니라 관리 페이지에서 로그인하세요.");
+        }
+        throw new Error("등록된 교회나 기업 계정이 아닙니다.");
+      }
       const church = await LI.db.get(`churches/${row.churchId}`);
       if (!church || !church.name) throw new Error("등록된 교회나 기업을 찾지 못했습니다.");
       church.id = row.churchId;
