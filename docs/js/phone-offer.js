@@ -89,6 +89,8 @@
     let active = null;
     let reconnectTimer = null;
     let closed = false;
+    let refused = false;
+    const pin = String(options.pin || "");
 
     if (!audioContext) audioContext = new AudioContext();
     await audioContext.resume();
@@ -174,7 +176,7 @@
       };
       active = link;
       channel.onopen = () => {
-        channel.send(JSON.stringify({ type: "hello", name, phoneId, role: options.role || "mic" }));
+        channel.send(JSON.stringify({ type: "hello", name, phoneId, pin, role: options.role || "mic" }));
         onStatus("연결하는 중입니다.");
       };
       channel.onmessage = (event) => {
@@ -186,7 +188,9 @@
           phoneId = rememberPhone(message.phoneId) || phoneId;
           onStatus("연결되었습니다.");
         } else if (message.type === "error") {
+          refused = true;
           onStatus(message.message || "연결하지 못했습니다.");
+          try { pc.close(); } catch (_) { /* 거절된 연결은 닫습니다 */ }
         }
         onJson(message);
       };
@@ -195,7 +199,7 @@
         link.stopWatch();
         try { pc.close(); } catch (_) { /* 이미 닫힌 연결은 무시합니다 */ }
         active = null;
-        if (closed) return;
+        if (closed || refused) return;
         onStatus("연결이 끊겼습니다. 다시 연결합니다.");
         clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(startLink, 1500);

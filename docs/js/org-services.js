@@ -32,6 +32,53 @@
     return /^[a-f0-9]{32}$/.test(value || "");
   }
 
+  const CONNECTION_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  function normalizeConnectionId(value) {
+    const compact = String(value || "").toUpperCase().replace(/[\s-]/g, "");
+    return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(compact) ? compact : "";
+  }
+
+  function validSessionPin(value) {
+    return /^\d{4}$/.test(String(value || ""));
+  }
+
+  function makeConnectionId(bytes) {
+    let source = bytes;
+    if (!source) {
+      const crypto = require("crypto");
+      source = crypto.randomBytes(6);
+    }
+    let out = "";
+    for (let i = 0; i < 6; i += 1) out += CONNECTION_ALPHABET[source[i] % CONNECTION_ALPHABET.length];
+    return out;
+  }
+
+  function makeSessionPin(bytes) {
+    let source = bytes;
+    if (!source) {
+      const crypto = require("crypto");
+      source = crypto.randomBytes(2);
+    }
+    const number = ((source[0] << 8) | source[1]) % 10000;
+    return String(number).padStart(4, "0");
+  }
+
+  function claimConnection(holderPeerId, peerId) {
+    if (holderPeerId && holderPeerId !== peerId) {
+      return {
+        ok: false,
+        holderPeerId,
+        reason: "이 접속 번호는 이미 다른 기기에서 연결되어 있습니다. 먼저 연결을 끊은 뒤에 다시 들어오세요.",
+      };
+    }
+    return { ok: true, holderPeerId: peerId, reason: "" };
+  }
+
+  function releaseConnection(holderPeerId, peerId) {
+    return holderPeerId === peerId ? "" : holderPeerId || "";
+  }
+
   function publicBase(pagesBase) {
     const base = String(pagesBase || "").replace(/\/$/, "");
     let parsed;
@@ -389,6 +436,12 @@
   return {
     cleanName,
     validToken,
+    normalizeConnectionId,
+    validSessionPin,
+    makeConnectionId,
+    makeSessionPin,
+    claimConnection,
+    releaseConnection,
     publicBase,
     lectureAppUrl,
     faceAppUrl,

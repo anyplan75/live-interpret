@@ -470,6 +470,22 @@ function registerIpc() {
       bulletinPath: staged ? staged.path : "",
       bulletinExtracted: staged ? staged.extracted : null,
     });
+    if (phoneJoin) {
+      let desk = null;
+      try {
+        desk = await phoneJoin.openSession();
+        await firebase.set(`lectureJoins/${desk.connectionId}`, { token: desk.token });
+        send({ type: "phone-join", info: phoneJoin.info() });
+      } catch (err) {
+        const connectionId = phoneJoin.closeSession();
+        if (connectionId) {
+          try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 없는 번호는 지울 것이 없습니다 */ }
+        }
+        send({ type: "phone-join", info: phoneJoin.info() });
+        try { await engine.stop(); } catch (_) { /* 시작이 취소되면 방송도 멈춥니다 */ }
+        throw new Error("접속 번호를 열지 못했습니다. 방송을 다시 시작해 주세요.");
+      }
+    }
     return {
       folderName: started.folderName,
       dir: started.dir,
@@ -477,7 +493,18 @@ function registerIpc() {
       channels: started.channels || [],
     };
   });
-  ipcMain.handle("broadcast:stop", () => engine.stop());
+  ipcMain.handle("broadcast:stop", async () => {
+    const connectionId = phoneJoin ? phoneJoin.connectionId : "";
+    const stopped = await engine.stop();
+    if (phoneJoin) {
+      phoneJoin.closeSession();
+      send({ type: "phone-join", info: phoneJoin.info() });
+    }
+    if (connectionId) {
+      try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 지워진 번호는 무시합니다 */ }
+    }
+    return stopped;
+  });
   ipcMain.handle("copy", (_event, text) => {
     clipboard.writeText(String(text || ""));
     return true;

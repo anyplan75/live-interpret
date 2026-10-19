@@ -61,6 +61,12 @@
         }
       }
     },
+    "lectureJoins": {
+      "$joinId": {
+        ".read": "$joinId.matches(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/)",
+        ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || root.child('live-interpret/accounts').child(auth.uid).exists()) && (!newData.exists() || (newData.hasChildren(['token']) && newData.child('token').val().matches(/^[a-f0-9]{32}$/) && !newData.child('pin').exists() && !newData.child('password').exists()))"
+      }
+    },
     "churches": {
       "$churchId": {
         ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",

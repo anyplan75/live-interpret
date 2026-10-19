@@ -288,6 +288,10 @@ function showPhoneJoin(info) {
   state.phoneJoin = info || {};
   const url = document.getElementById("phoneJoinUrl");
   const img = document.getElementById("phoneQr");
+  const joinId = document.getElementById("joinId");
+  const joinPin = document.getElementById("joinPin");
+  if (joinId) joinId.value = info && info.connectionId ? info.connectionId : "";
+  if (joinPin) joinPin.value = info && info.pin ? info.pin : "";
   if (!url || !img) return;
   if (info && info.url) {
     url.value = info.url;

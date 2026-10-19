@@ -15,56 +15,33 @@
 <body>
   <main>
     <h1>강연·회의 통역</h1>
-    <p class="hint">등록된 교회나 기업의 계정으로 들어온 뒤, 이름을 입력하면 이 휴대폰이 송출 컴퓨터의 입력 채널이 됩니다. 이름은 송출 화면에 휴대폰 마이크 이름으로 나옵니다.</p>
+    <p class="hint">진행자가 알려 준 접속 번호와 이번 세션 4자리 암호를 입력하면 이 휴대폰이 송출 컴퓨터의 마이크가 됩니다. 이 암호는 계정 비밀번호가 아니고, 이번 강연·회의에만 씁니다.</p>
 
-    <section id="gate" class="card">
-      <h2>계정 로그인</h2>
-      <label for="orgEmail">이메일</label>
-      <input id="orgEmail" type="email" autocomplete="username">
-      <label for="orgPassword">비밀번호</label>
-      <input id="orgPassword" type="password" autocomplete="current-password">
-      <button type="button" id="orgSignIn">로그인</button>
-      <p id="gateMsg" class="hint"></p>
-    </section>
-
-    <section id="booth" class="card" hidden>
-      <p id="orgLine" class="hint"></p>
-      <p id="rateLine"></p>
+    <section id="booth" class="card">
       <form id="micForm">
+        <label for="joinId">접속 번호</label>
+        <input id="joinId" name="joinId" maxlength="8" autocapitalize="characters" autocomplete="off" enterkeyhint="next" required>
+        <label for="joinPin">4자리 암호</label>
+        <input id="joinPin" name="joinPin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off" enterkeyhint="next" required>
         <label for="name">이름</label>
         <input id="name" name="name" maxlength="40" autocomplete="name" enterkeyhint="done" required>
         <button type="submit" id="openMic">마이크 열기</button>
       </form>
       <p id="status"></p>
       <div class="meter" aria-hidden="true"><span id="level"></span></div>
-      <button type="button" class="ghost" id="signOut">로그아웃</button>
     </section>
 
-    <p class="hint install">아이폰은 공유 단추에서 홈 화면에 추가합니다. 안드로이드는 브라우저 메뉴에서 설치하거나 홈 화면에 추가합니다. 강연·회의와 대면 통역은 같은 코드의 다른 입구입니다.</p>
+    <p class="hint install">아이폰은 공유 단추에서 홈 화면에 추가합니다. 안드로이드는 브라우저 메뉴에서 설치하거나 홈 화면에 추가합니다.</p>
   </main>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
-  <script src="../js/languages.js"></script>
-  <script src="../js/runtime-env.js"></script>
-  <script src="../js/phone-firebase-env.js"></script>
   <script src="../js/catalog.js"></script>
-  <script src="../js/cost.js"></script>
   <script src="../js/org-services.js"></script>
-  <script src="../js/db.js"></script>
   <script src="../js/pcm-browser.js"></script>
   <script src="../js/phone-offer.js"></script>
   <script src="sw-register.js"></script>
   <script>
-    const gate = document.getElementById("gate");
-    const booth = document.getElementById("booth");
-    const gateMsg = document.getElementById("gateMsg");
     const statusEl = document.getElementById("status");
     const levelEl = document.getElementById("level");
     const openMic = document.getElementById("openMic");
-    let org = null;
-    let churchId = "";
-    let sessionToken = "";
     let link = null;
 
     function say(text) { statusEl.textContent = text; }
@@ -72,75 +49,34 @@
       return window.isSecureContext === true && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1");
     }
 
-    async function loadOrg(user) {
-      LI.db.clearChurch();
-      const row = await LI.db.get(`accounts/${user.uid}`);
-      if (!row || !LI.catalog.isChurchId(row.churchId)) {
-        const adminUid = await LI.db.get(LI.catalog.adminUidRel);
-        if (LI.catalog.isCurrentAdmin(adminUid, user.uid)) {
-          throw new Error("이 계정은 전체 관리자입니다. 강연·회의 페이지가 아니라 관리 페이지에서 로그인하세요.");
-        }
-        throw new Error("등록된 교회나 기업 계정이 아닙니다.");
+    async function lookupToken(connectionId) {
+      const url = `${LI.catalog.firebase.databaseURL.replace(/\/$/, "")}/${LI.catalog.firebase.rootPath}/lectureJoins/${connectionId}.json`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("접속 번호를 확인하지 못했습니다. 잠시 뒤에 다시 시도해 주세요.");
+      const row = await res.json();
+      if (!row || !LI.orgServices.validToken(row.token)) {
+        throw new Error("접속 번호를 확인하거나, 진행자가 강연·회의를 시작했는지 확인해 주세요.");
       }
-      const church = await LI.db.get(`churches/${row.churchId}`);
-      if (!church || !church.name) throw new Error("등록된 교회나 기업을 찾지 못했습니다.");
-      church.id = row.churchId;
-      churchId = row.churchId;
-      org = LI.orgServices.orgSnapshot(church);
-      const gateResult = LI.orgServices.canStartPaid(org, "lecture");
-      if (!gateResult.ok) throw new Error(gateResult.reason);
-      document.getElementById("orgLine").textContent = `${LI.orgServices.kindLabel(org.kind)} ${org.name}`;
-      document.getElementById("rateLine").textContent = LI.orgServices.rateFor("lecture", ["ko", "en"]).text;
-      const token = await LI.db.get(`churches/${churchId}/live/micToken`);
-      sessionToken = LI.orgServices.validToken(token) ? token : "";
-      gate.hidden = true;
-      booth.hidden = false;
-      say(sessionToken
-        ? "이름을 입력하고 마이크를 여세요."
-        : "송출 컴퓨터가 아직 강연·회의 연결을 열지 않았습니다. 송출 컴퓨터를 켜 주세요.");
-      openMic.disabled = !sessionToken;
+      return row.token;
     }
-
-    document.getElementById("orgSignIn").addEventListener("click", async () => {
-      gateMsg.textContent = "";
-      const email = document.getElementById("orgEmail").value.trim();
-      const password = document.getElementById("orgPassword").value;
-      try {
-        await LI.db.init();
-        if (!LI.catalog.validAdminEmail(email) || !LI.catalog.validAdminPassword(password)) {
-          throw new Error("이메일과 비밀번호를 확인해 주세요. 비밀번호는 6자 이상입니다.");
-        }
-        const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
-        await loadOrg(cred.user);
-      } catch (err) {
-        gateMsg.textContent = LI.catalog.authErrorMessage(err);
-        try { await firebase.auth().signOut(); } catch (_) { /* 로그인 전 실패는 무시합니다 */ }
-      }
-    });
-
-    document.getElementById("signOut").addEventListener("click", async () => {
-      if (link) link.stop();
-      link = null;
-      org = null;
-      try { await firebase.auth().signOut(); } catch (_) { /* 이미 로그아웃된 상태는 무시합니다 */ }
-      booth.hidden = true;
-      gate.hidden = false;
-    });
 
     document.getElementById("micForm").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const gateResult = LI.orgServices.canStartPaid(org, "lecture");
-      if (!gateResult.ok) {
-        say(gateResult.reason);
+      if (link) link.stop();
+      link = null;
+      const connectionId = LI.orgServices.normalizeConnectionId(document.getElementById("joinId").value);
+      const pin = String(document.getElementById("joinPin").value || "").trim();
+      const name = LI.orgServices.cleanName(document.getElementById("name").value);
+      if (!connectionId) {
+        say("접속 번호 6자리를 확인해 주세요.");
         return;
       }
-      const name = LI.orgServices.cleanName(document.getElementById("name").value);
+      if (!LI.orgServices.validSessionPin(pin)) {
+        say("4자리 암호를 확인해 주세요.");
+        return;
+      }
       if (!name) {
         say("이름을 입력해 주세요.");
-        return;
-      }
-      if (!LI.orgServices.validToken(sessionToken)) {
-        say("송출 컴퓨터가 아직 강연·회의 연결을 열지 않았습니다.");
         return;
       }
       if (!securePage() || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
@@ -149,15 +85,26 @@
       }
       openMic.disabled = true;
       try {
-        link = await LI.phoneOffer.open({
+        const token = await lookupToken(connectionId);
+        let current = null;
+        current = await LI.phoneOffer.open({
           databaseURL: LI.catalog.firebase.databaseURL,
           rootPath: LI.catalog.firebase.rootPath,
-          token: sessionToken,
+          token,
           name,
+          pin,
           role: "lecture",
           onStatus: say,
           onLevel(width) { levelEl.style.width = `${width}%`; },
+          onJson(message) {
+            if (!message || message.type !== "error" || !current) return;
+            current.stop();
+            current = null;
+            link = null;
+            openMic.disabled = false;
+          },
         });
+        link = current;
         say("마이크를 열었습니다. 송출 컴퓨터에 연결하는 중입니다.");
       } catch (err) {
         openMic.disabled = false;
@@ -169,13 +116,6 @@
         }
       }
     });
-
-    LI.db.init().then(() => {
-      firebase.auth().onAuthStateChanged(async (user) => {
-        if (!user || org) return;
-        try { await loadOrg(user); } catch (err) { gateMsg.textContent = err.message || String(err); }
-      });
-    }).catch((err) => { gateMsg.textContent = err.message || String(err); });
   </script>
 </body>
 </html>

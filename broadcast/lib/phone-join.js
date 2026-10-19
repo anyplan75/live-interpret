@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const QRCode = require("qrcode");
 const catalog = require("./catalog");
+const orgServices = require("../../docs/js/org-services");
 const { netFetch } = require("./net-fetch");
 const { cleanDisplayName, cleanPhoneId } = require("./phone-name");
 
@@ -70,6 +71,9 @@ class PhoneJoin {
     this.seenOffers = new Set();
     this.seenIce = new Set();
     this.token = "";
+    this.connectionId = "";
+    this.sessionPin = "";
+    this.holderPeerId = "";
     this.databaseURL = "";
     this.started = false;
     this.stopped = false;
@@ -117,6 +121,39 @@ class PhoneJoin {
     return this.info();
   }
 
+  async openSession() {
+    this.connectionId = orgServices.makeConnectionId();
+    this.sessionPin = orgServices.makeSessionPin();
+    this.holderPeerId = "";
+    const lectureUrl = orgServices.lectureAppUrl(catalog.pagesBase);
+    const qrDataUrl = await QRCode.toDataURL(lectureUrl, { margin: 1, width: 320, errorCorrectionLevel: "M" });
+    this.infoCache = {
+      ...this.infoCache,
+      url: lectureUrl,
+      qrDataUrl,
+      connectionId: this.connectionId,
+      pin: this.sessionPin,
+      note: "이번 세션의 접속 번호와 4자리 암호입니다. 암호는 저장하지 않습니다.",
+    };
+    return { connectionId: this.connectionId, token: this.token };
+  }
+
+  closeSession() {
+    const connectionId = this.connectionId;
+    const peerId = this.holderPeerId;
+    this.connectionId = "";
+    this.sessionPin = "";
+    this.holderPeerId = "";
+    this.infoCache = {
+      ...this.infoCache,
+      connectionId: "",
+      pin: "",
+      note: "방송을 시작하면 접속 번호와 이번 세션 4자리 암호가 나옵니다.",
+    };
+    if (peerId) this._toLink({ type: "close", peerId });
+    return connectionId;
+  }
+
   async refresh() {
     return { ...this.info(), changed: false };
   }
@@ -133,18 +170,32 @@ class PhoneJoin {
     const name = cleanDisplayName(message.name);
     const row = this._peer(peerId);
     if (!name) {
-      this._send(peerId, { type: "error", message: "이름을 입력해 주세요." });
+      this._refuse(peerId, "이름을 입력해 주세요.");
       return;
     }
+    if (!this.sessionPin || !this.connectionId) {
+      this._refuse(peerId, "강연·회의가 아직 시작되지 않았습니다.");
+      return;
+    }
+    if (!orgServices.validSessionPin(message.pin) || String(message.pin) !== this.sessionPin) {
+      this._refuse(peerId, "이번 세션 암호가 맞지 않습니다.");
+      return;
+    }
+    const seat = orgServices.claimConnection(this.holderPeerId, peerId);
+    if (!seat.ok) {
+      this._refuse(peerId, seat.reason);
+      return;
+    }
+    this.holderPeerId = seat.holderPeerId;
     const requested = cleanPhoneId(message.phoneId) || crypto.randomBytes(16).toString("hex");
-    this._retireOther(peerId, requested);
     row.phoneId = requested;
     let joined;
     try {
       joined = this.onHello({ id: requested, name }) || {};
     } catch (err) {
       row.phoneId = "";
-      this._send(peerId, { type: "error", message: err.message || "연결하지 못했습니다." });
+      if (this.holderPeerId === peerId) this.holderPeerId = "";
+      this._refuse(peerId, err.message || "연결하지 못했습니다.");
       return;
     }
     const phoneId = cleanPhoneId(joined.phoneId) || requested;
@@ -172,8 +223,14 @@ class PhoneJoin {
     this.peers.delete(peerId);
     if (!row || !row.phoneId) return;
     const phoneId = row.phoneId;
+    this.holderPeerId = orgServices.releaseConnection(this.holderPeerId, peerId);
     const still = [...this.peers.values()].some((item) => item.phoneId === phoneId);
     if (!still) this.onLeave(phoneId);
+  }
+
+  _refuse(peerId, message) {
+    this._send(peerId, { type: "error", message });
+    this._toLink({ type: "close", peerId });
   }
 
   setListening(phoneId, listening) {
@@ -214,14 +271,6 @@ class PhoneJoin {
       this.peers.set(peerId, row);
     }
     return row;
-  }
-
-  _retireOther(peerId, phoneId) {
-    for (const [other, row] of this.peers) {
-      if (other === peerId || row.phoneId !== phoneId) continue;
-      row.phoneId = "";
-      this._toLink({ type: "close", peerId: other });
-    }
   }
 
   _send(peerId, message) {

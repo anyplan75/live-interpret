@@ -242,12 +242,17 @@ test("firebase api key is not committed", () => {
   assert.match(phoneKey, /FIREBASE_API_KEY/);
   assert.equal((phoneKey.match(/AIza[0-9A-Za-z\-_]{20,}/g) || []).length, 1);
   assert.equal(/AIza/.test(fs.readFileSync(path.join(root, "docs/js/runtime-env.js"), "utf8")), false);
-  for (const page of ["docs/lecture/index.html", "docs/face/index.html", "docs/admin.html"]) {
+  for (const page of ["docs/face/index.html", "docs/admin.html"]) {
     const html = fs.readFileSync(path.join(root, page), "utf8");
     const envAt = html.indexOf("phone-firebase-env.js");
     const catalogAt = html.indexOf("catalog.js");
     assert.equal(envAt > 0 && catalogAt > envAt, true);
   }
+  const lecturePage = fs.readFileSync(path.join(root, "docs/lecture/index.html"), "utf8");
+  assert.equal(lecturePage.includes("phone-firebase-env.js"), false);
+  assert.equal(lecturePage.includes('type="password"'), false);
+  assert.match(lecturePage, /id="joinId"/);
+  assert.match(lecturePage, /id="joinPin"/);
   assert.deepEqual(hits, []);
 });
 
