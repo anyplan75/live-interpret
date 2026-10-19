@@ -28,6 +28,7 @@ test("mirror paths are the app records and skip secrets and live captions", () =
     "platform/openaiKey",
     "phoneLinks",
     "churches/*/live/subtitles",
+    "churches/*/live/micToken",
   ]);
   for (const rel of mirror.MIRROR_RELS) {
     assert.equal(underRoot(rel), `live-interpret/${rel}`);
@@ -61,6 +62,7 @@ test("replica keeps sermons and drops keys, passwords, and live subtitles", () =
             settings: { fontScale: 1 },
             usage: { audioSeconds: 3 },
             subtitles: { ko: "지금 자막" },
+            micToken: "a".repeat(32),
           },
         },
       },
@@ -76,6 +78,7 @@ test("replica keeps sermons and drops keys, passwords, and live subtitles", () =
   assert.equal(doc.records.churches.seogwipo.live.settings.fontScale, 1);
   assert.equal(doc.records.churches.seogwipo.billing.balance, 15000);
   assert.equal(doc.records.churches.seogwipo.live.subtitles, undefined);
+  assert.equal(doc.records.churches.seogwipo.live.micToken, undefined);
   assert.equal(doc.records.churches.seogwipo.account.password, undefined);
   assert.equal(doc.records.churches.seogwipo.account.email, "a@b.co");
   assert.equal(doc.records.churches.seogwipo.openaiKey, undefined);

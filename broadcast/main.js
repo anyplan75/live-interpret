@@ -11,6 +11,10 @@ const bulletinLib = require("./lib/bulletin");
 const consent = require("./lib/consent");
 const updater = require("./lib/updater");
 const { PhoneJoin } = require("./lib/phone-join");
+const orgServices = require("./lib/org-services");
+const churchFind = require("../docs/js/church-find");
+const identityApi = require("../docs/js/identity");
+const { netFetch } = require("./lib/net-fetch");
 
 app.setName("live-interpret");
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
@@ -70,6 +74,28 @@ async function cachePlatformKey() {
     if (remote) secrets.writeKey(userDir(), remote);
   } catch (_) { /* 규칙을 아직 안 바꿨으면 이 PC에 있는 키를 씁니다 */ }
   return resolveKey();
+}
+
+async function requireAdmin() {
+  const token = await ensureAuth();
+  if (!token) throw new Error("로그인이 필요합니다.");
+  const session = secrets.readSession(userDir());
+  const adminUid = await firebase.get(catalog.adminUidRel);
+  if (!session || !catalog.isCurrentAdmin(adminUid, session.localId)) {
+    throw new Error("관리자 계정이 아닙니다.");
+  }
+  return session;
+}
+
+async function publishLectureToken() {
+  if (!phoneJoin || !orgServices.validToken(phoneJoin.token)) return;
+  try {
+    const church = await requireChurch();
+    if (!church.active) return;
+    const lecture = await firebase.get(`churches/${church.id}/services/lecture`);
+    if (!lecture || lecture.registered !== true) return;
+    await firebase.set(`churches/${church.id}/live/micToken`, phoneJoin.token);
+  } catch (_) { /* 강연·회의가 등록되지 않은 계정은 토큰을 올리지 않습니다 */ }
 }
 
 function bulletinDir(churchId) {
@@ -249,9 +275,16 @@ function registerIpc() {
     const saved = secrets.readSession(userDir());
     if (!saved) return { signedIn: false, email: "", church: null, keyReady: Boolean(resolveKey()) };
     try {
+      await ensureAuth();
+      const adminUid = await firebase.get(catalog.adminUidRel);
+      if (catalog.isCurrentAdmin(adminUid, saved.localId)) {
+        return { signedIn: true, role: "admin", email: saved.email || "", church: null, keyReady: false };
+      }
       const church = await requireChurch();
+      publishLectureToken().catch(() => {});
       return {
         signedIn: true,
+        role: "church",
         email: saved.email,
         church: publicChurch(church),
         keyReady: Boolean(await cachePlatformKey()),
@@ -281,9 +314,15 @@ function registerIpc() {
       localId: session.localId,
     });
     try {
+      const adminUid = await firebase.get(catalog.adminUidRel);
+      if (catalog.isCurrentAdmin(adminUid, session.localId)) {
+        return { signedIn: true, role: "admin", email: session.email, church: null, keyReady: false };
+      }
       const church = await requireChurch();
+      publishLectureToken().catch(() => {});
       return {
         signedIn: true,
+        role: "church",
         email: session.email,
         church: publicChurch(church),
         keyReady: Boolean(await cachePlatformKey()),
@@ -303,6 +342,126 @@ function registerIpc() {
     firebase.setIdToken("");
     secrets.clearSession(userDir());
     return { signedIn: false };
+  });
+  ipcMain.handle("admin:meta", async () => {
+    await requireAdmin();
+    return {
+      rates: orgServices.adminRateText(),
+      lectureUrl: orgServices.lectureAppUrl(catalog.pagesBase),
+      faceUrl: orgServices.faceAppUrl(catalog.pagesBase),
+      regions: churchFind.REGIONS.slice(),
+    };
+  });
+  ipcMain.handle("admin:orgs", async () => {
+    await requireAdmin();
+    const index = await firebase.get("churchIndex");
+    if (!index || typeof index !== "object") return [];
+    return Object.entries(index)
+      .filter(([id, row]) => catalog.isChurchId(id) && row && typeof row === "object")
+      .map(([id, row]) => ({
+        id,
+        name: typeof row.name === "string" && row.name.trim() ? row.name.trim() : id,
+        active: catalog.churchIsActive(row),
+        kind: row.orgKind === "company" ? "company" : "church",
+        lecture: row.lecture === true,
+        face: row.face === true,
+        region: typeof row.region === "string" ? row.region : "",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  });
+  ipcMain.handle("admin:register", async (_event, body) => {
+    const session = await requireAdmin();
+    const source = body || {};
+    const name = typeof source.name === "string" ? source.name.trim() : "";
+    const email = typeof source.email === "string" ? source.email.trim() : "";
+    const password = source.password;
+    const confirm = source.confirm;
+    const kind = source.kind === "company" ? "company" : "church";
+    if (!name) throw new Error("이름을 입력해 주세요.");
+    if (!catalog.validAdminEmail(email) || !catalog.validAdminPassword(password)) {
+      throw new Error("이메일과 비밀번호를 확인해 주세요. 비밀번호는 6자 이상입니다.");
+    }
+    if (password !== confirm) throw new Error("비밀번호가 서로 다릅니다.");
+    const regionInput = typeof source.region === "string" ? source.region : "";
+    const region = regionInput ? churchFind.normalizeRegion(regionInput) : "";
+    if (regionInput && !region) throw new Error("지역이 올바르지 않습니다.");
+    const id = catalog.makeChurchId(name);
+    const client = identityApi.createClient({ apiKey: catalog.firebase.apiKey, fetchImpl: netFetch });
+    let created = null;
+    let writes = null;
+    try {
+      created = await client.signUp(email, password);
+      writes = orgServices.newOrgWrites({
+        id,
+        name,
+        kind,
+        email: created.email,
+        uid: created.localId,
+        region,
+        lecture: source.lecture === true,
+        face: source.face === true,
+        now: Date.now(),
+        glossary: catalog.defaultGlossary(name),
+        model: catalog.defaultModel,
+        settings: catalog.defaultLiveSettings(),
+      });
+      for (const [rel, value] of Object.entries(writes)) {
+        await firebase.set(rel, value);
+      }
+      return { id, name, kind };
+    } catch (err) {
+      if (created && created.idToken) {
+        try { await client.deleteAccount(created.idToken); } catch (_) { /* 이미 지운 계정은 무시합니다 */ }
+        if (writes) {
+          for (const rel of Object.keys(writes)) {
+            try { await firebase.set(rel, null); } catch (_) { /* 아직 없는 값은 무시합니다 */ }
+          }
+        }
+      }
+      throw new Error(catalog.authErrorMessage(err));
+    }
+  });
+  ipcMain.handle("admin:services", async (_event, body) => {
+    await requireAdmin();
+    const source = body || {};
+    if (!catalog.isChurchId(source.id)) throw new Error("계정을 고르지 않았습니다.");
+    const kind = source.kind === "company" ? "company" : "church";
+    const [lecture, face] = await Promise.all([
+      firebase.get(`churches/${source.id}/services/lecture`),
+      firebase.get(`churches/${source.id}/services/face`),
+    ]);
+    const next = orgServices.serviceWrites({
+      id: source.id,
+      kind,
+      lecture: source.lecture === true,
+      face: source.face === true,
+      now: Date.now(),
+      previous: { lecture, face },
+    });
+    for (const [rel, value] of Object.entries(next.writes)) {
+      await firebase.set(rel, value);
+    }
+    await firebase.update(`churchIndex/${source.id}`, next.index);
+    return { id: source.id, kind: next.kind, lecture: next.lecture.registered, face: next.face.registered };
+  });
+  ipcMain.handle("admin:credit", async (_event, body) => {
+    const session = await requireAdmin();
+    const source = body || {};
+    if (!catalog.isChurchId(source.churchId)) throw new Error("계정을 고르지 않았습니다.");
+    const amount = Math.round(Number(source.amount) || 0);
+    if (amount <= 0) throw new Error("금액을 입력해 주세요.");
+    const billing = (await firebase.get(`churches/${source.churchId}/billing`)) || {};
+    const credit = orgServices.creditPatch({
+      balance: billing.balance,
+      amount,
+      churchId: source.churchId,
+      who: session.localId,
+      note: typeof source.note === "string" && source.note.trim() ? source.note.trim() : "선불 잔액",
+      now: Date.now(),
+    });
+    if (!credit.ok) throw new Error("금액을 넣지 못했습니다.");
+    await firebase.update(`churches/${source.churchId}/billing`, credit.patch);
+    return { balance: credit.balance };
   });
   ipcMain.handle("church:current", async () => {
     const church = await requireChurch();
@@ -544,6 +703,7 @@ if (!gotLock) {
     createWindow();
     createPhoneWindow();
     phoneJoin.start().then((info) => {
+      publishLectureToken().catch(() => {});
       send({ type: "phone-join", info });
       if (info.url) send({ type: "log", level: "info", text: `휴대폰 마이크 참여 주소: ${info.url}` });
       phoneTimer = setInterval(() => {

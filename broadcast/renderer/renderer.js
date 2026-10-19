@@ -688,6 +688,13 @@ function showChurch(church) {
     ? "이 교회만 방송합니다. 모델, 용어집, 활성화, 키는 관리 페이지에 있습니다."
     : "이 교회는 비활성 상태입니다. 관리 페이지에서 활성화하기 전에는 방송을 시작할 수 없습니다.";
   document.getElementById("start").disabled = !church.active || state.running;
+  const lectureHint = document.getElementById("lectureAppHint");
+  const base = state.catalog && state.catalog.pagesBase ? String(state.catalog.pagesBase).replace(/\/$/, "") : "";
+  if (lectureHint) {
+    lectureHint.textContent = base
+      ? `강연·회의로 등록된 계정은 휴대폰 앱 ${base}/lecture/ 에서 이름을 입력해 이 송출 컴퓨터에 연결합니다.`
+      : "";
+  }
 }
 
 function defaultInputDevice() {
@@ -720,12 +727,100 @@ async function chooseDevice() {
 
 function setSignedIn(auth) {
   state.signedIn = !!(auth && auth.signedIn);
+  state.role = auth && auth.role === "admin" ? "admin" : (state.signedIn ? "church" : "");
+  const admin = state.signedIn && state.role === "admin";
   document.getElementById("signInCard").hidden = state.signedIn;
-  document.getElementById("studio").hidden = !state.signedIn;
+  document.getElementById("studio").hidden = !state.signedIn || admin;
+  document.getElementById("adminDesk").hidden = !admin;
   if (!state.signedIn) {
     state.church = null;
     document.getElementById("churchLine").textContent = "교회 계정으로 로그인하면 그 교회만 열립니다.";
+  } else if (admin) {
+    document.getElementById("churchLine").textContent = "관리자 계정입니다. 교회와 기업을 등록합니다.";
   }
+}
+
+function fillAdminRegions(regions) {
+  const select = document.getElementById("regRegion");
+  select.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "지역 없음";
+  select.append(empty);
+  (regions || []).forEach((label) => {
+    const option = document.createElement("option");
+    option.value = label;
+    option.textContent = label;
+    select.append(option);
+  });
+}
+
+function renderOrgs(orgs) {
+  const list = document.getElementById("orgList");
+  const credit = document.getElementById("creditOrg");
+  list.innerHTML = "";
+  credit.innerHTML = "";
+  if (!orgs.length) {
+    list.textContent = "아직 등록된 계정이 없습니다.";
+    return;
+  }
+  orgs.forEach((org) => {
+    const option = document.createElement("option");
+    option.value = org.id;
+    option.textContent = `${org.name} (${org.kind === "company" ? "기업" : "교회"})`;
+    credit.append(option);
+    const row = document.createElement("div");
+    row.className = "hint";
+    const title = document.createElement("strong");
+    title.textContent = `${org.name} · ${org.kind === "company" ? "기업" : "교회"}${org.active ? "" : " · 중지"}`;
+    const kind = document.createElement("select");
+    [["church", "교회"], ["company", "기업"]].forEach(([value, label]) => {
+      const item = document.createElement("option");
+      item.value = value;
+      item.textContent = label;
+      kind.append(item);
+    });
+    kind.value = org.kind === "company" ? "company" : "church";
+    const lecture = document.createElement("input");
+    lecture.type = "checkbox";
+    lecture.checked = !!org.lecture;
+    const face = document.createElement("input");
+    face.type = "checkbox";
+    face.checked = !!org.face;
+    const lectureLabel = document.createElement("label");
+    lectureLabel.append(lecture, document.createTextNode(" 강연·회의"));
+    const faceLabel = document.createElement("label");
+    faceLabel.append(face, document.createTextNode(" 대면 통역"));
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "ghost";
+    save.textContent = "등록 저장";
+    save.addEventListener("click", async () => {
+      try {
+        await window.broadcast.adminServices({
+          id: org.id,
+          kind: kind.value,
+          lecture: lecture.checked,
+          face: face.checked,
+        });
+        document.getElementById("regMsg").textContent = `${org.name} 등록을 저장했습니다.`;
+        await loadAdmin();
+      } catch (err) {
+        document.getElementById("regMsg").textContent = err.message || String(err);
+      }
+    });
+    row.append(title, kind, lectureLabel, faceLabel, save);
+    list.append(row);
+  });
+}
+
+async function loadAdmin() {
+  const meta = await window.broadcast.adminMeta();
+  document.getElementById("adminRates").textContent = meta.rates;
+  document.getElementById("lectureLink").value = meta.lectureUrl;
+  document.getElementById("faceLink").value = meta.faceUrl;
+  fillAdminRegions(meta.regions);
+  renderOrgs(await window.broadcast.adminOrgs());
 }
 
 async function refreshKeyHint() {
@@ -779,7 +874,9 @@ async function boot() {
   const auth = await window.broadcast.authStatus();
   setSignedIn(auth);
   await refreshKeyHint();
-  if (state.signedIn) {
+  if (state.signedIn && state.role === "admin") {
+    await loadAdmin();
+  } else if (state.signedIn) {
     if (auth.church) showChurch(auth.church);
     await loadChurch();
   }
@@ -857,6 +954,11 @@ document.getElementById("churchSignIn").addEventListener("click", async () => {
     const auth = await window.broadcast.signIn(email, password);
     document.getElementById("churchPassword").value = "";
     setSignedIn(auth);
+    if (auth.role === "admin") {
+      await loadAdmin();
+      log("관리자로 로그인했습니다.");
+      return;
+    }
     if (auth.church) showChurch(auth.church);
     await refreshKeyHint();
     await loadChurch();
@@ -866,13 +968,61 @@ document.getElementById("churchSignIn").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("signOut").addEventListener("click", async () => {
+async function signOutDesk() {
   try {
     await window.broadcast.signOut();
     setSignedIn({ signedIn: false });
     cardsEl.innerHTML = "";
   } catch (err) {
     log(err.message || String(err), "error");
+  }
+}
+
+document.getElementById("signOut").addEventListener("click", signOutDesk);
+document.getElementById("adminSignOut").addEventListener("click", signOutDesk);
+
+document.getElementById("regSave").addEventListener("click", async () => {
+  const msg = document.getElementById("regMsg");
+  msg.textContent = "";
+  try {
+    const saved = await window.broadcast.adminRegister({
+      name: document.getElementById("regName").value,
+      email: document.getElementById("regEmail").value,
+      password: document.getElementById("regPassword").value,
+      confirm: document.getElementById("regPassword2").value,
+      kind: document.getElementById("regKind").value,
+      region: document.getElementById("regRegion").value,
+      lecture: document.getElementById("regLecture").checked,
+      face: document.getElementById("regFace").checked,
+    });
+    document.getElementById("regName").value = "";
+    document.getElementById("regEmail").value = "";
+    document.getElementById("regPassword").value = "";
+    document.getElementById("regPassword2").value = "";
+    document.getElementById("regLecture").checked = false;
+    document.getElementById("regFace").checked = false;
+    msg.textContent = `${saved.name} 계정을 등록했습니다.`;
+    await loadAdmin();
+  } catch (err) {
+    msg.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("creditSave").addEventListener("click", async () => {
+  const msg = document.getElementById("creditMsg");
+  msg.textContent = "";
+  try {
+    const result = await window.broadcast.adminCredit({
+      churchId: document.getElementById("creditOrg").value,
+      amount: document.getElementById("creditAmount").value,
+      note: document.getElementById("creditNote").value,
+    });
+    document.getElementById("creditAmount").value = "";
+    document.getElementById("creditNote").value = "";
+    msg.textContent = `선불 잔액은 ${Number(result.balance).toLocaleString("ko-KR")}원입니다.`;
+    await loadAdmin();
+  } catch (err) {
+    msg.textContent = err.message || String(err);
   }
 });
 

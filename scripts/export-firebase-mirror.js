@@ -23,6 +23,7 @@ const OMITTED = Object.freeze([
   "platform/openaiKey",
   "phoneLinks",
   "churches/*/live/subtitles",
+  "churches/*/live/micToken",
 ]);
 
 const SECRET_KEYS = new Set([
@@ -114,7 +115,10 @@ function sanitizeRecords(records) {
   }
   if (copy.churches && typeof copy.churches === "object") {
     for (const church of Object.values(copy.churches)) {
-      if (church && church.live && typeof church.live === "object") delete church.live.subtitles;
+      if (church && church.live && typeof church.live === "object") {
+        delete church.live.subtitles;
+        delete church.live.micToken;
+      }
     }
   }
   return copy;

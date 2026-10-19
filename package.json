@@ -47,6 +47,10 @@
       "broadcast/**/*",
       "docs/js/catalog.js",
       "docs/js/languages.js",
+      "docs/js/church-find.js",
+      "docs/js/identity.js",
+      "docs/js/cost.js",
+      "docs/js/org-services.js",
       "package.json"
     ],
     "directories": {

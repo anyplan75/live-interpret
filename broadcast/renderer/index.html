@@ -34,6 +34,7 @@
         <div class="card">
           <h2 id="churchName">교회</h2>
           <p class="hint" id="churchHint"></p>
+          <p class="hint" id="lectureAppHint"></p>
           <button type="button" class="ghost" id="signOut">로그아웃</button>
         </div>
 
@@ -170,6 +171,58 @@
           <div id="fontRows"></div>
           <button type="button" id="saveStyle" style="margin-top:10px;">자막 모양 저장</button>
           <p class="hint" id="styleMsg"></p>
+        </div>
+      </div>
+
+      <div id="adminDesk" hidden>
+        <div class="card">
+          <h2>교회·기업 등록</h2>
+          <p class="hint">관리자만 교회와 기업을 등록합니다. 강연·회의와 대면 통역은 따로 등록하고, 시간당 요금은 아래에서 먼저 확인합니다.</p>
+          <pre id="adminRates" class="hint"></pre>
+          <label for="lectureLink">강연·회의 앱</label>
+          <input id="lectureLink" type="text" readonly>
+          <label for="faceLink">대면 통역 앱</label>
+          <input id="faceLink" type="text" readonly>
+          <label for="regKind">구분</label>
+          <select id="regKind">
+            <option value="church">교회</option>
+            <option value="company">기업</option>
+          </select>
+          <label for="regName">이름</label>
+          <input id="regName" type="text" maxlength="80">
+          <label for="regEmail">로그인 이메일</label>
+          <input id="regEmail" type="email" autocomplete="off">
+          <label for="regPassword">로그인 비밀번호</label>
+          <input id="regPassword" type="password" autocomplete="new-password">
+          <label for="regPassword2">비밀번호 확인</label>
+          <input id="regPassword2" type="password" autocomplete="new-password">
+          <label for="regRegion">지역</label>
+          <select id="regRegion"></select>
+          <label class="hint"><input id="regLecture" type="checkbox"> 강연·회의 등록</label>
+          <label class="hint"><input id="regFace" type="checkbox"> 대면 통역 등록</label>
+          <div class="row" style="margin-top:10px;">
+            <button type="button" id="regSave">등록</button>
+            <button type="button" class="ghost" id="adminSignOut">로그아웃</button>
+          </div>
+          <p class="hint" id="regMsg"></p>
+        </div>
+        <div class="card">
+          <h2>등록 목록</h2>
+          <div id="orgList"></div>
+        </div>
+        <div class="card">
+          <h2>선불 잔액</h2>
+          <p class="hint">고객이 시간을 쓰기 전에 잔액을 넣습니다. 강연·회의와 대면 통역은 이 잔액에서 같은 시간 요금으로 빠져 나갑니다.</p>
+          <label for="creditOrg">계정</label>
+          <select id="creditOrg"></select>
+          <label for="creditAmount">금액 (원)</label>
+          <input id="creditAmount" type="number" min="1" step="1">
+          <label for="creditNote">메모</label>
+          <input id="creditNote" type="text" maxlength="200">
+          <div class="row" style="margin-top:10px;">
+            <button type="button" id="creditSave">잔액 넣기</button>
+          </div>
+          <p class="hint" id="creditMsg"></p>
         </div>
       </div>
     </section>
