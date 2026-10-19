@@ -263,6 +263,17 @@ input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d12
   letter-spacing: 0.28em;
 }
 
+.phone-desk {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.phone-desk h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
 @media (max-width: 980px) {
   main { grid-template-columns: 1fr; }
 }

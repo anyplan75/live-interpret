@@ -79,30 +79,37 @@ test("one connection id stays on the first device until it leaves", () => {
     onHello: (phone) => ({ index: 1, name: phone.name, phoneId: phone.id }),
   });
   join.token = "a".repeat(32);
-  join.connectionId = "AB234K";
-  join.sessionPin = "4821";
+  join.sessionOpen = true;
+  join.desks = [{
+    connectionId: "AB234K",
+    pin: "4821",
+    holderPeerId: "",
+    phoneId: "",
+    name: "",
+    spoken: "",
+    channelIndex: -1,
+  }];
   join.attachLink({
     send(_peerId, text) { sent.push(JSON.parse(text)); },
     close(peerId) { closed.push(peerId); },
   });
-  join.ingestText("peerone01", JSON.stringify({
-    type: "hello", name: "김", phoneId: "phoneidphoneid01", pin: "4821",
-  }));
-  join.ingestText("peertwo02", JSON.stringify({
-    type: "hello", name: "이", phoneId: "phoneidphoneid02", pin: "4821",
-  }));
+  const hello = (peerId, name, phoneId, pin, spoken) => {
+    join.ingestText(peerId, JSON.stringify({
+      type: "hello", name, phoneId, pin, spoken, connectionId: "AB234K",
+    }));
+  };
+  hello("peerone01", "김", "phoneidphoneid01", "4821", "ko");
+  hello("peertwo02", "이", "phoneidphoneid02", "4821", "en");
   assert.equal(sent.some((row) => row.type === "joined" && row.name === "김"), true);
   const refused = sent.find((row) => row.type === "error");
   assert.match(refused.message, /이미 다른 기기/);
   assert.deepEqual(closed, ["peertwo02"]);
+  hello("peerlang0", "오", "phoneidphoneid05", "4821", "");
+  assert.match(sent[sent.length - 1].message, /말하는 언어/);
   join.peerLeft("peerone01");
-  join.ingestText("peerthree", JSON.stringify({
-    type: "hello", name: "박", phoneId: "phoneidphoneid03", pin: "4821",
-  }));
+  hello("peerthree", "박", "phoneidphoneid03", "4821", "ja");
   assert.equal(sent.filter((row) => row.type === "joined").length, 2);
-  join.ingestText("peerfour4", JSON.stringify({
-    type: "hello", name: "최", phoneId: "phoneidphoneid04", pin: "0000",
-  }));
+  hello("peerfour4", "최", "phoneidphoneid04", "0000", "ko");
   assert.match(sent[sent.length - 1].message, /암호가 맞지/);
   assert.equal(org.normalizeConnectionId("ab-234k"), "AB234K");
   assert.equal(org.normalizeConnectionId("AB2340"), "");
@@ -116,13 +123,19 @@ test("one connection id stays on the first device until it leaves", () => {
   const desk = rules["live-interpret"].lectureJoins.$joinId;
   assert.match(lecture, /id="joinId"/);
   assert.match(lecture, /id="joinPin"/);
-  assert.match(card, /id="joinId"/);
-  assert.match(card, /id="joinPin"/);
+  assert.match(lecture, /id="spoken"/);
+  assert.match(lecture, /언어를 선택하세요/);
+  assert.equal(lecture.indexOf("languages.js") < lecture.indexOf("catalog.js"), true);
+  assert.match(card, /id="phoneDesks"/);
+  assert.match(card, /id="addPhoneChannel"/);
   assert.match(card, /이번 세션 4자리 암호/);
+  assert.doesNotMatch(card, /id="joinId"|id="joinPin"/);
+  assert.match(read("broadcast/renderer/renderer.js"), /onChannelSpoken\(/);
+  assert.match(read("broadcast/preload.js"), /addPhoneChannel/);
   assert.match(desk[".read"], /ABCDEFGHJKLMNPQRSTUVWXYZ23456789/);
   assert.match(desk[".write"], /!newData\.child\('pin'\)\.exists\(\)/);
   assert.match(desk[".write"], /!newData\.child\('password'\)\.exists\(\)/);
-  assert.doesNotMatch(read("broadcast/main.js"), /4자리 암호: \$\{|sessionPin/);
+  assert.doesNotMatch(read("broadcast/main.js"), /4자리 암호: \$\{|sessionPin|\.pin\b/);
 });
 
 test("pcm from a phone mic is 24 kHz int16", () => {
@@ -169,12 +182,16 @@ test("a phone is an extra input and the first input stays included", async () =>
   const engine = new Engine(() => {});
   engine.device = { inputChannels: 1 };
   engine.channelRows = [{ spoken: "ko", on: true, source: "device" }];
-  const added = engine.addPhone({ id: "phone0001", name: "민수" });
+  const added = engine.addPhone({ id: "phone0001", name: "민수", spoken: "en", connectionId: "AB234K" });
   assert.equal(added.index, 1);
+  assert.equal(added.spoken, "en");
   assert.equal(engine.channelRows[0].source, "device");
   assert.equal(engine.channelRows[1].name, "민수");
-  const second = engine.addPhone({ id: "phone0002", name: "영희" });
+  assert.equal(engine.channelRows[1].spoken, "en");
+  assert.throws(() => engine.addPhone({ id: "phone0003", name: "철수" }), /말하는 언어/);
+  const second = engine.addPhone({ id: "phone0002", name: "영희", spoken: "ja" });
   assert.equal(second.index, 2);
+  assert.equal(second.spoken, "ja");
 
   engine.running = true;
   engine.church = { id: "grace-ab", accountUid: "user" };
@@ -216,6 +233,24 @@ test("a phone is an extra input and the first input stays included", async () =>
   });
   assert.equal(deviceFed.length, 1);
   assert.equal(phoneFed.length, 1);
+
+  const seen = [];
+  engine.channelSessions.set(1, {
+    spoken: "en",
+    source: "phone",
+    pipeline: { setSourceLang(code) { seen.push(code); } },
+    speech: { async setLanguage(code) { seen.push(`speech:${code}`); } },
+  });
+  engine.outputs = ["en"];
+  await engine.applyChannelSpoken("", 1, "ja");
+  assert.equal(engine.channelRows[1].spoken, "ja");
+  assert.deepEqual(seen, ["ja", "speech:ja"]);
+  engine.addPhone({ id: "phone0001", name: "민수", spoken: "en", connectionId: "AB234K" });
+  assert.equal(engine.channelRows[1].spoken, "ja");
+  engine.addPhone({ id: "phone0009", name: "철수", spoken: "zh-CN", connectionId: "AB234K" });
+  assert.equal(engine.channelRows[1].name, "철수");
+  assert.equal(engine.channelRows[1].spoken, "zh-CN");
+  assert.equal(engine.channelRows.filter((row) => row.source === "phone").length, 2);
 });
 
 test("named phones join through data-channel messages without a certificate", async () => {
@@ -240,27 +275,55 @@ test("named phones join through data-channel messages without a certificate", as
     assert.equal(info.certUrl, undefined);
     assert.equal(info.url.includes("http://"), false);
     assert.match(info.qrDataUrl, /^data:image\/png;base64,/);
-    server.ingestText("peer0001aa", JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001", pin: "1234" }));
+    server.ingestText("peer0001aa", JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001", pin: "1234", spoken: "ko" }));
     assert.match(sent.at(-1).message, /아직 시작되지/);
-    const desk = await server.openSession();
-    assert.equal(desk.connectionId.length, 6);
-    assert.equal(server.info().url.includes(server.sessionPin), false);
-    assert.equal(server.info().url, "https://anyplan75.github.io/live-interpret/lecture/");
-    const pin = server.sessionPin;
+    const first = await server.openSession();
+    const second = server.addDesk();
+    assert.equal(first.connectionId.length, 6);
+    assert.equal(second.connectionId.length, 6);
+    assert.notEqual(first.connectionId, second.connectionId);
+    assert.equal(first.pin, undefined);
+    const desks = server.info();
+    assert.equal(desks.channels.length, 2);
+    assert.equal(desks.url.includes(desks.channels[0].pin), false);
+    assert.equal(desks.url.includes(desks.channels[1].pin), false);
+    assert.equal(desks.url, "https://anyplan75.github.io/live-interpret/lecture/");
+    const pinA = desks.channels[0].pin;
+    const pinB = desks.channels[1].pin;
     server.ingestPcm("peer0001aa", Buffer.from([0, 1]));
     assert.equal(pcmCount, 0);
-    server.ingestText("peer0001aa", JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001", pin }));
-    server.ingestText("peer0002bb", JSON.stringify({ type: "hello", name: "영희", phoneId: "phone0002", pin }));
+    server.ingestText("peer0001aa", JSON.stringify({
+      type: "hello", name: "민수", phoneId: "phone0001", pin: pinA, connectionId: first.connectionId,
+    }));
+    assert.match(sent.at(-1).message, /말하는 언어/);
+    server.ingestText("peer0001aa", JSON.stringify({
+      type: "hello", name: "민수", phoneId: "phone0001", pin: pinA, spoken: "ko", connectionId: first.connectionId,
+    }));
+    server.ingestText("peer0002bb", JSON.stringify({
+      type: "hello", name: "영희", phoneId: "phone0002", pin: pinB, spoken: "en", connectionId: second.connectionId,
+    }));
+    server.ingestText("peer0003cc", JSON.stringify({
+      type: "hello", name: "철수", phoneId: "phone0003", pin: pinA, spoken: "ja", connectionId: first.connectionId,
+    }));
     server.ingestPcm("peer0001aa", Buffer.from([0, 1, 0, 2]));
     server.setListening("phone0001", true);
     assert.equal(sent.some((item) => item.type === "joined" && item.name === "민수"), true);
-    assert.equal(sent.some((item) => item.type === "joined" && item.name === "영희"), false);
+    assert.equal(sent.some((item) => item.type === "joined" && item.name === "영희"), true);
     assert.match(sent.find((item) => item.type === "error" && /다른 기기/.test(item.message)).message, /다른 기기/);
     assert.equal(sent.some((item) => item.type === "state" && item.listening === true), true);
-    assert.deepEqual(joined.map((item) => item.name), ["민수"]);
+    assert.deepEqual(joined.map((item) => item.name), ["민수", "영희"]);
+    assert.equal(joined[0].spoken, "ko");
+    assert.equal(joined[1].spoken, "en");
     assert.equal(pcmCount, 1);
     server.peerLeft("peer0001aa");
     assert.deepEqual(joined.at(-1), { left: "phone0001" });
+    server.ingestText("peer0003cc", JSON.stringify({
+      type: "hello", name: "철수", phoneId: "phone0003", pin: pinA, spoken: "ja", connectionId: first.connectionId,
+    }));
+    assert.equal(sent.filter((item) => item.type === "joined" && item.name === "철수").length, 1);
+    const ids = server.closeSession();
+    assert.deepEqual(ids.slice().sort(), [first.connectionId, second.connectionId].sort());
+    assert.equal(server.info().channels.length, 0);
   } finally {
     await server.stop();
   }

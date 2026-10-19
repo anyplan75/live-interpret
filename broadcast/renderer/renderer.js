@@ -260,8 +260,8 @@ function renderChannels(count) {
     const button = document.createElement("button");
     button.type = "button";
     if (row.source === "phone") {
-      const mark = row.connected === false ? " 끊김" : (row.on ? " 켜짐" : " 꺼짐");
-      button.textContent = `${row.name}${mark}`;
+      const mark = row.connected === false ? "끊김" : (row.on ? "켜짐" : "꺼짐");
+      button.textContent = `${row.name} · ${spokenName(row.spoken)} · ${mark}`;
     } else {
       button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
     }
@@ -284,14 +284,88 @@ function renderChannels(count) {
   renderHeardTitle();
 }
 
+function deskChannelIndex(desk) {
+  const rows = state.channels || [];
+  if (desk && desk.connectionId) {
+    const found = rows.findIndex((row) => row && row.source === "phone" && row.connectionId === desk.connectionId);
+    if (found >= 0) return found;
+  }
+  if (desk && Number.isInteger(desk.channelIndex) && desk.channelIndex >= 0) {
+    const row = rows[desk.channelIndex];
+    if (row && row.source === "phone") return desk.channelIndex;
+  }
+  return -1;
+}
+
+function renderPhoneDesks() {
+  const root = document.getElementById("phoneDesks");
+  if (!root) return;
+  const info = state.phoneJoin || {};
+  const desks = Array.isArray(info.channels) ? info.channels : [];
+  root.innerHTML = "";
+  if (!desks.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "방송을 시작하면 휴대폰 채널의 접속 번호와 이번 세션 4자리 암호가 나옵니다.";
+    root.append(empty);
+    return;
+  }
+  desks.forEach((desk, index) => {
+    const wrap = document.createElement("div");
+    wrap.className = "phone-desk";
+    const title = document.createElement("h3");
+    title.textContent = `휴대폰 ${index + 1}`;
+    const idLabel = document.createElement("label");
+    idLabel.textContent = "접속 번호";
+    const idInput = document.createElement("input");
+    idInput.className = "join-code";
+    idInput.type = "text";
+    idInput.readOnly = true;
+    idInput.autocomplete = "off";
+    idInput.value = desk.connectionId || "";
+    idInput.setAttribute("aria-label", `휴대폰 ${index + 1} 접속 번호`);
+    const pinLabel = document.createElement("label");
+    pinLabel.textContent = "이번 세션 4자리 암호";
+    const pinInput = document.createElement("input");
+    pinInput.className = "join-code";
+    pinInput.type = "text";
+    pinInput.readOnly = true;
+    pinInput.autocomplete = "off";
+    pinInput.value = desk.pin || "";
+    pinInput.setAttribute("aria-label", `휴대폰 ${index + 1} 4자리 암호`);
+    const channelIndex = deskChannelIndex(desk);
+    const live = channelIndex >= 0 ? state.channels[channelIndex] : null;
+    const spokenCode = live && live.spoken ? live.spoken : (desk.spoken || "");
+    const status = document.createElement("p");
+    status.className = "hint";
+    if (desk.connected && desk.name) {
+      status.textContent = spokenCode ? `${desk.name} · ${spokenName(spokenCode)}` : desk.name;
+    } else if (desk.name) {
+      status.textContent = spokenCode ? `${desk.name} · ${spokenName(spokenCode)} · 끊김` : `${desk.name} · 끊김`;
+    } else {
+      status.textContent = "대기";
+    }
+    const spokenLabel = document.createElement("label");
+    spokenLabel.textContent = "통역에 쓸 언어";
+    const select = document.createElement("select");
+    select.className = "channel-spoken";
+    select.setAttribute("aria-label", `휴대폰 ${index + 1} 말하는 언어`);
+    fillSpokenSelect(select, spokenCode || "ko");
+    select.disabled = channelIndex < 0;
+    if (channelIndex >= 0) {
+      select.value = knownSpoken(state.channels[channelIndex].spoken);
+      select.addEventListener("change", () => onChannelSpoken(channelIndex, select.value));
+    }
+    wrap.append(title, idLabel, idInput, pinLabel, pinInput, status, spokenLabel, select);
+    root.append(wrap);
+  });
+}
+
 function showPhoneJoin(info) {
   state.phoneJoin = info || {};
   const url = document.getElementById("phoneJoinUrl");
   const img = document.getElementById("phoneQr");
-  const joinId = document.getElementById("joinId");
-  const joinPin = document.getElementById("joinPin");
-  if (joinId) joinId.value = info && info.connectionId ? info.connectionId : "";
-  if (joinPin) joinPin.value = info && info.pin ? info.pin : "";
+  renderPhoneDesks();
   if (!url || !img) return;
   if (info && info.url) {
     url.value = info.url;
@@ -313,6 +387,7 @@ function mapChannel(row) {
     source: row && row.source === "phone" ? "phone" : "device",
     name: row && row.source === "phone" ? (row.name || "") : "",
     phoneId: row && row.source === "phone" ? (row.phoneId || "") : "",
+    connectionId: row && row.source === "phone" ? (row.connectionId || "") : "",
     connected: !(row && row.source === "phone") || row.connected !== false,
   };
 }
@@ -323,6 +398,7 @@ function applyPhoneRoster(channels) {
     state.channels = mapped;
     const deviceCount = mapped.filter((row) => row.source !== "phone").length;
     renderChannels(deviceCount);
+    renderPhoneDesks();
     return;
   }
   const deviceCount = state.audio && state.audio.deviceChannels
@@ -337,6 +413,7 @@ function applyPhoneRoster(channels) {
   });
   state.channels = state.channels.filter((row) => row.source !== "phone").concat(phones);
   renderChannels(deviceCount);
+  renderPhoneDesks();
 }
 
 async function toggleChannel(index) {
@@ -368,12 +445,16 @@ async function onChannelSpoken(index, code) {
   try {
     await persist({ channels: state.channels, spoken: state.spoken });
     if (state.running) await window.broadcast.setChannelSpoken(index, state.channels[index].spoken);
+    renderChannels(deviceChannelCount());
+    renderPhoneDesks();
   } catch (err) {
     state.channels[index].spoken = previous;
     if (index === 0) state.spoken = previous;
     renderHeardTitle();
     await persist({ channels: state.channels, spoken: state.spoken });
     log(err.message || String(err), "error");
+    renderChannels(deviceChannelCount());
+    renderPhoneDesks();
   }
 }
 
@@ -974,6 +1055,17 @@ function channelPrefix(index, text, name) {
   return `채널 ${index + 1} ${value}`;
 }
 
+document.getElementById("addPhoneChannel").addEventListener("click", async () => {
+  const button = document.getElementById("addPhoneChannel");
+  button.disabled = true;
+  try {
+    await window.broadcast.addPhoneChannel();
+  } catch (err) {
+    log(err.message || String(err), "error");
+  } finally {
+    button.disabled = false;
+  }
+});
 document.getElementById("copyPhoneJoin").addEventListener("click", async () => {
   const url = state.phoneJoin && state.phoneJoin.url;
   if (!url) return;

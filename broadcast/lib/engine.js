@@ -37,6 +37,11 @@ function deviceRow(row, index, fallbackSpoken) {
   return { spoken, on, source: "device", name: "", phoneId: "", connected: true };
 }
 
+function cleanConnectionId(value) {
+  const text = String(value || "").trim().toUpperCase();
+  return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(text) ? text : "";
+}
+
 function phoneRow(row) {
   const name = cleanDisplayName(row && row.name);
   const phoneId = cleanPhoneId(row && row.phoneId);
@@ -47,6 +52,7 @@ function phoneRow(row) {
     source: "phone",
     name,
     phoneId,
+    connectionId: cleanConnectionId(row.connectionId),
     connected: row.connected !== false,
   };
 }
@@ -823,6 +829,7 @@ class Engine {
       source: row.source === "phone" ? "phone" : "device",
       name: row.source === "phone" ? (row.name || "") : "",
       phoneId: row.source === "phone" ? (row.phoneId || "") : "",
+      connectionId: row.source === "phone" ? (row.connectionId || "") : "",
       connected: row.source === "phone" ? row.connected !== false : true,
     }));
   }
@@ -846,26 +853,40 @@ class Engine {
   addPhone(phone) {
     const name = cleanDisplayName(phone && phone.name);
     const phoneId = cleanPhoneId(phone && phone.id);
+    const spoken = String(phone && phone.spoken || "").trim();
+    const connectionId = cleanConnectionId(phone && phone.connectionId);
     if (!name || !phoneId) throw new Error("이름을 입력해 주세요.");
+    if (!langByCode[spoken]) throw new Error("말하는 언어를 선택해 주세요.");
     if (!this.channelRows) this.channelRows = [];
-    const known = this.channelRows.find((row) => row && row.source === "phone" && row.phoneId === phoneId);
-    const phoneCount = this.channelRows.filter((row) => row && row.source === "phone").length;
-    if (!known && phoneCount >= 8) throw new Error("휴대폰 입력은 8개까지입니다.");
     this.ensureDeviceSlots();
     let index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    if (index < 0 && connectionId) {
+      index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.connectionId === connectionId);
+    }
+    const samePerson = index >= 0 && this.channelRows[index].phoneId === phoneId;
     if (index < 0) {
+      const phoneCount = this.channelRows.filter((row) => row && row.source === "phone").length;
+      if (phoneCount >= 8) throw new Error("휴대폰 입력은 8개까지입니다.");
       index = this.channelRows.length;
       this.channelRows.push({
-        spoken: "ko",
+        spoken,
         on: false,
         source: "phone",
         name,
         phoneId,
+        connectionId,
         connected: true,
       });
     } else {
       this.channelRows[index].name = name;
+      this.channelRows[index].phoneId = phoneId;
+      this.channelRows[index].connectionId = connectionId || this.channelRows[index].connectionId || "";
       this.channelRows[index].connected = true;
+      if (!samePerson) {
+        this.channelRows[index].spoken = spoken;
+        const switching = this.channelSessions && this.channelSessions.get(index);
+        if (switching) this.applyChannelSpoken("", index, spoken).catch(() => {});
+      }
       const session = this.channelSessions && this.channelSessions.get(index);
       if (session) {
         session.name = name;
@@ -876,8 +897,9 @@ class Engine {
     const listening = !!(this.running && row.on && this.channelSessions && this.channelSessions.has(index));
     this.notifyPhone(index, listening);
     this.emitPhones();
-    this.emit({ type: "log", level: "info", text: `${name} 휴대폰이 송출 컴퓨터에 연결되었습니다.` });
-    return { index, name, phoneId, on: !!row.on, listening };
+    const langName = langByCode[row.spoken] ? langByCode[row.spoken].name : row.spoken;
+    this.emit({ type: "log", level: "info", text: `${name} 휴대폰이 ${langName}로 연결되었습니다.` });
+    return { index, name, phoneId, spoken: row.spoken, on: !!row.on, listening };
   }
 
   markPhoneAway(phoneId) {

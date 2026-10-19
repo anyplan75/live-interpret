@@ -384,6 +384,21 @@ function registerIpc() {
     }
   });
   ipcMain.handle("platform:keyStatus", async () => ({ configured: Boolean(resolveKey()) }));
+  ipcMain.handle("phone:add-channel", async () => {
+    if (!phoneJoin || !phoneJoin.sessionOpen) {
+      throw new Error("방송을 시작한 뒤에 휴대폰 채널을 추가할 수 있습니다.");
+    }
+    const desk = phoneJoin.addDesk();
+    try {
+      await firebase.set(`lectureJoins/${desk.connectionId}`, { token: phoneJoin.token });
+    } catch (err) {
+      phoneJoin.dropDesk(desk.connectionId);
+      send({ type: "phone-join", info: phoneJoin.info() });
+      throw new Error("휴대폰 채널을 열지 못했습니다. 다시 시도해 주세요.");
+    }
+    send({ type: "phone-join", info: phoneJoin.info() });
+    return { connectionId: desk.connectionId };
+  });
   ipcMain.handle("phone:info", () => (phoneJoin ? phoneJoin.info() : {
     url: "",
     qrDataUrl: "",
@@ -471,14 +486,16 @@ function registerIpc() {
       bulletinExtracted: staged ? staged.extracted : null,
     });
     if (phoneJoin) {
-      let desk = null;
+      let opened = [];
       try {
-        desk = await phoneJoin.openSession();
-        await firebase.set(`lectureJoins/${desk.connectionId}`, { token: desk.token });
+        const desk = await phoneJoin.openSession();
+        opened = [desk.connectionId];
+        await firebase.set(`lectureJoins/${desk.connectionId}`, { token: phoneJoin.token });
         send({ type: "phone-join", info: phoneJoin.info() });
       } catch (err) {
-        const connectionId = phoneJoin.closeSession();
-        if (connectionId) {
+        const created = phoneJoin.closeSession();
+        const ids = created.length ? created : opened;
+        for (const connectionId of ids) {
           try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 없는 번호는 지울 것이 없습니다 */ }
         }
         send({ type: "phone-join", info: phoneJoin.info() });
@@ -494,13 +511,10 @@ function registerIpc() {
     };
   });
   ipcMain.handle("broadcast:stop", async () => {
-    const connectionId = phoneJoin ? phoneJoin.connectionId : "";
     const stopped = await engine.stop();
-    if (phoneJoin) {
-      phoneJoin.closeSession();
-      send({ type: "phone-join", info: phoneJoin.info() });
-    }
-    if (connectionId) {
+    const ids = phoneJoin ? phoneJoin.closeSession() : [];
+    if (phoneJoin) send({ type: "phone-join", info: phoneJoin.info() });
+    for (const connectionId of ids) {
       try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 지워진 번호는 무시합니다 */ }
     }
     return stopped;
@@ -552,6 +566,10 @@ if (!gotLock) {
       onHello: (phone) => engine.addPhone(phone),
       onPcm: (phoneId, pcm) => engine.pushPhonePcm(phoneId, pcm),
       onLeave: (phoneId) => engine.markPhoneAway(phoneId),
+      onChange: () => {
+        if (!phoneJoin) return;
+        send({ type: "phone-join", info: phoneJoin.info() });
+      },
       onError: (err) => send({ type: "log", level: "error", text: err.message || String(err) }),
     });
     phoneJoin.attachLink({

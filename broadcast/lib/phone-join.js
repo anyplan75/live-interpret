@@ -70,10 +70,10 @@ class PhoneJoin {
     this.peers = new Map();
     this.seenOffers = new Set();
     this.seenIce = new Set();
+    this.onChange = extra.onChange || (() => {});
     this.token = "";
-    this.connectionId = "";
-    this.sessionPin = "";
-    this.holderPeerId = "";
+    this.desks = [];
+    this.sessionOpen = false;
     this.databaseURL = "";
     this.started = false;
     this.stopped = false;
@@ -91,7 +91,17 @@ class PhoneJoin {
   }
 
   info() {
-    return { ...this.infoCache, ips: (this.infoCache.ips || []).slice() };
+    const channels = this.sessionOpen ? this.desks.map((desk, slot) => ({
+      slot,
+      connectionId: desk.connectionId,
+      pin: desk.pin,
+      name: desk.name,
+      spoken: desk.spoken,
+      phoneId: desk.phoneId,
+      channelIndex: desk.channelIndex,
+      connected: Boolean(desk.holderPeerId),
+    })) : [];
+    return { ...this.infoCache, ips: (this.infoCache.ips || []).slice(), channels };
   }
 
   attachLink(link) {
@@ -122,36 +132,72 @@ class PhoneJoin {
   }
 
   async openSession() {
-    this.connectionId = orgServices.makeConnectionId();
-    this.sessionPin = orgServices.makeSessionPin();
-    this.holderPeerId = "";
+    this.sessionOpen = true;
+    this.desks = [];
     const lectureUrl = orgServices.lectureAppUrl(catalog.pagesBase);
     const qrDataUrl = await QRCode.toDataURL(lectureUrl, { margin: 1, width: 320, errorCorrectionLevel: "M" });
     this.infoCache = {
       ...this.infoCache,
       url: lectureUrl,
       qrDataUrl,
-      connectionId: this.connectionId,
-      pin: this.sessionPin,
-      note: "이번 세션의 접속 번호와 4자리 암호입니다. 암호는 저장하지 않습니다.",
+      connectionId: "",
+      pin: "",
+      note: "휴대폰 채널마다 접속 번호와 4자리 암호가 있습니다. 암호는 저장하지 않습니다.",
     };
-    return { connectionId: this.connectionId, token: this.token };
+    const desk = this.addDesk();
+    return { connectionId: desk.connectionId, token: this.token };
+  }
+
+  addDesk() {
+    if (!this.sessionOpen) throw new Error("방송을 시작한 뒤에 휴대폰 채널을 추가할 수 있습니다.");
+    if (this.desks.length >= 8) throw new Error("휴대폰 입력은 8개까지입니다.");
+    const connectionId = this._freshConnectionId();
+    const pin = orgServices.makeSessionPin();
+    this.desks.push({
+      connectionId,
+      pin,
+      holderPeerId: "",
+      phoneId: "",
+      name: "",
+      spoken: "",
+      channelIndex: -1,
+    });
+    return { connectionId, token: this.token };
+  }
+
+  dropDesk(connectionId) {
+    const id = orgServices.normalizeConnectionId(connectionId);
+    const desk = this.desks.find((item) => item.connectionId === id);
+    if (!desk || desk.holderPeerId) return false;
+    this.desks = this.desks.filter((item) => item.connectionId !== id);
+    return true;
   }
 
   closeSession() {
-    const connectionId = this.connectionId;
-    const peerId = this.holderPeerId;
-    this.connectionId = "";
-    this.sessionPin = "";
-    this.holderPeerId = "";
+    const ids = this.desks.map((desk) => desk.connectionId);
+    const peers = this.desks.map((desk) => desk.holderPeerId).filter(Boolean);
+    this.desks = [];
+    this.sessionOpen = false;
     this.infoCache = {
       ...this.infoCache,
       connectionId: "",
       pin: "",
-      note: "방송을 시작하면 접속 번호와 이번 세션 4자리 암호가 나옵니다.",
+      note: "방송을 시작하면 휴대폰 채널의 접속 번호와 이번 세션 4자리 암호가 나옵니다.",
     };
-    if (peerId) this._toLink({ type: "close", peerId });
-    return connectionId;
+    peers.forEach((peerId) => this._toLink({ type: "close", peerId }));
+    return ids;
+  }
+
+  _freshConnectionId() {
+    for (let i = 0; i < 12; i += 1) {
+      const connectionId = orgServices.makeConnectionId();
+      if (!this.desks.some((desk) => desk.connectionId === connectionId)) return connectionId;
+    }
+    throw new Error("접속 번호를 만들지 못했습니다. 다시 시도해 주세요.");
+  }
+
+  _notify() {
+    try { this.onChange(); } catch (_) { /* 화면 갱신 실패는 다음 연결 상태에서 다시 보입니다 */ }
   }
 
   async refresh() {
@@ -173,40 +219,56 @@ class PhoneJoin {
       this._refuse(peerId, "이름을 입력해 주세요.");
       return;
     }
-    if (!this.sessionPin || !this.connectionId) {
+    if (!this.sessionOpen) {
       this._refuse(peerId, "강연·회의가 아직 시작되지 않았습니다.");
       return;
     }
-    if (!orgServices.validSessionPin(message.pin) || String(message.pin) !== this.sessionPin) {
+    const connectionId = orgServices.normalizeConnectionId(message.connectionId);
+    const desk = connectionId ? this.desks.find((item) => item.connectionId === connectionId) : null;
+    if (!desk) {
+      this._refuse(peerId, "접속 번호를 확인해 주세요.");
+      return;
+    }
+    const spoken = String(message.spoken || "").trim();
+    if (!catalog.langByCode[spoken]) {
+      this._refuse(peerId, "말하는 언어를 선택해 주세요.");
+      return;
+    }
+    if (!orgServices.validSessionPin(message.pin) || String(message.pin) !== desk.pin) {
       this._refuse(peerId, "이번 세션 암호가 맞지 않습니다.");
       return;
     }
-    const seat = orgServices.claimConnection(this.holderPeerId, peerId);
+    const seat = orgServices.claimConnection(desk.holderPeerId, peerId);
     if (!seat.ok) {
       this._refuse(peerId, seat.reason);
       return;
     }
-    this.holderPeerId = seat.holderPeerId;
+    desk.holderPeerId = seat.holderPeerId;
     const requested = cleanPhoneId(message.phoneId) || crypto.randomBytes(16).toString("hex");
     row.phoneId = requested;
     let joined;
     try {
-      joined = this.onHello({ id: requested, name }) || {};
+      joined = this.onHello({ id: requested, name, spoken, connectionId }) || {};
     } catch (err) {
       row.phoneId = "";
-      if (this.holderPeerId === peerId) this.holderPeerId = "";
+      if (desk.holderPeerId === peerId) desk.holderPeerId = "";
       this._refuse(peerId, err.message || "연결하지 못했습니다.");
       return;
     }
     const phoneId = cleanPhoneId(joined.phoneId) || requested;
     row.phoneId = phoneId;
+    desk.phoneId = phoneId;
+    desk.name = joined.name || name;
+    desk.spoken = joined.spoken || spoken;
+    desk.channelIndex = Number.isInteger(joined.index) ? joined.index : -1;
     this._send(peerId, {
       type: "joined",
       phoneId,
-      name: joined.name || name,
-      channel: joined.index,
+      name: desk.name,
+      channel: desk.channelIndex,
     });
     this._send(peerId, { type: "state", listening: !!joined.listening });
+    this._notify();
   }
 
   ingestPcm(peerId, data) {
@@ -223,9 +285,11 @@ class PhoneJoin {
     this.peers.delete(peerId);
     if (!row || !row.phoneId) return;
     const phoneId = row.phoneId;
-    this.holderPeerId = orgServices.releaseConnection(this.holderPeerId, peerId);
+    const desk = this.desks.find((item) => item.holderPeerId === peerId);
+    if (desk) desk.holderPeerId = "";
     const still = [...this.peers.values()].some((item) => item.phoneId === phoneId);
     if (!still) this.onLeave(phoneId);
+    this._notify();
   }
 
   _refuse(peerId, message) {

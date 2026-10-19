@@ -176,7 +176,10 @@
       };
       active = link;
       channel.onopen = () => {
-        channel.send(JSON.stringify({ type: "hello", name, phoneId, pin, role: options.role || "mic" }));
+        const hello = { type: "hello", name, phoneId, pin, role: options.role || "mic" };
+        if (options.spoken) hello.spoken = String(options.spoken);
+        if (options.connectionId) hello.connectionId = String(options.connectionId);
+        channel.send(JSON.stringify(hello));
         onStatus("연결하는 중입니다.");
       };
       channel.onmessage = (event) => {

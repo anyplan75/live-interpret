@@ -15,7 +15,7 @@
 <body>
   <main>
     <h1>강연·회의 통역</h1>
-    <p class="hint">진행자가 알려 준 접속 번호와 이번 세션 4자리 암호를 입력하면 이 휴대폰이 송출 컴퓨터의 마이크가 됩니다. 이 암호는 계정 비밀번호가 아니고, 이번 강연·회의에만 씁니다.</p>
+    <p class="hint">진행자가 알려 준 접속 번호, 이번 세션 4자리 암호, 이름, 말하는 언어를 입력하면 이 휴대폰이 송출 컴퓨터의 마이크가 됩니다. 이 암호는 계정 비밀번호가 아니고, 이번 강연·회의에만 씁니다. 연결 뒤에 진행자가 언어를 바꾸면 그 언어로 통역합니다.</p>
 
     <section id="booth" class="card">
       <form id="micForm">
@@ -24,7 +24,11 @@
         <label for="joinPin">4자리 암호</label>
         <input id="joinPin" name="joinPin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off" enterkeyhint="next" required>
         <label for="name">이름</label>
-        <input id="name" name="name" maxlength="40" autocomplete="name" enterkeyhint="done" required>
+        <input id="name" name="name" maxlength="40" autocomplete="name" enterkeyhint="next" required>
+        <label for="spoken">말하는 언어</label>
+        <select id="spoken" name="spoken" required>
+          <option value="">언어를 선택하세요</option>
+        </select>
         <button type="submit" id="openMic">마이크 열기</button>
       </form>
       <p id="status"></p>
@@ -33,6 +37,7 @@
 
     <p class="hint install">아이폰은 공유 단추에서 홈 화면에 추가합니다. 안드로이드는 브라우저 메뉴에서 설치하거나 홈 화면에 추가합니다.</p>
   </main>
+  <script src="../js/languages.js"></script>
   <script src="../js/catalog.js"></script>
   <script src="../js/org-services.js"></script>
   <script src="../js/pcm-browser.js"></script>
@@ -42,7 +47,15 @@
     const statusEl = document.getElementById("status");
     const levelEl = document.getElementById("level");
     const openMic = document.getElementById("openMic");
+    const spokenSelect = document.getElementById("spoken");
     let link = null;
+
+    (LI.catalog.languages || []).forEach((lang) => {
+      const option = document.createElement("option");
+      option.value = lang.code;
+      option.textContent = `${lang.flag} ${lang.name}`;
+      spokenSelect.append(option);
+    });
 
     function say(text) { statusEl.textContent = text; }
     function securePage() {
@@ -67,6 +80,7 @@
       const connectionId = LI.orgServices.normalizeConnectionId(document.getElementById("joinId").value);
       const pin = String(document.getElementById("joinPin").value || "").trim();
       const name = LI.orgServices.cleanName(document.getElementById("name").value);
+      const spoken = String(spokenSelect.value || "").trim();
       if (!connectionId) {
         say("접속 번호 6자리를 확인해 주세요.");
         return;
@@ -77,6 +91,10 @@
       }
       if (!name) {
         say("이름을 입력해 주세요.");
+        return;
+      }
+      if (!spoken || !LI.catalog.langByCode[spoken]) {
+        say("말하는 언어를 선택해 주세요.");
         return;
       }
       if (!securePage() || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
@@ -93,6 +111,8 @@
           token,
           name,
           pin,
+          spoken,
+          connectionId,
           role: "lecture",
           onStatus: say,
           onLevel(width) { levelEl.style.width = `${width}%`; },
