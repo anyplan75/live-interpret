@@ -179,7 +179,10 @@ test("firebase api key is not committed", () => {
   assert.match(example, /^DEPOSIT_HMAC_SECRET=$/m);
   assert.equal(/AIza[0-9A-Za-z\-_]{20,}/.test(example), false);
   const skip = new Set(["node_modules", ".git", "dist", "out"]);
+  // 강연·회의와 대면 페이지는 브라우저 로그인에 이 파일 하나만 쓴다.
+  const phoneKeyFile = path.join("docs", "js", "phone-firebase-env.js");
   const hits = [];
+  let phoneKeySeen = false;
   function walk(dir) {
     for (const name of fs.readdirSync(dir)) {
       if (skip.has(name) || name === ".env") continue;
@@ -187,13 +190,27 @@ test("firebase api key is not committed", () => {
       const stat = fs.statSync(full);
       if (stat.isDirectory()) walk(full);
       else if (stat.isFile() && stat.size < 2_000_000) {
+        const rel = path.relative(root, full);
         const text = fs.readFileSync(full);
         if (text.includes(0)) continue;
-        if (/AIza[0-9A-Za-z\-_]{20,}/.test(text.toString("utf8"))) hits.push(path.relative(root, full));
+        if (!/AIza[0-9A-Za-z\-_]{20,}/.test(text.toString("utf8"))) continue;
+        if (rel === phoneKeyFile) phoneKeySeen = true;
+        else hits.push(rel);
       }
     }
   }
   walk(root);
+  assert.equal(phoneKeySeen, true);
+  const phoneKey = fs.readFileSync(path.join(root, phoneKeyFile), "utf8");
+  assert.match(phoneKey, /FIREBASE_API_KEY/);
+  assert.equal((phoneKey.match(/AIza[0-9A-Za-z\-_]{20,}/g) || []).length, 1);
+  assert.equal(/AIza/.test(fs.readFileSync(path.join(root, "docs/js/runtime-env.js"), "utf8")), false);
+  for (const page of ["docs/lecture/index.html", "docs/face/index.html"]) {
+    const html = fs.readFileSync(path.join(root, page), "utf8");
+    const envAt = html.indexOf("../js/phone-firebase-env.js");
+    const catalogAt = html.indexOf("../js/catalog.js");
+    assert.equal(envAt > 0 && catalogAt > envAt, true);
+  }
   assert.deepEqual(hits, []);
 });
 
