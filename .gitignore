@@ -6,3 +6,4 @@ out/
 user-data/
 .electron-cache/
 .env
+build/ios-phone/
