@@ -1,0 +1,54 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding: 28px 20px 48px;
+  background: #0f1419;
+  color: #f2f5f8;
+  font-family: "Apple SD Gothic Neo", "Pretendard", sans-serif;
+}
+main { max-width: 440px; margin: 0 auto; }
+h1 { margin: 0 0 8px; font-size: 1.55rem; letter-spacing: -0.03em; }
+h2 { margin: 22px 0 8px; font-size: 1.05rem; }
+p { line-height: 1.45; }
+.hint { color: #9aa8b8; font-size: 0.95rem; }
+label { display: block; font-weight: 700; margin: 16px 0 8px; }
+input, select {
+  width: 100%;
+  padding: 14px 12px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+  background: #121a24;
+  color: #f2f5f8;
+  font: inherit;
+  font-size: 1.05rem;
+}
+button {
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: #1f8f6a;
+  color: white;
+  font: inherit;
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+button.ghost { background: transparent; color: #d5deea; border: 1px solid #334155; }
+button:disabled { opacity: 0.45; }
+.check { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.check input { width: auto; }
+.card {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: #172033;
+}
+#status, #rateLine { min-height: 1.4em; font-weight: 700; }
+.meter { height: 10px; margin-top: 16px; border-radius: 99px; background: #121a24; overflow: hidden; }
+.meter span { display: block; height: 100%; width: 0%; background: #7dcea0; }
+#qr { display: block; width: min(100%, 280px); margin: 12px auto; background: white; border-radius: 12px; }
+.captions { min-height: 4.5em; font-size: 1.25rem; line-height: 1.4; }
+.install { margin-top: 18px; }

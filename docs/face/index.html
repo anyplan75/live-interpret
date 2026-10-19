@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="대면 통역">
+  <meta name="theme-color" content="#5b2d8e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>대면 통역</title>
+  <link rel="stylesheet" href="../css/phone-app.css">
+</head>
+<body>
+  <main>
+    <h1>대면 통역</h1>
+    <p class="hint" id="lead">등록된 계정이 언어를 고르고 말하면, 이 휴대폰에 QR이 나옵니다. 상대는 그 QR을 스캔해 자기 휴대폰으로 들어옵니다. 양쪽 말이 서로의 언어로 보입니다.</p>
+
+    <section id="gate" class="card">
+      <h2>계정 로그인</h2>
+      <label for="orgEmail">이메일</label>
+      <input id="orgEmail" type="email" autocomplete="username">
+      <label for="orgPassword">비밀번호</label>
+      <input id="orgPassword" type="password" autocomplete="current-password">
+      <button type="button" id="orgSignIn">로그인</button>
+      <p id="gateMsg" class="hint"></p>
+    </section>
+
+    <section id="host" class="card" hidden>
+      <p id="orgLine" class="hint"></p>
+      <label for="hostLang">내 언어</label>
+      <select id="hostLang"></select>
+      <label for="guestLang">상대 언어</label>
+      <select id="guestLang"></select>
+      <p id="rateLine"></p>
+      <button type="button" id="startFace">통역 시작</button>
+      <p id="status"></p>
+      <img id="qr" alt="상대가 스캔할 QR" hidden>
+      <label for="joinUrl">상대 참여 주소</label>
+      <input id="joinUrl" type="text" readonly>
+      <div id="captions" class="captions">대기 중...</div>
+      <div class="meter" aria-hidden="true"><span id="level"></span></div>
+      <button type="button" class="ghost" id="signOut">로그아웃</button>
+    </section>
+
+    <section id="guest" class="card" hidden>
+      <h2>통역에 들어가기</h2>
+      <p class="hint">QR로 열린 주소입니다. 이름을 입력하면 상대와 통역이 연결됩니다. 이 휴대폰은 요금을 시작하지 않습니다.</p>
+      <form id="guestForm">
+        <label for="guestName">이름</label>
+        <input id="guestName" maxlength="40" autocomplete="name" required>
+        <button type="submit" id="guestJoin">들어가기</button>
+      </form>
+      <p id="guestStatus"></p>
+      <div id="guestCaptions" class="captions">대기 중...</div>
+      <div class="meter" aria-hidden="true"><span id="guestLevel"></span></div>
+    </section>
+
+    <p class="hint install">아이폰은 공유 단추에서 홈 화면에 추가합니다. 안드로이드는 브라우저 메뉴에서 설치하거나 홈 화면에 추가합니다.</p>
+  </main>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <script src="../js/languages.js"></script>
+  <script src="../js/runtime-env.js"></script>
+  <script src="../js/catalog.js"></script>
+  <script src="../js/cost.js"></script>
+  <script src="../js/org-services.js"></script>
+  <script src="../js/db.js"></script>
+  <script src="../js/pcm-browser.js"></script>
+  <script src="../js/speech-turn.js"></script>
+  <script src="../js/phone-offer.js"></script>
+  <script src="../js/face-host.js"></script>
+  <script src="../js/qrcode-browser.js"></script>
+  <script src="sw-register.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const invite = params.get("s") || "";
+    const guestMode = LI.orgServices.guestJoin(invite).ok;
+    const gate = document.getElementById("gate");
+    const hostCard = document.getElementById("host");
+    const guestCard = document.getElementById("guest");
+    let org = null;
+    let churchId = "";
+    let churchModel = LI.catalog.defaultModel;
+    let signedUser = null;
+    let platformKey = "";
+    let room = null;
+    let prepaid = null;
+    let tickAnchor = 0;
+    let tickTimer = null;
+    let localStop = null;
+
+    function say(text) { document.getElementById("status").textContent = text; }
+
+    function fillLanguages(select, selected) {
+      select.innerHTML = "";
+      LI.catalog.languages.forEach((lang) => {
+        const option = document.createElement("option");
+        option.value = lang.code;
+        option.textContent = lang.name;
+        select.append(option);
+      });
+      select.value = selected;
+    }
+
+    function paintRate() {
+      const rate = LI.orgServices.rateFor("face", [
+        document.getElementById("hostLang").value,
+        document.getElementById("guestLang").value,
+      ]);
+      document.getElementById("rateLine").textContent = rate.text;
+    }
+
+    function showCaption(board, title, text) {
+      board.textContent = text ? `${title}: ${text}` : "대기 중...";
+    }
+
+    function uint8ToInt16(bytes) {
+      const even = bytes.byteLength - (bytes.byteLength % 2);
+      const copy = new Uint8Array(even);
+      copy.set(new Uint8Array(bytes.buffer, bytes.byteOffset, even));
+      return new Int16Array(copy.buffer);
+    }
+
+    function collector(onUtterance) {
+      let chunks = [];
+      let samples = 0;
+      let busy = false;
+      return {
+        push(int16) {
+          if (!int16 || !int16.length) return;
+          chunks.push(int16);
+          samples += int16.length;
+          if (busy || samples < 24000 * 2) return;
+          const merged = LI.pcm.mergeInt16(chunks);
+          chunks = [];
+          samples = 0;
+          if (LI.pcm.rmsInt16(merged) < 0.012) return;
+          busy = true;
+          Promise.resolve(onUtterance(merged)).finally(() => { busy = false; });
+        },
+      };
+    }
+
+    async function ensureKey() {
+      if (platformKey) return platformKey;
+      const value = await LI.db.get(LI.catalog.platformKeyRel);
+      if (!LI.catalog.isPlatformKey(value)) throw new Error("번역 키가 아직 없습니다. 관리 화면에서 키를 먼저 저장해 주세요.");
+      platformKey = String(value).trim();
+      return platformKey;
+    }
+
+    async function interpret(pcm, sourceLang, targetLang, source) {
+      const key = await ensureKey();
+      const heard = await LI.speechTurn.transcribePcm(pcm, {
+        apiKey: key,
+        transcriptionLanguage: LI.catalog.transcriptionLanguage(sourceLang),
+      });
+      if (!heard) return;
+      const translated = await LI.speechTurn.translateLine(heard, {
+        apiKey: key,
+        sourceLang,
+        targetLang,
+        model: churchModel,
+      });
+      const message = LI.orgServices.captionMessage(source, targetLang, translated || heard);
+      if (room) room.sendAll(message);
+      if (source === "guest") showCaption(document.getElementById("captions"), "상대", message.text);
+    }
+
+    async function openLocalMic(onPcm) {
+      const audioContext = new AudioContext();
+      await audioContext.resume();
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        video: false,
+      });
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      const mute = audioContext.createGain();
+      mute.gain.value = 0;
+      const levelEl = document.getElementById("level");
+      const sendInput = (input) => {
+        let peak = 0;
+        for (let i = 0; i < input.length; i += 32) peak = Math.max(peak, Math.abs(input[i]));
+        levelEl.style.width = `${Math.max(0, Math.min(100, Math.round(peak * 140)))}%`;
+        onPcm(LI.pcm.downsampleFloatToPcm16(input, audioContext.sampleRate, 24000));
+      };
+      try {
+        await audioContext.audioWorklet.addModule("../mic/pcm-worklet.js");
+        const node = new AudioWorkletNode(audioContext, "pcm-capture");
+        node.port.onmessage = (event) => sendInput(event.data);
+        source.connect(node);
+        node.connect(mute);
+      } catch (_) {
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        processor.onaudioprocess = (event) => sendInput(event.inputBuffer.getChannelData(0));
+        source.connect(processor);
+        processor.connect(mute);
+      }
+      mute.connect(audioContext.destination);
+      return () => {
+        mediaStream.getTracks().forEach((track) => track.stop());
+        audioContext.close();
+      };
+    }
+
+    function stopSession(text) {
+      if (tickTimer) clearInterval(tickTimer);
+      tickTimer = null;
+      if (room) room.stop();
+      room = null;
+      if (localStop) localStop();
+      localStop = null;
+      if (text) say(text);
+    }
+
+    async function tickTime() {
+      if (!prepaid || !churchId) return;
+      const elapsed = Math.floor((Date.now() - tickAnchor) / 1000);
+      if (elapsed < 1) return;
+      const tick = LI.orgServices.tickPatch(prepaid, elapsed, Date.now());
+      if (!tick.expired) {
+        await LI.db.update(`churches/${churchId}/billing`, tick.patch);
+        prepaid = tick.prepaid;
+        tickAnchor = Date.now();
+        return;
+      }
+      const billing = (await LI.db.get(`churches/${churchId}/billing`)) || {};
+      const half = LI.orgServices.halfPatch({
+        balance: billing.balance,
+        languages: [document.getElementById("hostLang").value, document.getElementById("guestLang").value],
+        now: Date.now(),
+        who: signedUser ? signedUser.uid : "",
+        churchId,
+        note: "대면 통역 30분",
+      });
+      if (!half.ok) {
+        stopSession("선불 시간이 끝났고 잔액이 부족합니다.");
+        return;
+      }
+      await LI.db.update(`churches/${churchId}/billing`, half.patch);
+      prepaid = half.prepaid;
+      tickAnchor = Date.now();
+    }
+
+    async function loadOrg(user) {
+      signedUser = user;
+      LI.db.clearChurch();
+      const row = await LI.db.get(`accounts/${user.uid}`);
+      if (!row || !LI.catalog.isChurchId(row.churchId)) throw new Error("등록된 교회나 기업 계정이 아닙니다.");
+      const church = await LI.db.get(`churches/${row.churchId}`);
+      if (!church || !church.name) throw new Error("등록된 교회나 기업을 찾지 못했습니다.");
+      church.id = row.churchId;
+      churchId = row.churchId;
+      if (LI.catalog.isModelId(church.model)) churchModel = church.model;
+      org = LI.orgServices.orgSnapshot(church);
+      const gateResult = LI.orgServices.canStartPaid(org, "face");
+      if (!gateResult.ok) throw new Error(gateResult.reason);
+      document.getElementById("orgLine").textContent = `${LI.orgServices.kindLabel(org.kind)} ${org.name}`;
+      gate.hidden = true;
+      hostCard.hidden = false;
+      paintRate();
+    }
+
+    function showQr(url) {
+      document.getElementById("joinUrl").value = url;
+      const img = document.getElementById("qr");
+      LIQR.toString(url, { type: "svg", margin: 1, width: 280 }, (err, svg) => {
+        if (err || !svg) return;
+        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        img.hidden = false;
+      });
+    }
+
+    if (guestMode) {
+      document.getElementById("lead").textContent = "상대의 QR로 들어온 화면입니다. 이름을 입력하면 양쪽 통역이 연결됩니다.";
+      gate.hidden = true;
+      guestCard.hidden = false;
+      document.getElementById("guestForm").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const join = LI.orgServices.guestJoin(invite);
+        if (!join.ok || join.paid) {
+          document.getElementById("guestStatus").textContent = "참여 주소가 올바르지 않습니다.";
+          return;
+        }
+        const name = LI.orgServices.cleanName(document.getElementById("guestName").value);
+        if (!name) {
+          document.getElementById("guestStatus").textContent = "이름을 입력해 주세요.";
+          return;
+        }
+        document.getElementById("guestJoin").disabled = true;
+        try {
+          await LI.phoneOffer.open({
+            databaseURL: LI.catalog.firebase.databaseURL,
+            rootPath: LI.catalog.firebase.rootPath,
+            token: invite,
+            name,
+            role: "face-guest",
+            onStatus(text) { document.getElementById("guestStatus").textContent = text; },
+            onLevel(width) { document.getElementById("guestLevel").style.width = `${width}%`; },
+            onJson(message) {
+              if (!message || message.type !== "caption" || message.source !== "host") return;
+              showCaption(document.getElementById("guestCaptions"), "통역", message.text);
+            },
+          });
+        } catch (err) {
+          document.getElementById("guestJoin").disabled = false;
+          document.getElementById("guestStatus").textContent = err && err.message ? err.message : "마이크를 열지 못했습니다.";
+        }
+      });
+    } else {
+      fillLanguages(document.getElementById("hostLang"), "ko");
+      fillLanguages(document.getElementById("guestLang"), "en");
+      document.getElementById("hostLang").addEventListener("change", paintRate);
+      document.getElementById("guestLang").addEventListener("change", paintRate);
+      document.getElementById("orgSignIn").addEventListener("click", async () => {
+        const msg = document.getElementById("gateMsg");
+        msg.textContent = "";
+        const email = document.getElementById("orgEmail").value.trim();
+        const password = document.getElementById("orgPassword").value;
+        try {
+          await LI.db.init();
+          if (!LI.catalog.validAdminEmail(email) || !LI.catalog.validAdminPassword(password)) {
+            throw new Error("이메일과 비밀번호를 확인해 주세요. 비밀번호는 6자 이상입니다.");
+          }
+          const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+          await loadOrg(cred.user);
+        } catch (err) {
+          msg.textContent = LI.catalog.authErrorMessage(err);
+        }
+      });
+      document.getElementById("signOut").addEventListener("click", async () => {
+        stopSession("");
+        org = null;
+        platformKey = "";
+        try { await firebase.auth().signOut(); } catch (_) { /* 이미 로그아웃된 상태는 무시합니다 */ }
+        hostCard.hidden = true;
+        gate.hidden = false;
+      });
+      document.getElementById("startFace").addEventListener("click", async () => {
+        const gateResult = LI.orgServices.canStartPaid(org, "face");
+        if (!gateResult.ok) {
+          say(gateResult.reason);
+          return;
+        }
+        const hostLang = document.getElementById("hostLang").value;
+        const guestLang = document.getElementById("guestLang").value;
+        if (hostLang === guestLang) {
+          say("두 언어가 같습니다. 상대 언어를 다르게 고르세요.");
+          return;
+        }
+        document.getElementById("startFace").disabled = true;
+        try {
+          const billing = (await LI.db.get(`churches/${churchId}/billing`)) || {};
+          const charge = LI.orgServices.chargePatch({
+            balance: billing.balance,
+            languages: [hostLang, guestLang],
+            prepaid: billing.prepaid,
+            now: Date.now(),
+            who: signedUser ? signedUser.uid : "",
+            churchId,
+            note: "대면 통역",
+          });
+          if (!charge.ok) {
+            say(`선불 잔액이 부족합니다. ${LI.orgServices.rateFor("face", [hostLang, guestLang]).text}`);
+            document.getElementById("startFace").disabled = false;
+            return;
+          }
+          if (charge.patch) await LI.db.update(`churches/${churchId}/billing`, charge.patch);
+          prepaid = charge.prepaid;
+          tickAnchor = Date.now();
+          const token = LI.faceHost.randomHex(16);
+          const url = LI.orgServices.faceJoinUrl(LI.catalog.pagesBase, token);
+          showQr(url);
+          const guestAudio = collector((pcm) => interpret(pcm, guestLang, hostLang, "guest"));
+          const hostAudio = collector((pcm) => interpret(pcm, hostLang, guestLang, "host"));
+          room = LI.faceHost.start({
+            token,
+            databaseURL: LI.catalog.firebase.databaseURL,
+            rootPath: LI.catalog.firebase.rootPath,
+            onPcm(_peerId, bytes) { guestAudio.push(uint8ToInt16(bytes)); },
+          });
+          localStop = await openLocalMic((pcm) => hostAudio.push(pcm));
+          tickTimer = setInterval(() => { tickTime().catch(() => {}); }, 15000);
+          say("QR을 상대에게 보여 주세요. 말하는 동안 선불 시간이 줄어듭니다.");
+        } catch (err) {
+          document.getElementById("startFace").disabled = false;
+          say(LI.catalog.redactSecrets(err && err.message ? err.message : "통역을 시작하지 못했습니다."));
+        }
+      });
+      LI.db.init().then(() => {
+        firebase.auth().onAuthStateChanged(async (user) => {
+          if (!user || org) return;
+          try { await loadOrg(user); } catch (err) {
+            document.getElementById("gateMsg").textContent = err.message || String(err);
+          }
+        });
+      }).catch((err) => {
+        document.getElementById("gateMsg").textContent = err.message || String(err);
+      });
+    }
+  </script>
+</body>
+</html>
