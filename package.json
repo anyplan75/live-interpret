@@ -43,6 +43,7 @@
     "asarUnpack": [
       "**/node_modules/audify/build/Release/**"
     ],
+    "afterPack": "scripts/bake-desktop-env.js",
     "files": [
       "broadcast/**/*",
       "docs/js/catalog.js",
