@@ -136,6 +136,9 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(desk[".write"], /!newData\.child\('pin'\)\.exists\(\)/);
   assert.match(desk[".write"], /!newData\.child\('password'\)\.exists\(\)/);
   assert.doesNotMatch(read("broadcast/main.js"), /4자리 암호: \$\{|sessionPin|\.pin\b/);
+  const packaged = JSON.parse(read("package.json")).build.files;
+  assert.ok(packaged.includes("docs/js/org-services.js"));
+  assert.ok(packaged.includes("docs/js/cost.js"));
 });
 
 test("pcm from a phone mic is 24 kHz int16", () => {

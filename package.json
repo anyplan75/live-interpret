@@ -47,6 +47,8 @@
       "broadcast/**/*",
       "docs/js/catalog.js",
       "docs/js/languages.js",
+      "docs/js/org-services.js",
+      "docs/js/cost.js",
       "package.json"
     ],
     "directories": {
