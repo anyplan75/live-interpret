@@ -16,22 +16,25 @@ final class HomeViewController: UIViewController {
         navigationItem.title = "실시간 통역"
         applyNavigationStyle()
 
-        let titleLabel = UILabel()
-        titleLabel.text = "실시간 통역"
-        titleLabel.font = .systemFont(ofSize: 28, weight: .bold)
-        titleLabel.textColor = ShellColor.text
-
         let hint = UILabel()
-        hint.text = "쓸 화면을 고르세요. 통역은 이미 공개된 페이지가 합니다."
-        hint.font = .systemFont(ofSize: 15)
+        hint.text = "쓸 화면을 고르세요."
+        hint.font = .systemFont(ofSize: 17, weight: .medium)
         hint.textColor = ShellColor.hint
+        hint.textAlignment = .center
         hint.numberOfLines = 0
+        hint.setContentHuggingPriority(.required, for: .vertical)
 
         let lecture = makeButton(for: .lecture)
         let face = makeButton(for: .face)
-        let stack = UIStackView(arrangedSubviews: [titleLabel, hint, lecture, face])
+        let buttons = UIStackView(arrangedSubviews: [lecture, face])
+        buttons.axis = .vertical
+        buttons.spacing = 16
+        buttons.distribution = .fillEqually
+        buttons.setContentHuggingPriority(.defaultLow, for: .vertical)
+
+        let stack = UIStackView(arrangedSubviews: [hint, buttons])
         stack.axis = .vertical
-        stack.spacing = 16
+        stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
 
@@ -39,7 +42,8 @@ final class HomeViewController: UIViewController {
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -20),
-            stack.topAnchor.constraint(equalTo: guide.topAnchor, constant: 28),
+            stack.topAnchor.constraint(equalTo: guide.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -16),
         ])
     }
 
@@ -57,29 +61,26 @@ final class HomeViewController: UIViewController {
 
     private func makeButton(for page: PhonePage) -> UIButton {
         let button = UIButton(type: .system)
-        button.backgroundColor = ShellColor.card
-        button.layer.cornerRadius = 16
-        button.contentHorizontalAlignment = .leading
-        button.configuration = nil
-        var config = UIButton.Configuration.plain()
+        var config = UIButton.Configuration.filled()
         config.title = page.title
         config.subtitle = page.detail
         config.baseForegroundColor = ShellColor.text
-        config.titleAlignment = .leading
-        config.contentInsets = NSDirectionalEdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18)
+        config.baseBackgroundColor = ShellColor.card
+        config.background.cornerRadius = 28
+        config.titleAlignment = .center
+        config.contentInsets = NSDirectionalEdgeInsets(top: 24, leading: 20, bottom: 24, trailing: 20)
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var outgoing = incoming
-            outgoing.font = .systemFont(ofSize: 22, weight: .semibold)
+            outgoing.font = .systemFont(ofSize: 34, weight: .bold)
             return outgoing
         }
         config.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
             var outgoing = incoming
-            outgoing.font = .systemFont(ofSize: 14)
+            outgoing.font = .systemFont(ofSize: 17)
             outgoing.foregroundColor = ShellColor.hint
             return outgoing
         }
         button.configuration = config
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 88).isActive = true
         button.addAction(UIAction { [weak self] _ in
             self?.navigationController?.pushViewController(PageViewController(page: page), animated: true)
         }, for: .touchUpInside)

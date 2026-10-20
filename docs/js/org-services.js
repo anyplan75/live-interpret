@@ -303,6 +303,92 @@
     return FACE_PERSON_KRW * people;
   }
 
+  const FACE_MIN_PEOPLE = 2;
+  const FACE_MAX_PEOPLE = 3;
+
+  function facePartySize(count) {
+    const people = Math.round(Number(count) || 0);
+    if (people < FACE_MIN_PEOPLE || people > FACE_MAX_PEOPLE) {
+      return {
+        ok: false,
+        people: 0,
+        amount: 0,
+        reason: "본인을 포함해 2명 또는 3명만 고를 수 있습니다. 3명을 넘길 수 없습니다.",
+      };
+    }
+    return { ok: true, people, amount: facePeopleKrw(people), reason: "" };
+  }
+
+  function facePerson(input, knownLang) {
+    const name = cleanName(input && input.name);
+    const spoken = String((input && input.spoken) || "").trim();
+    if (!name) return { ok: false, reason: "이름을 입력해 주세요." };
+    const known = typeof knownLang === "function" ? knownLang(spoken) : !!spoken;
+    if (!spoken || !known) return { ok: false, reason: "말하는 언어를 선택해 주세요." };
+    return { ok: true, person: { name, spoken }, reason: "" };
+  }
+
+  function faceSetupReady(input) {
+    const source = input || {};
+    const size = facePartySize(source.people);
+    if (!size.ok) return { ok: false, reason: size.reason, people: 0, amount: 0, mode: "", roster: [] };
+    const mode = source.mode === "solo" ? "solo" : source.mode === "qr" ? "qr" : "";
+    if (!mode) {
+      return {
+        ok: false,
+        reason: "다른 사람 휴대폰으로 할지, 이 휴대폰만 쓸지 고르세요.",
+        people: size.people,
+        amount: size.amount,
+        mode: "",
+        roster: [],
+      };
+    }
+    const knownLang = source.knownLang;
+    const rows = mode === "qr"
+      ? [source.host].concat(Array.isArray(source.guests) ? source.guests : [])
+      : (Array.isArray(source.peopleList) ? source.peopleList : []);
+    const needed = size.people;
+    if (mode === "qr" && (!Array.isArray(source.guests) || source.guests.length !== needed - 1)) {
+      return {
+        ok: false,
+        reason: `다른 사람 ${needed - 1}명이 각자 휴대폰에서 이름과 언어를 고를 때까지 기다립니다.`,
+        people: size.people,
+        amount: size.amount,
+        mode,
+        roster: [],
+      };
+    }
+    if (mode === "solo" && rows.length !== needed) {
+      return {
+        ok: false,
+        reason: "모든 사람의 이름과 언어를 이 휴대폰에서 고르세요.",
+        people: size.people,
+        amount: size.amount,
+        mode,
+        roster: [],
+      };
+    }
+    const roster = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const ready = facePerson(rows[i], knownLang);
+      if (!ready.ok) {
+        return { ok: false, reason: ready.reason, people: size.people, amount: size.amount, mode, roster: [] };
+      }
+      roster.push({ ...ready.person, role: i === 0 ? "host" : "guest" });
+    }
+    if (new Set(roster.map((person) => person.spoken)).size < 2) {
+      return {
+        ok: false,
+        reason: "서로 다른 언어가 있어야 통역을 시작합니다.",
+        people: size.people,
+        amount: size.amount,
+        mode,
+        roster: [],
+      };
+    }
+    return { ok: true, reason: "", people: size.people, amount: size.amount, mode, roster };
+  }
+
   function faceChargePatch(input) {
     const cost = costLib();
     const source = input || {};
@@ -459,7 +545,11 @@
     tickPatch,
     FACE_PERSON_KRW,
     FACE_BLOCK_SECONDS,
+    FACE_MIN_PEOPLE,
+    FACE_MAX_PEOPLE,
     facePeopleKrw,
+    facePartySize,
+    faceSetupReady,
     faceChargePatch,
     faceRemainingSeconds,
     creditPatch,

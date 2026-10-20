@@ -15,7 +15,7 @@
 <body>
   <main>
     <h1>대면 통역</h1>
-    <p class="hint" id="lead">등록된 계정이 언어를 고르고 말하면, 이 휴대폰에 QR이 나옵니다. 상대는 그 QR을 스캔해 자기 휴대폰으로 들어옵니다. 양쪽 말이 서로의 언어로 보입니다.</p>
+    <p class="hint" id="lead">먼저 인원을 고릅니다. 본인도 포함해 2명 또는 3명입니다. 그다음 다른 사람 휴대폰으로 할지, 이 휴대폰만 쓸지 고릅니다. 설정이 끝나기 전에는 통역이 시작되지 않습니다.</p>
 
     <section id="gate" class="card">
       <h2>계정 로그인</h2>
@@ -30,22 +30,57 @@
     <section id="host" class="card" hidden>
       <p id="orgLine" class="hint"></p>
       <p id="rateLine"></p>
-      <label for="hostName">내 이름</label>
-      <input id="hostName" maxlength="40" autocomplete="name" enterkeyhint="done" required>
-      <label for="hostLang">내 언어</label>
-      <select id="hostLang"></select>
-      <label for="guestLang">상대 언어</label>
-      <select id="guestLang"></select>
-      <p id="faceClock" class="clock">남은 시간 0:00</p>
-      <p id="peopleLine" class="hint"></p>
-      <button type="button" id="startFace">통역 시작</button>
-      <button type="button" class="ghost" id="pauseFace" hidden>잠시 멈추기</button>
-      <p id="status"></p>
-      <img id="qr" alt="상대가 스캔할 QR" hidden>
-      <label for="joinUrl">상대 참여 주소</label>
-      <input id="joinUrl" type="text" readonly>
-      <div id="captions" class="captions">대기 중...</div>
-      <div class="meter" aria-hidden="true"><span id="level"></span></div>
+
+      <div id="stepCount">
+        <h2>몇 명이 이야기하나요</h2>
+        <p class="hint">본인을 포함합니다. 2명 또는 3명만 고를 수 있고, 3명을 넘길 수 없습니다.</p>
+        <button type="button" id="count2">2명</button>
+        <button type="button" id="count3">3명</button>
+      </div>
+
+      <div id="stepMode" hidden>
+        <h2>어떻게 설정할까요</h2>
+        <p id="countLine" class="hint"></p>
+        <button type="button" id="modeQr">다른 사람 휴대폰</button>
+        <p class="hint">QR을 보내면 각자 휴대폰에서 이름과 언어를 고릅니다.</p>
+        <button type="button" id="modeSolo">이 휴대폰만</button>
+        <p class="hint">이 휴대폰에서 모든 사람의 이름과 언어를 고립니다.</p>
+        <button type="button" class="ghost" id="backCount">인원 다시 고르기</button>
+      </div>
+
+      <div id="stepQr" hidden>
+        <h2>내 정보</h2>
+        <label for="hostName">내 이름</label>
+        <input id="hostName" maxlength="40" autocomplete="name" enterkeyhint="done">
+        <label for="hostLang">내 언어</label>
+        <select id="hostLang"></select>
+        <button type="button" id="showQr">QR 보여 주기</button>
+        <p id="waitLine" class="hint"></p>
+        <img id="qr" alt="상대가 스캔할 QR" hidden>
+        <label for="joinUrl">상대 참여 주소</label>
+        <input id="joinUrl" type="text" readonly>
+        <button type="button" class="ghost" id="backModeFromQr">설정 방법 다시 고르기</button>
+      </div>
+
+      <div id="stepSolo" hidden>
+        <h2>이 휴대폰에서 모두 설정</h2>
+        <p class="hint">모든 사람의 이름과 언어를 고른 뒤에 통역이 시작됩니다.</p>
+        <div id="soloFields"></div>
+        <button type="button" id="startSolo" disabled>통역 시작</button>
+        <button type="button" class="ghost" id="backModeFromSolo">설정 방법 다시 고르기</button>
+      </div>
+
+      <div id="stepLive" hidden>
+        <p class="hint" id="speakerHint" hidden>말하는 사람을 누르세요. 그 사람의 언어로 알아듣고, 다른 사람의 언어로 보여 줍니다.</p>
+        <div id="speakerRow"></div>
+        <p id="faceClock" class="clock">남은 시간 0:00</p>
+        <p id="peopleLine" class="hint"></p>
+        <button type="button" class="ghost" id="pauseFace" hidden>잠시 멈추기</button>
+        <p id="status"></p>
+        <div id="captions" class="captions">대기 중...</div>
+        <div class="meter" aria-hidden="true"><span id="level"></span></div>
+      </div>
+
       <button type="button" class="ghost" id="signOut">로그아웃</button>
     </section>
 
@@ -58,13 +93,15 @@
 
     <section id="guest" class="card" hidden>
       <h2>통역에 들어가기</h2>
-      <p class="hint">QR로 열린 주소입니다. 이름을 입력하면 상대와 통역이 연결됩니다. 이 휴대폰은 요금을 시작하지 않습니다.</p>
+      <p class="hint">이름과 말하는 언어를 고르면 상대 휴대폰에 전달됩니다. 모두 모이기 전에는 통역이 시작되지 않습니다. 이 휴대폰은 요금을 시작하지 않습니다.</p>
       <form id="guestForm">
         <label for="guestName">이름</label>
-        <input id="guestName" maxlength="40" autocomplete="name" enterkeyhint="done" required>
+        <input id="guestName" maxlength="40" autocomplete="name" enterkeyhint="next" required>
+        <label for="guestSpoken">말하는 언어</label>
+        <select id="guestSpoken" required></select>
         <button type="submit" id="guestJoin">들어가기</button>
       </form>
-      <p id="guestClock" class="clock">남은 시간 0:00</p>
+      <p id="guestClock" class="clock">설정 중</p>
       <p id="guestStatus"></p>
       <div id="guestCaptions" class="captions">대기 중...</div>
       <div class="meter" aria-hidden="true"><span id="guestLevel"></span></div>
@@ -106,31 +143,57 @@
     let remainingSeconds = 0;
     let tickAnchor = 0;
     let clockTimer = null;
+    let saveTimer = null;
     let paidPeople = [];
     let lines = [];
     let folder = "";
     let amountKrw = 0;
     let sessionLive = false;
+    let starting = false;
     let chargeChain = Promise.resolve();
+    let partySize = 0;
+    let setupMode = "";
+    let guests = [];
+    let roster = [];
+    let activeSpeaker = 0;
 
     function say(text) { document.getElementById("status").textContent = text; }
 
-    function fillLanguages(select, selected) {
+    function knownLang(code) {
+      return !!(code && LI.catalog.langByCode[code]);
+    }
+
+    function langName(code) {
+      const lang = LI.catalog.langByCode[code];
+      return lang ? lang.name : code;
+    }
+
+    function fillLanguages(select, placeholder) {
       select.innerHTML = "";
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = placeholder || "언어를 선택하세요";
+      select.append(empty);
       LI.catalog.languages.forEach((lang) => {
         const option = document.createElement("option");
         option.value = lang.code;
         option.textContent = lang.name;
         select.append(option);
       });
-      select.value = selected;
+      select.value = "";
+    }
+
+    function showStep(name) {
+      ["stepCount", "stepMode", "stepQr", "stepSolo", "stepLive"].forEach((id) => {
+        document.getElementById(id).hidden = id !== name;
+      });
     }
 
     function paintRate() {
       const one = LI.cost.formatKrw(LI.orgServices.FACE_PERSON_KRW);
       const two = LI.cost.formatKrw(LI.orgServices.facePeopleKrw(2));
       const three = LI.cost.formatKrw(LI.orgServices.facePeopleKrw(3));
-      document.getElementById("rateLine").textContent = `한 사람 ${one}입니다. 앱을 연 사람도 포함됩니다. 두 사람은 ${two}, 세 사람은 ${three}입니다. 결제한 시간은 1시간입니다.`;
+      document.getElementById("rateLine").textContent = `한 사람 ${one}입니다. 2명은 ${two}, 3명은 ${three}입니다. 3명을 넘길 수 없습니다. 결제한 시간은 1시간입니다.`;
     }
 
     function clockState() {
@@ -144,18 +207,16 @@
     function paintClock() {
       const text = `남은 시간 ${LI.cost.formatClock(shownSeconds())}`;
       const hostClock = document.getElementById("faceClock");
-      const guestClock = document.getElementById("guestClock");
       if (hostClock) hostClock.textContent = text;
-      if (guestClock && guestMode) guestClock.textContent = text;
     }
 
     function paintPeople() {
-      const names = paidPeople.map((person) => person.name).join(", ");
+      const names = paidPeople.map((person) => `${person.name} · ${langName(person.spoken)}`).join(", ");
       const line = document.getElementById("peopleLine");
       if (!line) return;
       line.textContent = paidPeople.length
         ? `${paidPeople.length}명 · ${LI.cost.formatKrw(amountKrw)} · ${names}`
-        : "이름을 입력한 사람만 참여합니다.";
+        : "";
     }
 
     function showCaption(board, title, text) {
@@ -179,7 +240,7 @@
       let busy = false;
       return {
         push(int16) {
-          if (paused || shownSeconds() <= 0) return;
+          if (!sessionLive || paused || shownSeconds() <= 0) return;
           if (!int16 || !int16.length) return;
           chunks.push(int16);
           samples += int16.length;
@@ -202,30 +263,32 @@
       return platformKey;
     }
 
-    async function interpret(pcm, sourceLang, targetLang, source, speakerName) {
-      if (paused || shownSeconds() <= 0) return;
+    function targetsFor(spoken) {
+      return [...new Set(roster.map((person) => person.spoken).filter((code) => code && code !== spoken))];
+    }
+
+    async function interpret(pcm, sourceLang, speakerName) {
+      if (!sessionLive || paused || shownSeconds() <= 0) return;
       const key = await ensureKey();
       const heard = await LI.speechTurn.transcribePcm(pcm, {
         apiKey: key,
         transcriptionLanguage: LI.catalog.transcriptionLanguage(sourceLang),
       });
-      if (!heard || paused || shownSeconds() <= 0) return;
-      const translated = await LI.speechTurn.translateLine(heard, {
-        apiKey: key,
-        sourceLang,
-        targetLang,
-        model: churchModel,
-      });
-      const speaker = speakerName || (source === "guest" ? "상대" : hostSpeaker());
-      const message = LI.orgServices.captionMessage(source, targetLang, translated || heard);
-      message.speaker = speaker;
-      if (room) room.sendAll(message);
-      rememberLine(speaker, message.text, targetLang);
-      showCaption(document.getElementById("captions"), speaker, message.text);
-    }
-
-    function hostSpeaker() {
-      return LI.orgServices.cleanName(document.getElementById("hostName").value) || "나";
+      if (!heard || !sessionLive || paused || shownSeconds() <= 0) return;
+      const targets = targetsFor(sourceLang);
+      for (const targetLang of targets) {
+        const translated = await LI.speechTurn.translateLine(heard, {
+          apiKey: key,
+          sourceLang,
+          targetLang,
+          model: churchModel,
+        });
+        const message = LI.orgServices.captionMessage("host", targetLang, translated || heard);
+        message.speaker = speakerName;
+        if (room) room.sendAll(message);
+        rememberLine(speakerName, message.text, targetLang);
+        showCaption(document.getElementById("captions"), `${speakerName} → ${langName(targetLang)}`, message.text);
+      }
     }
 
     async function openLocalMic(onPcm) {
@@ -264,6 +327,12 @@
       };
     }
 
+    function stopRoom() {
+      if (room) room.stop();
+      room = null;
+      guests = [];
+    }
+
     function stopSession(text) {
       if (clockTimer) clearInterval(clockTimer);
       clockTimer = null;
@@ -271,8 +340,7 @@
       paused = true;
       settleElapsed();
       saveTalk().catch(() => {});
-      if (room) room.stop();
-      room = null;
+      stopRoom();
       if (localStop) localStop();
       localStop = null;
       const pauseButton = document.getElementById("pauseFace");
@@ -304,17 +372,17 @@
     }
 
     async function saveTalk() {
-      if (!churchId || !folder) return;
+      if (!churchId || !folder || !roster.length) return;
       const body = lines.map((line) => `${line.name}: ${line.text}`).join("\n");
       const left = shownSeconds();
       await LI.db.set(`churches/${churchId}/sessions/${folder}/texts/face`, body);
-      const hostLang = document.getElementById("hostLang").value;
+      const hostLang = roster[0] && roster[0].spoken;
       if (hostLang) await LI.db.set(`churches/${churchId}/sessions/${folder}/texts/${hostLang}`, body);
       await LI.db.update(`churches/${churchId}/sessionIndex/${folder}`, {
         startedAt: lines[0] ? lines[0].at : Date.now(),
         folderName: folder,
         churchName: org ? org.name : "",
-        languages: [document.getElementById("hostLang").value, document.getElementById("guestLang").value],
+        languages: roster.map((person) => person.spoken),
         kind: "face",
         people: paidPeople.length,
         amountKrw,
@@ -358,7 +426,7 @@
 
     function broadcastClock() {
       if (!room) return;
-      room.sendAll({ type: "session", paused, remainingSeconds: shownSeconds() });
+      room.sendAll({ type: "session", paused, remainingSeconds: shownSeconds(), waiting: false });
     }
 
     function settleElapsed() {
@@ -401,6 +469,273 @@
       await saveTalk();
     }
 
+    function soloList() {
+      const list = [];
+      for (let i = 0; i < partySize; i += 1) {
+        const name = document.getElementById(`soloName${i}`);
+        const spoken = document.getElementById(`soloLang${i}`);
+        list.push({ name: name ? name.value : "", spoken: spoken ? spoken.value : "" });
+      }
+      return list;
+    }
+
+    function currentSetup() {
+      if (setupMode === "solo") {
+        return LI.orgServices.faceSetupReady({
+          people: partySize,
+          mode: "solo",
+          peopleList: soloList(),
+          knownLang,
+        });
+      }
+      return LI.orgServices.faceSetupReady({
+        people: partySize,
+        mode: "qr",
+        host: {
+          name: document.getElementById("hostName").value,
+          spoken: document.getElementById("hostLang").value,
+        },
+        guests,
+        knownLang,
+      });
+    }
+
+    function paintWait() {
+      const line = document.getElementById("waitLine");
+      if (!line || !partySize) return;
+      const needed = partySize - 1;
+      line.textContent = guests.length >= needed
+        ? "모두 모였습니다. 통역을 시작합니다."
+        : `${guests.length}/${needed}명이 이름과 언어를 골랐습니다. 모두 모이면 통역이 시작됩니다.`;
+    }
+
+    function renderSpeakers() {
+      const row = document.getElementById("speakerRow");
+      const hint = document.getElementById("speakerHint");
+      row.innerHTML = "";
+      const solo = setupMode === "solo";
+      hint.hidden = !solo;
+      if (!solo) return;
+      roster.forEach((person, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        if (index !== activeSpeaker) button.className = "ghost";
+        button.textContent = `${person.name} · ${langName(person.spoken)}`;
+        button.addEventListener("click", () => {
+          activeSpeaker = index;
+          renderSpeakers();
+        });
+        row.append(button);
+      });
+    }
+
+    function renderSolo() {
+      const box = document.getElementById("soloFields");
+      box.innerHTML = "";
+      for (let i = 0; i < partySize; i += 1) {
+        const nameLabel = document.createElement("label");
+        nameLabel.htmlFor = `soloName${i}`;
+        nameLabel.textContent = i === 0 ? "내 이름" : `${i + 1}번째 사람 이름`;
+        const name = document.createElement("input");
+        name.id = `soloName${i}`;
+        name.maxLength = 40;
+        name.autocomplete = "name";
+        const langLabel = document.createElement("label");
+        langLabel.htmlFor = `soloLang${i}`;
+        langLabel.textContent = i === 0 ? "내 언어" : `${i + 1}번째 사람 언어`;
+        const lang = document.createElement("select");
+        lang.id = `soloLang${i}`;
+        fillLanguages(lang);
+      box.append(nameLabel, name, langLabel, lang);
+    }
+    box.oninput = refreshSoloStart;
+    refreshSoloStart();
+  }
+
+    function refreshSoloStart() {
+      const button = document.getElementById("startSolo");
+      if (!button || setupMode !== "solo") return;
+      button.disabled = !currentSetup().ok;
+    }
+
+    function resetSetup() {
+      if (sessionLive) return;
+      stopRoom();
+      starting = false;
+      setupMode = "";
+      partySize = 0;
+      roster = [];
+      document.getElementById("hostName").disabled = false;
+      document.getElementById("hostLang").disabled = false;
+      document.getElementById("qr").hidden = true;
+      document.getElementById("joinUrl").value = "";
+      document.getElementById("waitLine").textContent = "";
+      showStep("stepCount");
+    }
+
+    function chooseCount(count) {
+      const size = LI.orgServices.facePartySize(count);
+      if (!size.ok) {
+        say(size.reason);
+        return;
+      }
+      partySize = size.people;
+      setupMode = "";
+      document.getElementById("countLine").textContent = `${size.people}명 · ${LI.cost.formatKrw(size.amount)}입니다. 설정이 끝나야 통역이 시작됩니다.`;
+      showStep("stepMode");
+    }
+
+    function showQr(url) {
+      document.getElementById("joinUrl").value = url;
+      const img = document.getElementById("qr");
+      LIQR.toString(url, { type: "svg", margin: 1, width: 280 }, (err, svg) => {
+        if (err || !svg) return;
+        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        img.hidden = false;
+      });
+    }
+
+    function localSpeaker() {
+      if (setupMode === "solo") return roster[activeSpeaker] || roster[0];
+      return roster[0];
+    }
+
+    async function beginInterpretation() {
+      if (sessionLive || starting) return;
+      const ready = currentSetup();
+      if (!ready.ok) {
+        const wait = document.getElementById("waitLine");
+        if (wait && setupMode === "qr") wait.textContent = ready.reason;
+        say(ready.reason);
+        return;
+      }
+      const gateResult = LI.orgServices.canStartPaid(org, "face");
+      if (!gateResult.ok) {
+        say(gateResult.reason);
+        return;
+      }
+      starting = true;
+      try {
+        const charge = await chargePeople(ready.people, `대면 통역 ${ready.people}명`);
+        if (!charge.ok) {
+          const short = `선불 잔액이 부족합니다. ${ready.people}명은 ${LI.cost.formatKrw(ready.amount)}이 필요합니다.`;
+          const wait = document.getElementById("waitLine");
+          if (wait && setupMode === "qr") wait.textContent = short;
+          say(short);
+          starting = false;
+          return;
+        }
+        roster = ready.roster;
+        paidPeople = roster.map((person) => ({ name: person.name, spoken: person.spoken, role: person.role }));
+        activeSpeaker = 0;
+        lines = [];
+        folder = seoulFolder(Date.now());
+        remainingSeconds = LI.orgServices.FACE_BLOCK_SECONDS;
+        paused = false;
+        tickAnchor = Date.now();
+        sessionLive = true;
+        amountKrw = charge.amount;
+        paintPeople();
+        paintClock();
+        renderSpeakers();
+        showStep("stepLive");
+        await saveTalk();
+        const hostAudio = collector((pcm) => {
+          const speaker = localSpeaker();
+          if (!speaker) return null;
+          return interpret(pcm, speaker.spoken, speaker.name);
+        });
+        if (room) {
+          room.sendAll({ type: "session", paused: false, remainingSeconds, waiting: false });
+          guests.forEach((guest) => {
+            room.sendCaption(guest.peerId, { type: "joined", phoneId: guest.peerId });
+          });
+        }
+        localStop = await openLocalMic((pcm) => hostAudio.push(pcm));
+        document.getElementById("pauseFace").hidden = false;
+        if (clockTimer) clearInterval(clockTimer);
+        clockTimer = setInterval(() => {
+          paintClock();
+          if (shownSeconds() <= 0 && !paused) setRunning(true).catch(() => {});
+          else if (!paused) broadcastClock();
+        }, 1000);
+        say(setupMode === "solo"
+          ? "통역을 시작했습니다. 말하는 사람을 누르고 이야기하세요."
+          : "모두 모였습니다. 통역을 시작했습니다.");
+      } catch (err) {
+        starting = false;
+        sessionLive = false;
+        say(LI.catalog.redactSecrets(err && err.message ? err.message : "통역을 시작하지 못했습니다."));
+      }
+    }
+
+    function acceptGuest(peerId, message) {
+      if (sessionLive || setupMode !== "qr") return;
+      const name = LI.orgServices.cleanName(message.name);
+      const spoken = String(message.spoken || "");
+      const phoneId = String(message.phoneId || peerId);
+      if (!name || !knownLang(spoken)) {
+        room.sendCaption(peerId, { type: "error", message: "이름과 말하는 언어를 선택해 주세요." });
+        return;
+      }
+      const person = { name, spoken, peerId, phoneId };
+      const index = guests.findIndex((guest) => guest.phoneId === phoneId);
+      if (index >= 0) guests[index] = person;
+      else if (guests.length >= partySize - 1) {
+        room.sendCaption(peerId, { type: "error", message: "인원이 다 찼습니다." });
+        return;
+      } else guests.push(person);
+      room.sendCaption(peerId, { type: "session", paused: true, remainingSeconds: 0, waiting: true });
+      paintWait();
+      const ready = currentSetup();
+      if (ready.ok) beginInterpretation().catch(() => {});
+      else if (guests.length >= partySize - 1) document.getElementById("waitLine").textContent = ready.reason;
+    }
+
+    function openInvite() {
+      const hostName = LI.orgServices.cleanName(document.getElementById("hostName").value);
+      const hostLang = document.getElementById("hostLang").value;
+      if (!hostName) {
+        document.getElementById("waitLine").textContent = "내 이름을 입력해 주세요.";
+        return;
+      }
+      if (!knownLang(hostLang)) {
+        document.getElementById("waitLine").textContent = "내 언어를 선택해 주세요.";
+        return;
+      }
+      document.getElementById("hostName").disabled = true;
+      document.getElementById("hostLang").disabled = true;
+      const guestCollectors = new Map();
+      const token = LI.faceHost.randomHex(16);
+      showQr(LI.orgServices.faceJoinUrl(LI.catalog.pagesBase, token));
+      paintWait();
+      room = LI.faceHost.start({
+        token,
+        databaseURL: LI.catalog.firebase.databaseURL,
+        rootPath: LI.catalog.firebase.rootPath,
+        onPcm(peerId, bytes) {
+          if (!sessionLive) return;
+          const speaker = guests.find((guest) => guest.peerId === peerId);
+          if (!speaker) return;
+          let bucket = guestCollectors.get(peerId);
+          if (!bucket) {
+            bucket = collector((pcm) => interpret(pcm, speaker.spoken, speaker.name));
+            guestCollectors.set(peerId, bucket);
+          }
+          bucket.push(uint8ToInt16(bytes));
+        },
+        onText(peerId, message) {
+          if (!message || message.type !== "hello") return;
+          acceptGuest(peerId, message);
+        },
+        onLeave(peerId) {
+          if (sessionLive) return;
+          guests = guests.filter((guest) => guest.peerId !== peerId);
+          paintWait();
+        },
+      });
+    }
+
     async function loadOrg(user) {
       signedUser = user;
       LI.db.clearChurch();
@@ -424,25 +759,15 @@
       gate.hidden = true;
       hostCard.hidden = false;
       paintRate();
-      paintPeople();
-      paintClock();
+      showStep("stepCount");
       await loadHistory();
     }
 
-    function showQr(url) {
-      document.getElementById("joinUrl").value = url;
-      const img = document.getElementById("qr");
-      LIQR.toString(url, { type: "svg", margin: 1, width: 280 }, (err, svg) => {
-        if (err || !svg) return;
-        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-        img.hidden = false;
-      });
-    }
-
     if (guestMode) {
-      document.getElementById("lead").textContent = "상대의 QR로 들어온 화면입니다. 이름을 입력하면 양쪽 통역이 연결됩니다.";
+      document.getElementById("lead").textContent = "상대의 QR로 들어온 화면입니다. 이름과 말하는 언어를 고르면 전달됩니다. 모두 모이기 전에는 통역이 시작되지 않습니다.";
       gate.hidden = true;
       guestCard.hidden = false;
+      fillLanguages(document.getElementById("guestSpoken"));
       document.getElementById("guestForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         const join = LI.orgServices.guestJoin(invite);
@@ -451,8 +776,13 @@
           return;
         }
         const name = LI.orgServices.cleanName(document.getElementById("guestName").value);
+        const spoken = document.getElementById("guestSpoken").value;
         if (!name) {
           document.getElementById("guestStatus").textContent = "이름을 입력해 주세요.";
+          return;
+        }
+        if (!knownLang(spoken)) {
+          document.getElementById("guestStatus").textContent = "말하는 언어를 선택해 주세요.";
           return;
         }
         document.getElementById("guestJoin").disabled = true;
@@ -462,30 +792,77 @@
             rootPath: LI.catalog.firebase.rootPath,
             token: invite,
             name,
+            spoken,
             role: "face-guest",
             onStatus(text) { document.getElementById("guestStatus").textContent = text; },
             onLevel(width) { document.getElementById("guestLevel").style.width = `${width}%`; },
             onJson(message) {
               if (!message) return;
+              if (message.type === "error") {
+                document.getElementById("guestStatus").textContent = message.message || "들어가지 못했습니다.";
+                return;
+              }
               if (message.type === "session") {
+                if (message.waiting) {
+                  link.setPaused(true);
+                  document.getElementById("guestClock").textContent = "설정 중";
+                  document.getElementById("guestStatus").textContent = "다른 사람이 설정을 마치면 통역이 시작됩니다.";
+                  return;
+                }
                 link.setPaused(!!message.paused || Number(message.remainingSeconds) <= 0);
-                const clock = document.getElementById("guestClock");
-                clock.textContent = `남은 시간 ${LI.cost.formatClock(message.remainingSeconds || 0)}`;
-                if (message.paused) document.getElementById("guestStatus").textContent = "통역이 잠시 멈췄습니다.";
+                document.getElementById("guestClock").textContent = `남은 시간 ${LI.cost.formatClock(message.remainingSeconds || 0)}`;
+                document.getElementById("guestStatus").textContent = message.paused
+                  ? "통역이 잠시 멈췄습니다."
+                  : "통역이 시작되었습니다.";
                 return;
               }
               if (message.type !== "caption") return;
               showCaption(document.getElementById("guestCaptions"), message.speaker || "통역", message.text);
             },
           });
+          link.setPaused(true);
+          document.getElementById("guestStatus").textContent = "이름과 언어를 보냈습니다. 모두 모이면 통역이 시작됩니다.";
         } catch (err) {
           document.getElementById("guestJoin").disabled = false;
           document.getElementById("guestStatus").textContent = err && err.message ? err.message : "마이크를 열지 못했습니다.";
         }
       });
     } else {
-      fillLanguages(document.getElementById("hostLang"), "ko");
-      fillLanguages(document.getElementById("guestLang"), "en");
+      fillLanguages(document.getElementById("hostLang"));
+      document.getElementById("count2").addEventListener("click", () => chooseCount(2));
+      document.getElementById("count3").addEventListener("click", () => chooseCount(3));
+      document.getElementById("backCount").addEventListener("click", () => resetSetup());
+      document.getElementById("backModeFromQr").addEventListener("click", () => {
+        if (sessionLive) return;
+        stopRoom();
+        setupMode = "";
+        document.getElementById("hostName").disabled = false;
+        document.getElementById("hostLang").disabled = false;
+        document.getElementById("qr").hidden = true;
+        showStep("stepMode");
+      });
+      document.getElementById("backModeFromSolo").addEventListener("click", () => {
+        if (sessionLive) return;
+        setupMode = "";
+        showStep("stepMode");
+      });
+      document.getElementById("modeQr").addEventListener("click", () => {
+        setupMode = "qr";
+        showStep("stepQr");
+        document.getElementById("waitLine").textContent = "내 이름과 언어를 고른 뒤 QR을 보여 주세요. 다른 사람이 모두 들어오기 전에는 통역이 시작되지 않습니다.";
+      });
+      document.getElementById("modeSolo").addEventListener("click", () => {
+        setupMode = "solo";
+        renderSolo();
+        showStep("stepSolo");
+      });
+      document.getElementById("showQr").addEventListener("click", () => {
+        if (sessionLive || room) return;
+        openInvite();
+      });
+      document.getElementById("startSolo").addEventListener("click", () => {
+        beginInterpretation().catch((err) => say(err && err.message ? err.message : "통역을 시작하지 못했습니다."));
+      });
       document.getElementById("pauseFace").addEventListener("click", () => {
         if (!sessionLive) return;
         setRunning(!paused).catch((err) => say(err && err.message ? err.message : "잠시 멈추지 못했습니다."));
@@ -508,99 +885,12 @@
       });
       document.getElementById("signOut").addEventListener("click", async () => {
         stopSession("");
+        resetSetup();
         org = null;
         platformKey = "";
         try { await firebase.auth().signOut(); } catch (_) { /* 이미 로그아웃된 상태는 무시합니다 */ }
         hostCard.hidden = true;
         gate.hidden = false;
-      });
-      document.getElementById("startFace").addEventListener("click", async () => {
-        const gateResult = LI.orgServices.canStartPaid(org, "face");
-        if (!gateResult.ok) {
-          say(gateResult.reason);
-          return;
-        }
-        const hostName = LI.orgServices.cleanName(document.getElementById("hostName").value);
-        const hostLang = document.getElementById("hostLang").value;
-        const guestLang = document.getElementById("guestLang").value;
-        if (!hostName) {
-          say("내 이름을 입력해 주세요.");
-          return;
-        }
-        if (hostLang === guestLang) {
-          say("두 언어가 같습니다. 상대 언어를 다르게 고르세요.");
-          return;
-        }
-        document.getElementById("startFace").disabled = true;
-        try {
-          const charge = await chargePeople(1, `대면 통역 ${hostName}`);
-          if (!charge.ok) {
-            say(`선불 잔액이 부족합니다. 한 사람 ${LI.cost.formatKrw(LI.orgServices.FACE_PERSON_KRW)}이 필요합니다.`);
-            document.getElementById("startFace").disabled = false;
-            return;
-          }
-          paidPeople = [{ name: hostName, role: "host" }];
-          lines = [];
-          folder = seoulFolder(Date.now());
-          remainingSeconds = LI.orgServices.FACE_BLOCK_SECONDS;
-          paused = false;
-          tickAnchor = Date.now();
-          sessionLive = true;
-          amountKrw = charge.amount;
-          paintPeople();
-          paintClock();
-          await saveTalk();
-          const names = new Map();
-          const guestCollectors = new Map();
-          const token = LI.faceHost.randomHex(16);
-          const url = LI.orgServices.faceJoinUrl(LI.catalog.pagesBase, token);
-          showQr(url);
-          const hostAudio = collector((pcm) => interpret(pcm, hostLang, guestLang, "host", hostName));
-          room = LI.faceHost.start({
-            token,
-            databaseURL: LI.catalog.firebase.databaseURL,
-            rootPath: LI.catalog.firebase.rootPath,
-            onPcm(peerId, bytes) {
-              const speaker = names.get(peerId);
-              if (!speaker) return;
-              let bucket = guestCollectors.get(peerId);
-              if (!bucket) {
-                bucket = collector((pcm) => interpret(pcm, guestLang, hostLang, "guest", speaker));
-                guestCollectors.set(peerId, bucket);
-              }
-              bucket.push(uint8ToInt16(bytes));
-            },
-            onText(peerId, message) {
-              if (!message || message.type !== "hello") return;
-              const name = LI.orgServices.cleanName(message.name);
-              if (!name || names.has(peerId)) return;
-              chargePeople(1, `대면 통역 ${name}`).then((extra) => {
-                if (!extra || !extra.ok) {
-                  room.sendCaption(peerId, { type: "error", message: "선불 잔액이 부족해 들어갈 수 없습니다." });
-                  return;
-                }
-                names.set(peerId, name);
-                paidPeople.push({ name, role: "guest" });
-                paintPeople();
-                room.sendCaption(peerId, { type: "joined", phoneId: peerId });
-                broadcastClock();
-                saveTalk().catch(() => {});
-              }).catch(() => {});
-            },
-          });
-          localStop = await openLocalMic((pcm) => hostAudio.push(pcm));
-          document.getElementById("pauseFace").hidden = false;
-          if (clockTimer) clearInterval(clockTimer);
-          clockTimer = setInterval(() => {
-            paintClock();
-            if (shownSeconds() <= 0 && !paused) setRunning(true).catch(() => {});
-            else if (!paused) broadcastClock();
-          }, 1000);
-          say("QR을 상대에게 보여 주세요. 잠시 멈추면 통역과 남은 시간이 같이 멈춥니다.");
-        } catch (err) {
-          document.getElementById("startFace").disabled = false;
-          say(LI.catalog.redactSecrets(err && err.message ? err.message : "통역을 시작하지 못했습니다."));
-        }
       });
       LI.db.init().then(() => {
         firebase.auth().onAuthStateChanged(async (user) => {
