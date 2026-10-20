@@ -14,12 +14,14 @@ enum PhonePage {
         }
     }
 
+    /// 버튼 안에서 두 줄로 읽히도록 줄을 미리 나눈다.
+    /// 강연은 ‘송출 컴퓨터’를 나누지 않고, 대면은 쉼표 뒤에서 끊는다.
     var detail: String {
         switch self {
         case .lecture:
-            return "휴대폰 마이크로 송출 컴퓨터에 연결합니다."
+            return "휴대폰 마이크로\n송출 컴퓨터에 연결합니다."
         case .face:
-            return "QR을 보여 주거나, 상대 QR을 카메라로 읽습니다."
+            return "QR을 보여 주거나,\n상대 QR을 카메라로 읽습니다."
         }
     }
 
