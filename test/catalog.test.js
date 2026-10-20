@@ -259,12 +259,15 @@ test("firebase api key is not committed", () => {
   assert.deepEqual(hits, []);
 });
 
-test("face session charges 5000 won per person and pauses the clock", () => {
+test("face session charges 2500 won per person hour and pauses the clock", () => {
   const orgServices = require("../docs/js/org-services.js");
-  assert.equal(orgServices.FACE_PERSON_KRW, 5000);
-  assert.equal(orgServices.facePeopleKrw(1), 5000);
-  assert.equal(orgServices.facePeopleKrw(2), 10000);
-  assert.equal(orgServices.facePeopleKrw(3), 15000);
+  const cost = require("../docs/js/cost.js");
+  assert.equal(cost.HOUR_BASE_KRW, 15000);
+  assert.equal(cost.EXTRA_LANG_HOUR_KRW, 5000);
+  assert.equal(orgServices.FACE_PERSON_KRW, 2500);
+  assert.equal(orgServices.facePeopleKrw(1), 2500);
+  assert.equal(orgServices.facePeopleKrw(2), 5000);
+  assert.equal(orgServices.facePeopleKrw(3), 7500);
   const paid = orgServices.faceChargePatch({
     balance: 20000,
     people: 2,
@@ -274,12 +277,18 @@ test("face session charges 5000 won per person and pauses the clock", () => {
     note: "대면 통역",
   });
   assert.equal(paid.ok, true);
-  assert.equal(paid.amount, 10000);
-  assert.equal(paid.balance, 10000);
+  assert.equal(paid.amount, 5000);
+  assert.equal(paid.balance, 15000);
   assert.equal(paid.remainingSeconds, 3600);
-  const short = orgServices.faceChargePatch({ balance: 4000, people: 1, now: 1000 });
+  const three = orgServices.faceChargePatch({ balance: 7500, people: 3, now: 1000 });
+  assert.equal(three.ok, true);
+  assert.equal(three.amount, 7500);
+  assert.equal(three.balance, 0);
+  assert.equal(three.remainingSeconds, orgServices.FACE_BLOCK_SECONDS);
+  const short = orgServices.faceChargePatch({ balance: 4000, people: 2, now: 1000 });
   assert.equal(short.ok, false);
   assert.equal(short.short, true);
+  assert.equal(short.amount, 5000);
   assert.equal(orgServices.faceRemainingSeconds({ remainingSeconds: 100, paused: false, anchor: 1000 }, 61000), 40);
   assert.equal(orgServices.faceRemainingSeconds({ remainingSeconds: 100, paused: true, anchor: 1000 }, 61000), 100);
 });

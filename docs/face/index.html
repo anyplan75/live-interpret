@@ -193,7 +193,7 @@
       const one = LI.cost.formatKrw(LI.orgServices.FACE_PERSON_KRW);
       const two = LI.cost.formatKrw(LI.orgServices.facePeopleKrw(2));
       const three = LI.cost.formatKrw(LI.orgServices.facePeopleKrw(3));
-      document.getElementById("rateLine").textContent = `한 사람 ${one}입니다. 2명은 ${two}, 3명은 ${three}입니다. 3명을 넘길 수 없습니다. 결제한 시간은 1시간입니다.`;
+      document.getElementById("rateLine").textContent = `한 사람 시간당 ${one}입니다. 시작한 사람도 포함입니다. 2명은 시간당 ${two}, 3명은 시간당 ${three}입니다. 3명을 넘길 수 없습니다. 통역을 시작하면 이 금액이 빠지고 1시간 시계가 줄어듭니다.`;
     }
 
     function clockState() {
@@ -630,7 +630,7 @@
         activeSpeaker = 0;
         lines = [];
         folder = seoulFolder(Date.now());
-        remainingSeconds = LI.orgServices.FACE_BLOCK_SECONDS;
+        remainingSeconds = charge.remainingSeconds;
         paused = false;
         tickAnchor = Date.now();
         sessionLive = true;

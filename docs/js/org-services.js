@@ -180,13 +180,11 @@
   function adminRateText() {
     const cost = costLib();
     const lecture = rateFor("lecture", ["ko", "en"]);
-    const face = rateFor("face", ["ko", "en"]);
-    const faceExtra = rateFor("face", ["ko", "zh-CN"]);
     return [
       "강연·회의와 대면 통역은 따로 등록합니다. 시간당 금액은 코드에 고정되어 있고, 이 화면에서 바꾸지 않습니다.",
       `강연·회의 1시간, 한국어와 영어: ${lecture.label}.`,
-      `대면 통역 1시간, 한국어와 영어: ${face.label}.`,
-      `한국어와 영어가 아닌 언어는 시간당 ${cost.formatKrw(cost.EXTRA_LANG_HOUR_KRW)}이 더해집니다. 대면 통역에서 한쪽이 중국어면 1시간은 ${faceExtra.label}입니다.`,
+      `한국어와 영어가 아닌 언어는 강연·회의에서 시간당 ${cost.formatKrw(cost.EXTRA_LANG_HOUR_KRW)}이 더해집니다.`,
+      `대면 통역은 한 사람 시간당 ${cost.formatKrw(FACE_PERSON_KRW)}입니다. 시작한 사람도 포함입니다. 2명은 시간당 ${cost.formatKrw(facePeopleKrw(2))}, 3명은 시간당 ${cost.formatKrw(facePeopleKrw(3))}입니다.`,
       "고객은 선불 잔액을 넣은 뒤 그 시간으로 씁니다.",
       cost.overtimeText(),
     ].join("\n");
@@ -295,7 +293,9 @@
     };
   }
 
-  const FACE_PERSON_KRW = 5000;
+  // 대면 통역만의 단가. 강연·회의 시간당 금액과는 따로다.
+  // 한 사람 시간당 2,500원이고, 그 금액으로 시계는 1시간(3600초)이 줄어든다.
+  const FACE_PERSON_KRW = 2500;
   const FACE_BLOCK_SECONDS = 3600;
 
   function facePeopleKrw(count) {
