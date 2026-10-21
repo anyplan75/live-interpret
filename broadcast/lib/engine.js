@@ -936,7 +936,8 @@ class Engine {
     }
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
     if (!isChurchId(opts.churchId)) throw new Error("교회를 선택해 주세요.");
-    if (!isPreacherId(opts.preacherId)) throw new Error("설교자를 등록하고 선택해 주세요.");
+    if (!isPreacherId(opts.preacherId)) throw new Error("강연자를 등록하고 선택해 주세요.");
+    if (!["설교", "강의", "연설", "행사"].includes(opts.sessionKind)) throw new Error("내용을 선택해 주세요.");
     const outputCodes = cleanTargets(opts.targets);
     if (!outputCodes.length) throw new Error("번역할 언어를 하나 이상 선택해 주세요.");
     if (!this.capture.opened) {
@@ -959,7 +960,7 @@ class Engine {
     const model = isModelId(church.model) ? church.model : defaultModel;
     const preachers = await firebase.listPreachers(church.id);
     let selected = preachers.find((item) => item.id === opts.preacherId) || null;
-    if (!selected) throw new Error("이 교회에 등록된 설교자를 선택해 주세요.");
+    if (!selected) throw new Error("이 교회에 등록된 강연자를 선택해 주세요.");
 
     this.writer = createSessionWriter(opts.folder, church.name, opts.now || new Date());
     this.sessionDir = this.writer.dir;
@@ -995,7 +996,7 @@ class Engine {
       }
       const named = preacherLib.matchPreacher(preachers, extracted.preacherName);
       if (named && named.id === selected.id) {
-        this.emit({ type: "log", level: "info", text: `주보의 설교자 ${named.name} 과 선택한 설교자가 같습니다.` });
+        this.emit({ type: "log", level: "info", text: `진행자료의 강연자 ${named.name} 과 선택한 강연자가 같습니다.` });
       }
     }
 
@@ -1014,6 +1015,7 @@ class Engine {
       languages: [spoken, ...targets],
       preacherId: selected.id,
       preacherName: selected.name,
+      sessionKind: opts.sessionKind,
       endedAt: null,
     });
 
@@ -1194,10 +1196,10 @@ class Engine {
             next = preacherLib.mergeProfile(current, raw);
           }
           await firebase.savePreacher(this.church.id, this.preacherId, next);
-          this.emit({ type: "log", level: "info", text: `${current.name} 설교자 프로필에 오늘 배운 표현을 반영했습니다.` });
+          this.emit({ type: "log", level: "info", text: `${current.name} 강연자 프로필에 오늘 배운 표현을 반영했습니다.` });
         }
       } catch (err) {
-        this.emit({ type: "log", level: "error", text: `설교자 프로필 갱신 실패: ${err.message || err}` });
+        this.emit({ type: "log", level: "error", text: `강연자 프로필 갱신 실패: ${err.message || err}` });
       }
     }
     this.sessionApiKey = "";

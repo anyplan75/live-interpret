@@ -104,11 +104,12 @@ test("one connection id stays on the first device until it leaves", () => {
   const refused = sent.find((row) => row.type === "error");
   assert.match(refused.message, /이미 다른 기기/);
   assert.deepEqual(closed, ["peertwo02"]);
-  hello("peerlang0", "오", "phoneidphoneid05", "4821", "");
-  assert.match(sent[sent.length - 1].message, /말하는 언어/);
   join.peerLeft("peerone01");
+  hello("peerlang0", "오", "phoneidphoneid05", "4821", "");
+  assert.equal(sent.filter((row) => row.type === "joined" && row.name === "오").length, 1);
+  join.peerLeft("peerlang0");
   hello("peerthree", "박", "phoneidphoneid03", "4821", "ja");
-  assert.equal(sent.filter((row) => row.type === "joined").length, 2);
+  assert.equal(sent.filter((row) => row.type === "joined").length, 3);
   hello("peerfour4", "최", "phoneidphoneid04", "0000", "ko");
   assert.match(sent[sent.length - 1].message, /암호가 맞지/);
   assert.equal(org.normalizeConnectionId("ab-234k"), "AB234K");
@@ -122,16 +123,17 @@ test("one connection id stays on the first device until it leaves", () => {
   const rules = JSON.parse(read("firebase/live-interpret.rules.json"));
   const desk = rules["live-interpret"].lectureJoins.$joinId;
   assert.match(lecture, /id="joinId"/);
-  assert.match(lecture, /id="joinPin"/);
-  assert.match(lecture, /id="spoken"/);
-  assert.match(lecture, /언어를 선택하세요/);
+  assert.match(lecture, /id="name"/);
+  assert.match(lecture, /암호/);
+  assert.doesNotMatch(lecture, /id="joinPin"|id="phoneQr"|qrcode/);
   assert.equal(lecture.indexOf("languages.js") < lecture.indexOf("catalog.js"), true);
   assert.match(card, /id="phoneDesks"/);
-  assert.match(card, /id="addPhoneChannel"/);
-  assert.match(card, /이번 세션 4자리 암호/);
+  assert.match(card, /id="phoneCount"/);
+  assert.match(card, /암호/);
+  assert.doesNotMatch(card, /id="addPhoneChannel"|id="phoneQr"|id="phoneJoinUrl"|이번 세션 4자리 암호/);
   assert.doesNotMatch(card, /id="joinId"|id="joinPin"/);
   assert.match(read("broadcast/renderer/renderer.js"), /onChannelSpoken\(/);
-  assert.match(read("broadcast/preload.js"), /addPhoneChannel/);
+  assert.match(read("broadcast/preload.js"), /setPhoneCount/);
   assert.match(desk[".read"], /ABCDEFGHJKLMNPQRSTUVWXYZ23456789/);
   assert.match(desk[".write"], /!newData\.child\('pin'\)\.exists\(\)/);
   assert.match(desk[".write"], /!newData\.child\('password'\)\.exists\(\)/);
@@ -298,10 +300,7 @@ test("named phones join through data-channel messages without a certificate", as
     server.ingestText("peer0001aa", JSON.stringify({
       type: "hello", name: "민수", phoneId: "phone0001", pin: pinA, connectionId: first.connectionId,
     }));
-    assert.match(sent.at(-1).message, /말하는 언어/);
-    server.ingestText("peer0001aa", JSON.stringify({
-      type: "hello", name: "민수", phoneId: "phone0001", pin: pinA, spoken: "ko", connectionId: first.connectionId,
-    }));
+    assert.equal(joined[0] && joined[0].spoken, "ko");
     server.ingestText("peer0002bb", JSON.stringify({
       type: "hello", name: "영희", phoneId: "phone0002", pin: pinB, spoken: "en", connectionId: second.connectionId,
     }));
@@ -330,6 +329,38 @@ test("named phones join through data-channel messages without a certificate", as
   } finally {
     await server.stop();
   }
+});
+
+test("the operator picks how many phones and a name plus auth code is enough", async () => {
+  const sent = [];
+  const server = new PhoneJoin({
+    onHello: (phone) => ({ index: 1, name: phone.name, phoneId: phone.id, spoken: phone.spoken }),
+  });
+  server.attachLink({
+    send(_peerId, text) { sent.push(JSON.parse(text)); },
+    close() {},
+  });
+  const prepared = server.setPhoneCount(2);
+  assert.equal(prepared.added.length, 2);
+  assert.equal(server.sessionOpen, false);
+  assert.equal(server.info().channels.length, 2);
+  const kept = server.desks.map((desk) => desk.connectionId);
+  server.ingestText("peerbefore", JSON.stringify({
+    type: "hello", name: "민수", connectionId: kept[0],
+  }));
+  assert.match(sent.at(-1).message, /아직 시작되지/);
+  await server.openSession();
+  assert.deepEqual(server.desks.map((desk) => desk.connectionId), kept);
+  server.ingestText("peerafter1", JSON.stringify({
+    type: "hello", name: "민수", connectionId: kept[0],
+  }));
+  assert.equal(sent.some((row) => row.type === "joined" && row.name === "민수"), true);
+  assert.throws(() => server.setPhoneCount(9), /0부터 8까지/);
+  assert.throws(() => server.setPhoneCount(0), /연결된 휴대폰/);
+  const shrunk = server.setPhoneCount(1);
+  assert.equal(shrunk.removed.length, 1);
+  assert.equal(server.info().channels.length, 1);
+  assert.equal(server.info().channels[0].connectionId, kept[0]);
 });
 
 function chromeBin() {

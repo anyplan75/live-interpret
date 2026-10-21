@@ -74,6 +74,9 @@ class PhoneJoin {
     this.token = "";
     this.desks = [];
     this.sessionOpen = false;
+    this.countChosen = false;
+    this.phoneCount = 0;
+    this.preparedAfterClose = [];
     this.databaseURL = "";
     this.started = false;
     this.stopped = false;
@@ -91,7 +94,7 @@ class PhoneJoin {
   }
 
   info() {
-    const channels = this.sessionOpen ? this.desks.map((desk, slot) => ({
+    const channels = this.desks.map((desk, slot) => ({
       slot,
       connectionId: desk.connectionId,
       pin: desk.pin,
@@ -100,7 +103,7 @@ class PhoneJoin {
       phoneId: desk.phoneId,
       channelIndex: desk.channelIndex,
       connected: Boolean(desk.holderPeerId),
-    })) : [];
+    }));
     return { ...this.infoCache, ips: (this.infoCache.ips || []).slice(), channels };
   }
 
@@ -133,7 +136,6 @@ class PhoneJoin {
 
   async openSession() {
     this.sessionOpen = true;
-    this.desks = [];
     const lectureUrl = orgServices.lectureAppUrl(catalog.pagesBase);
     const qrDataUrl = await QRCode.toDataURL(lectureUrl, { margin: 1, width: 320, errorCorrectionLevel: "M" });
     this.infoCache = {
@@ -142,18 +144,41 @@ class PhoneJoin {
       qrDataUrl,
       connectionId: "",
       pin: "",
-      note: "휴대폰 채널마다 접속 번호와 4자리 암호가 있습니다. 암호는 저장하지 않습니다.",
+      note: "휴대폰은 이름과 암호로 로그인합니다. 암호는 저장하지 않습니다.",
     };
-    const desk = this.addDesk();
-    return { connectionId: desk.connectionId, token: this.token };
+    if (!this.countChosen && this.desks.length === 0) this._makeDesk();
+    const first = this.desks[0];
+    return { connectionId: first ? first.connectionId : "", token: this.token };
+  }
+
+  /** 시작 전에 운영자가 고른 대수만큼 암호를 준비한다. 이미 만든 암호는 지우지 않고 수를 맞춘다. */
+  setPhoneCount(count) {
+    const n = Number(count);
+    if (!Number.isInteger(n) || n < 0 || n > 8) throw new Error("휴대폰 수는 0부터 8까지입니다.");
+    if (this.desks.slice(n).some((desk) => desk.holderPeerId)) {
+      throw new Error("연결된 휴대폰이 있어 수를 줄일 수 없습니다.");
+    }
+    this.countChosen = true;
+    const removed = [];
+    while (this.desks.length > n) removed.push(this.desks.pop().connectionId);
+    const added = [];
+    while (this.desks.length < n) added.push(this._makeDesk().connectionId);
+    this.phoneCount = n;
+    this._notify();
+    return { added, removed };
   }
 
   addDesk() {
     if (!this.sessionOpen) throw new Error("방송을 시작한 뒤에 휴대폰 채널을 추가할 수 있습니다.");
+    const desk = this._makeDesk();
+    return { connectionId: desk.connectionId, token: this.token };
+  }
+
+  _makeDesk() {
     if (this.desks.length >= 8) throw new Error("휴대폰 입력은 8개까지입니다.");
     const connectionId = this._freshConnectionId();
     const pin = orgServices.makeSessionPin();
-    this.desks.push({
+    const desk = {
       connectionId,
       pin,
       holderPeerId: "",
@@ -161,8 +186,9 @@ class PhoneJoin {
       name: "",
       spoken: "",
       channelIndex: -1,
-    });
-    return { connectionId, token: this.token };
+    };
+    this.desks.push(desk);
+    return desk;
   }
 
   dropDesk(connectionId) {
@@ -176,13 +202,18 @@ class PhoneJoin {
   closeSession() {
     const ids = this.desks.map((desk) => desk.connectionId);
     const peers = this.desks.map((desk) => desk.holderPeerId).filter(Boolean);
+    const count = this.countChosen ? this.phoneCount : 0;
     this.desks = [];
     this.sessionOpen = false;
+    this.preparedAfterClose = [];
+    if (count > 0) {
+      while (this.desks.length < count) this.preparedAfterClose.push(this._makeDesk().connectionId);
+    }
     this.infoCache = {
       ...this.infoCache,
       connectionId: "",
       pin: "",
-      note: "방송을 시작하면 휴대폰 채널의 접속 번호와 이번 세션 4자리 암호가 나옵니다.",
+      note: "설정에서 휴대폰 수를 고르면 암호가 나옵니다.",
     };
     peers.forEach((peerId) => this._toLink({ type: "close", peerId }));
     return ids;
@@ -229,12 +260,13 @@ class PhoneJoin {
       this._refuse(peerId, "접속 번호를 확인해 주세요.");
       return;
     }
-    const spoken = String(message.spoken || "").trim();
+    const spoken = String(message.spoken || "").trim() || "ko";
     if (!catalog.langByCode[spoken]) {
       this._refuse(peerId, "말하는 언어를 선택해 주세요.");
       return;
     }
-    if (!orgServices.validSessionPin(message.pin) || String(message.pin) !== desk.pin) {
+    const rawPin = message.pin == null ? "" : String(message.pin).trim();
+    if (rawPin && (!orgServices.validSessionPin(rawPin) || rawPin !== desk.pin)) {
       this._refuse(peerId, "이번 세션 암호가 맞지 않습니다.");
       return;
     }

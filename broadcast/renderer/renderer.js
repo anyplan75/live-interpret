@@ -10,6 +10,7 @@ const koStackEl = document.getElementById("koStack");
 const cardsEl = document.getElementById("cards");
 const logEl = document.getElementById("log");
 const langCount = document.getElementById("langCount");
+const { missingSetup, preacherToSelect } = window.SetupReady;
 const preacherEl = document.getElementById("preacher");
 const spokenEl = document.getElementById("spoken");
 const heardTitleEl = document.getElementById("heardTitle");
@@ -137,6 +138,52 @@ function selectedPreacherId() {
   return preacherEl.value || "";
 }
 
+function sessionKindValue() {
+  const el = document.getElementById("sessionKind");
+  return el ? el.value : "";
+}
+
+function currentSetup() {
+  return {
+    folder: (state.settings && state.settings.folder) || "",
+    preacherId: selectedPreacherId(),
+    sessionKind: sessionKindValue(),
+    targets: selectedTargets(),
+    deviceKey: deviceEl.value || "",
+  };
+}
+
+function openSettings() {
+  const panel = document.getElementById("settingsPanel");
+  if (panel) panel.hidden = false;
+  paintSetupGaps();
+}
+
+function closeSettings() {
+  const panel = document.getElementById("settingsPanel");
+  if (panel) panel.hidden = true;
+}
+
+function paintSetupGaps() {
+  const gaps = missingSetup(currentSetup());
+  const list = document.getElementById("setupGaps");
+  const summary = document.getElementById("setupSummary");
+  if (list) {
+    list.innerHTML = "";
+    gaps.forEach((gap) => {
+      const item = document.createElement("li");
+      item.textContent = gap;
+      list.append(item);
+    });
+    list.hidden = gaps.length === 0;
+  }
+  if (summary) {
+    summary.textContent = gaps.length
+      ? `시작 전에 맞춰 주세요: ${gaps.join(", ")}`
+      : "필요한 설정을 마쳤습니다. 시작할 수 있습니다.";
+  }
+}
+
 async function persist(patch) {
   const next = { ...(patch || {}) };
   if (Array.isArray(next.channels)) {
@@ -203,6 +250,7 @@ async function onTargetsChanged(sync = true) {
   }
   if (state.style) fillStyle(state.style);
   await renderLinks();
+  paintSetupGaps();
 }
 
 function renderDevices() {
@@ -302,11 +350,13 @@ function renderPhoneDesks() {
   if (!root) return;
   const info = state.phoneJoin || {};
   const desks = Array.isArray(info.channels) ? info.channels : [];
+  const countEl = document.getElementById("phoneCount");
+  if (countEl && document.activeElement !== countEl) countEl.value = String(desks.length);
   root.innerHTML = "";
   if (!desks.length) {
     const empty = document.createElement("p");
     empty.className = "hint";
-    empty.textContent = "방송을 시작하면 휴대폰 채널의 접속 번호와 이번 세션 4자리 암호가 나옵니다.";
+    empty.textContent = "휴대폰 수를 고르면 각 휴대폰의 암호가 나옵니다.";
     root.append(empty);
     return;
   }
@@ -316,68 +366,38 @@ function renderPhoneDesks() {
     const title = document.createElement("h3");
     title.textContent = `휴대폰 ${index + 1}`;
     const idLabel = document.createElement("label");
-    idLabel.textContent = "접속 번호";
+    idLabel.textContent = "암호";
     const idInput = document.createElement("input");
     idInput.className = "join-code";
     idInput.type = "text";
     idInput.readOnly = true;
     idInput.autocomplete = "off";
     idInput.value = desk.connectionId || "";
-    idInput.setAttribute("aria-label", `휴대폰 ${index + 1} 접속 번호`);
-    const pinLabel = document.createElement("label");
-    pinLabel.textContent = "이번 세션 4자리 암호";
-    const pinInput = document.createElement("input");
-    pinInput.className = "join-code";
-    pinInput.type = "text";
-    pinInput.readOnly = true;
-    pinInput.autocomplete = "off";
-    pinInput.value = desk.pin || "";
-    pinInput.setAttribute("aria-label", `휴대폰 ${index + 1} 4자리 암호`);
-    const channelIndex = deskChannelIndex(desk);
-    const live = channelIndex >= 0 ? state.channels[channelIndex] : null;
-    const spokenCode = live && live.spoken ? live.spoken : (desk.spoken || "");
+    idInput.setAttribute("aria-label", `휴대폰 ${index + 1} 암호`);
     const status = document.createElement("p");
     status.className = "hint";
-    if (desk.connected && desk.name) {
-      status.textContent = spokenCode ? `${desk.name} · ${spokenName(spokenCode)}` : desk.name;
-    } else if (desk.name) {
-      status.textContent = spokenCode ? `${desk.name} · ${spokenName(spokenCode)} · 끊김` : `${desk.name} · 끊김`;
-    } else {
-      status.textContent = "대기";
-    }
-    const spokenLabel = document.createElement("label");
-    spokenLabel.textContent = "통역에 쓸 언어";
+    if (desk.connected && desk.name) status.textContent = `${desk.name} 연결됨`;
+    else if (desk.name) status.textContent = `${desk.name} · 끊김`;
+    else status.textContent = "이름과 이 암호로 로그인하면 연결됩니다.";
+    const channelIndex = deskChannelIndex(desk);
     const select = document.createElement("select");
     select.className = "channel-spoken";
     select.setAttribute("aria-label", `휴대폰 ${index + 1} 말하는 언어`);
+    const spokenCode = channelIndex >= 0 && state.channels[channelIndex] ? state.channels[channelIndex].spoken : (desk.spoken || "ko");
     fillSpokenSelect(select, spokenCode || "ko");
     select.disabled = channelIndex < 0;
     if (channelIndex >= 0) {
       select.value = knownSpoken(state.channels[channelIndex].spoken);
       select.addEventListener("change", () => onChannelSpoken(channelIndex, select.value));
     }
-    wrap.append(title, idLabel, idInput, pinLabel, pinInput, status, spokenLabel, select);
+    wrap.append(title, idLabel, idInput, status, select);
     root.append(wrap);
   });
 }
 
 function showPhoneJoin(info) {
   state.phoneJoin = info || {};
-  const url = document.getElementById("phoneJoinUrl");
-  const img = document.getElementById("phoneQr");
   renderPhoneDesks();
-  if (!url || !img) return;
-  if (info && info.url) {
-    url.value = info.url;
-    if (info.qrDataUrl) {
-      img.src = info.qrDataUrl;
-      img.hidden = false;
-    }
-  } else {
-    url.value = "";
-    img.hidden = true;
-    url.placeholder = (info && info.note) || "송출 컴퓨터를 같은 Wi-Fi에 연결하면 참여 주소가 나옵니다.";
-  }
 }
 
 function mapChannel(row) {
@@ -628,8 +648,8 @@ function bulletinSummary(extracted) {
   if (extracted.hymnNumbers && extracted.hymnNumbers.length) lines.push(`찬송 번호: ${extracted.hymnNumbers.join(", ")}`);
   if (extracted.songTitles && extracted.songTitles.length) lines.push(`곡: ${extracted.songTitles.join(", ")}`);
   if (extracted.scripture) lines.push(`성경: ${extracted.scripture}`);
-  if (extracted.sermonTitle) lines.push(`설교: ${extracted.sermonTitle}`);
-  if (extracted.preacherName) lines.push(`설교자: ${extracted.preacherName}`);
+  if (extracted.sermonTitle) lines.push(`제목: ${extracted.sermonTitle}`);
+  if (extracted.preacherName) lines.push(`강연자: ${extracted.preacherName}`);
   if (extracted.extractedText) lines.push(extracted.extractedText);
   return lines.join("\n");
 }
@@ -638,7 +658,7 @@ function showBulletin(bulletin, error) {
   const msg = document.getElementById("bulletinMsg");
   const pre = document.getElementById("bulletinText");
   if (!bulletin) {
-    msg.textContent = "아직 올린 주보가 없습니다.";
+    msg.textContent = "아직 올린 진행자료가 없습니다.";
     pre.hidden = true;
     pre.textContent = "";
     return;
@@ -665,11 +685,11 @@ function fillPreacherForm(preacher) {
 }
 
 function renderPreachers() {
-  const previous = preacherEl.value || state.settings.preacherId || "";
+  const previous = preacherToSelect(state.preachers, preacherEl.value || state.settings.preacherId || "");
   preacherEl.innerHTML = "";
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = state.preachers.length ? "설교자 선택" : "등록된 설교자 없음";
+  empty.textContent = state.preachers.length ? "강연자 선택" : "등록된 강연자 없음";
   preacherEl.append(empty);
   state.preachers.forEach((preacher) => {
     const option = document.createElement("option");
@@ -680,6 +700,7 @@ function renderPreachers() {
   if ([...preacherEl.options].some((option) => option.value === previous)) preacherEl.value = previous;
   const current = state.preachers.find((item) => item.id === preacherEl.value) || null;
   fillPreacherForm(current);
+  paintSetupGaps();
 }
 
 function formatKrw(value) {
@@ -797,6 +818,7 @@ async function chooseDevice() {
     audioHint.textContent = `${state.audio.apiLabel} · ${state.audio.deviceName} · 입력 ${state.audio.deviceChannels}채널 · ${state.audio.sampleRate}Hz.`;
     await persist({ audio: { deviceKey: key, channel: state.audio.deviceChannel } });
     if (!state.running) setStatus("장치 듣는 중", "");
+    paintSetupGaps();
   } catch (err) {
     log(err.message || String(err), "error");
     setStatus("장치 오류", "err");
@@ -822,7 +844,7 @@ async function refreshKeyHint() {
   try {
     const status = await window.broadcast.keyStatus();
     hint.textContent = status && status.configured
-      ? "이 컴퓨터에 저장된 키로 인식, 번역, 주보 분석을 합니다."
+      ? "이 컴퓨터에 저장된 키로 인식, 번역, 진행자료 분석을 합니다."
       : "관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.";
   } catch (err) {
     hint.textContent = "키 상태를 확인하지 못했습니다.";
@@ -858,6 +880,8 @@ async function boot() {
   state.catalog = await window.broadcast.catalog();
   state.settings = await window.broadcast.getSettings();
   sensitivityEl.value = state.settings.sensitivity || "normal";
+  const kind = document.getElementById("sessionKind");
+  if (kind && state.settings.sessionKind) kind.value = state.settings.sessionKind;
   if (state.settings.folder) folderHint.textContent = state.settings.folder;
   renderSpoken(state.settings.spoken);
   await renderLangs(state.settings.targets || state.catalog.defaultTargets);
@@ -871,6 +895,12 @@ async function boot() {
   await reloadDevices();
   try { showPhoneJoin(await window.broadcast.phoneJoin()); }
   catch (err) { log(err.message || String(err), "error"); }
+  const savedCount = Number(state.settings.phoneCount);
+  if (Number.isInteger(savedCount) && savedCount > 0) {
+    try { showPhoneJoin(await window.broadcast.setPhoneCount(savedCount)); }
+    catch (err) { log(err.message || String(err), "error"); }
+  }
+  paintSetupGaps();
   window.broadcast.onEvent((event) => {
     if (event.type === "levels") applyLevels(event.peaks || []);
     if (event.type === "level") paintLevel(event.channel, event.peak || 0);
@@ -984,7 +1014,7 @@ document.getElementById("pickBulletin").addEventListener("click", async () => {
         await persist({ preacherId: match.id });
       }
     }
-    log(bulletin.error || "주보 사진을 저장했습니다.");
+    log(bulletin.error || "진행자료를 저장했습니다.");
   } catch (err) {
     log(err.message || String(err), "error");
   }
@@ -994,6 +1024,7 @@ preacherEl.addEventListener("change", async () => {
   const current = state.preachers.find((item) => item.id === preacherEl.value) || null;
   fillPreacherForm(current);
   await persist({ preacherId: preacherEl.value });
+  paintSetupGaps();
 });
 
 document.getElementById("addPreacher").addEventListener("click", async () => {
@@ -1014,7 +1045,7 @@ document.getElementById("addPreacher").addEventListener("click", async () => {
     preacherEl.value = saved.id;
     fillPreacherForm(saved);
     await persist({ preacherId: saved.id });
-    msg.textContent = "설교자를 등록했습니다.";
+    msg.textContent = "강연자를 등록했습니다.";
   } catch (err) {
     msg.textContent = err.message || String(err);
   }
@@ -1024,7 +1055,7 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
   const msg = document.getElementById("preacherMsg");
   msg.textContent = "";
   if (!preacherEl.value) {
-    msg.textContent = "저장할 설교자를 선택해 주세요. 새 설교자는 등록 버튼으로 만듭니다.";
+    msg.textContent = "저장할 강연자를 선택해 주세요. 새 강연자는 등록 버튼으로 만듭니다.";
     return;
   }
   try {
@@ -1039,7 +1070,7 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
     renderPreachers();
     preacherEl.value = saved.id;
     fillPreacherForm(saved);
-    msg.textContent = "설교자 프로필을 저장했습니다.";
+    msg.textContent = "강연자 프로필을 저장했습니다.";
   } catch (err) {
     msg.textContent = err.message || String(err);
   }
@@ -1055,24 +1086,24 @@ function channelPrefix(index, text, name) {
   return `채널 ${index + 1} ${value}`;
 }
 
-document.getElementById("addPhoneChannel").addEventListener("click", async () => {
-  const button = document.getElementById("addPhoneChannel");
-  button.disabled = true;
-  try {
-    await window.broadcast.addPhoneChannel();
-  } catch (err) {
-    log(err.message || String(err), "error");
-  } finally {
-    button.disabled = false;
-  }
+document.getElementById("openSettings").addEventListener("click", () => openSettings());
+document.getElementById("closeSettings").addEventListener("click", () => closeSettings());
+document.getElementById("sessionKind").addEventListener("change", async () => {
+  await persist({ sessionKind: sessionKindValue() });
+  paintSetupGaps();
 });
-document.getElementById("copyPhoneJoin").addEventListener("click", async () => {
-  const url = state.phoneJoin && state.phoneJoin.url;
-  if (!url) return;
-  await window.broadcast.copy(url);
-  const button = document.getElementById("copyPhoneJoin");
-  button.textContent = "복사됨";
-  setTimeout(() => { button.textContent = "참여 주소 복사"; }, 1200);
+document.getElementById("phoneCount").addEventListener("change", async () => {
+  const input = document.getElementById("phoneCount");
+  const count = Number(input.value);
+  const msg = document.getElementById("phoneCountMsg");
+  try {
+    showPhoneJoin(await window.broadcast.setPhoneCount(count));
+    await persist({ phoneCount: count });
+    if (msg) msg.textContent = count === 0 ? "휴대폰 없이 시작합니다." : "각 휴대폰에 이름과 암호를 알려 주세요.";
+  } catch (err) {
+    if (msg) msg.textContent = err.message || String(err);
+    log(err.message || String(err), "error");
+  }
 });
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 deviceEl.addEventListener("change", chooseDevice);
@@ -1087,6 +1118,7 @@ document.getElementById("pickFolder").addEventListener("click", async () => {
   if (!folder) return;
   folderHint.textContent = folder;
   await persist({ folder });
+  paintSetupGaps();
 });
 async function beginBroadcast() {
   if (state.channels[0]) state.spoken = state.channels[0].spoken;
@@ -1098,6 +1130,7 @@ async function beginBroadcast() {
     spoken: state.spoken,
     channels: state.channels,
     preacherId: selectedPreacherId(),
+    sessionKind: sessionKindValue(),
   });
   state.lines = {};
   state.captions = {};
@@ -1108,6 +1141,7 @@ async function beginBroadcast() {
     spoken: state.spoken,
     channels: state.channels,
     preacherId: selectedPreacherId(),
+    sessionKind: sessionKindValue(),
     deviceKey: deviceEl.value,
     channel: state.audio ? state.audio.deviceChannel : 0,
   });
@@ -1122,6 +1156,11 @@ async function beginBroadcast() {
 
 document.getElementById("start").addEventListener("click", async () => {
   try {
+    const gaps = missingSetup(currentSetup());
+    if (gaps.length) {
+      openSettings();
+      return;
+    }
     const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraChannelIndexes());
     paintConfirm(preview);
     document.getElementById("startConfirm").hidden = false;
@@ -1136,6 +1175,11 @@ document.getElementById("confirmCancel").addEventListener("click", () => {
 });
 document.getElementById("confirmStart").addEventListener("click", async () => {
   try {
+    const gaps = missingSetup(currentSetup());
+    if (gaps.length) {
+      openSettings();
+      return;
+    }
     const preview = await window.broadcast.previewBilling(selectedTargets(), billingSpoken(), extraChannelIndexes());
     paintConfirm(preview);
     if (preview.short) return;

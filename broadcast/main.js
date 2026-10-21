@@ -334,7 +334,7 @@ function registerIpc() {
   ipcMain.handle("preachers:save", async (_event, payload) => {
     const church = await requireChurch();
     const name = payload && typeof payload.name === "string" ? payload.name.trim() : "";
-    if (!name) throw new Error("설교자 이름을 입력해 주세요.");
+    if (!name) throw new Error("강연자 이름을 입력해 주세요.");
     const id = payload && catalog.isPreacherId(payload.id) ? payload.id : catalog.makePreacherId(name);
     const existing = (await firebase.listPreachers(church.id)).find((item) => item.id === id);
     return firebase.savePreacher(church.id, id, {
@@ -352,7 +352,7 @@ function registerIpc() {
   ipcMain.handle("bulletin:pick", async () => {
     const church = await requireChurch();
     const picked = await dialog.showOpenDialog(win, {
-      title: "이번 예배 주보 사진",
+      title: "진행자료 사진",
       properties: ["openFile"],
       filters: [{ name: "이미지", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
     });
@@ -368,7 +368,7 @@ function registerIpc() {
       return {
         fileName: stored.fileName,
         extracted: null,
-        error: "이 컴퓨터에 번역 키가 없어 주보를 아직 분석하지 못했습니다. 사진은 이 PC에 저장했습니다.",
+        error: "이 컴퓨터에 번역 키가 없어 진행자료를 아직 분석하지 못했습니다. 사진은 이 PC에 저장했습니다.",
       };
     }
     try {
@@ -384,6 +384,30 @@ function registerIpc() {
     }
   });
   ipcMain.handle("platform:keyStatus", async () => ({ configured: Boolean(resolveKey()) }));
+  ipcMain.handle("phone:set-count", async (_event, count) => {
+    if (!phoneJoin) throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
+    let changed;
+    try {
+      changed = phoneJoin.setPhoneCount(count);
+    } catch (err) {
+      send({ type: "phone-join", info: phoneJoin.info() });
+      throw err;
+    }
+    try {
+      for (const connectionId of changed.added) {
+        await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
+      }
+      for (const connectionId of changed.removed) {
+        try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 없는 암호는 넘어갑니다 */ }
+      }
+    } catch (err) {
+      changed.added.forEach((connectionId) => phoneJoin.dropDesk(connectionId));
+      send({ type: "phone-join", info: phoneJoin.info() });
+      throw new Error("휴대폰 암호를 열지 못했습니다. 다시 시도해 주세요.");
+    }
+    send({ type: "phone-join", info: phoneJoin.info() });
+    return phoneJoin.info();
+  });
   ipcMain.handle("phone:add-channel", async () => {
     if (!phoneJoin || !phoneJoin.sessionOpen) {
       throw new Error("방송을 시작한 뒤에 휴대폰 채널을 추가할 수 있습니다.");
@@ -440,7 +464,7 @@ function registerIpc() {
   });
   ipcMain.handle("dialog:folder", async () => {
     const result = await dialog.showOpenDialog(win, {
-      title: "설교 텍스트를 저장할 폴더",
+      title: "텍스트를 저장할 폴더",
       properties: ["openDirectory", "createDirectory"],
     });
     if (result.canceled || !result.filePaths[0]) return "";
@@ -489,8 +513,11 @@ function registerIpc() {
       let opened = [];
       try {
         const desk = await phoneJoin.openSession();
-        opened = [desk.connectionId];
-        await firebase.set(`lectureJoins/${desk.connectionId}`, { token: phoneJoin.token });
+        opened = phoneJoin.desks.map((item) => item.connectionId).filter(Boolean);
+        if (!opened.length && desk.connectionId) opened = [desk.connectionId];
+        for (const connectionId of opened) {
+          await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
+        }
         send({ type: "phone-join", info: phoneJoin.info() });
       } catch (err) {
         const created = phoneJoin.closeSession();
@@ -513,9 +540,13 @@ function registerIpc() {
   ipcMain.handle("broadcast:stop", async () => {
     const stopped = await engine.stop();
     const ids = phoneJoin ? phoneJoin.closeSession() : [];
+    const fresh = phoneJoin && Array.isArray(phoneJoin.preparedAfterClose) ? phoneJoin.preparedAfterClose : [];
     if (phoneJoin) send({ type: "phone-join", info: phoneJoin.info() });
     for (const connectionId of ids) {
       try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 지워진 번호는 무시합니다 */ }
+    }
+    for (const connectionId of fresh) {
+      try { await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token }); } catch (_) { /* 다음 시작 때 다시 엽니다 */ }
     }
     return stopped;
   });

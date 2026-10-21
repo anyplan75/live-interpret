@@ -17,7 +17,7 @@ test("consent dialog explains text-only storage and quits on decline", async () 
   assert.match(all, /텍스트/);
   assert.match(all, /자연스럽/);
   assert.match(all, /정확/);
-  assert.match(all, /설교자/);
+  assert.match(all, /강연자/);
   assert.match(all, /플랫폼 관리자/);
   assert.match(all, /종료/);
   assert.match(all, /켤 때마다/);

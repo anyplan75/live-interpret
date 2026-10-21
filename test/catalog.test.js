@@ -116,8 +116,10 @@ test("owner and church logins split the controls", () => {
   assert.match(broadcast, /id="layout"/);
   assert.match(broadcast, /id="color"/);
   assert.match(broadcast, /id="fontRows"/);
-  assert.match(broadcast, /주보/);
-  assert.match(broadcast, /설교자/);
+  assert.match(broadcast, /진행자료/);
+  assert.match(broadcast, /강연자/);
+  assert.match(broadcast, /큐시트/);
+  assert.match(broadcast, /순서지/);
   assert.match(broadcast, /다른 교회는 고를 수 없습니다/);
   assert.doesNotMatch(renderer, /apiKey|listChurches|modelEl/);
   assert.match(renderer, /signIn/);
@@ -252,9 +254,9 @@ test("firebase api key is not committed", () => {
   assert.equal(lecturePage.includes("phone-firebase-env.js"), false);
   assert.equal(lecturePage.includes('type="password"'), false);
   assert.match(lecturePage, /id="joinId"/);
-  assert.match(lecturePage, /id="joinPin"/);
-  assert.match(lecturePage, /id="spoken"/);
-  assert.match(lecturePage, /언어를 선택하세요/);
+  assert.match(lecturePage, /id="name"/);
+  assert.match(lecturePage, /암호/);
+  assert.doesNotMatch(lecturePage, /id="joinPin"|id="spoken"|qrcode/);
   assert.equal(lecturePage.indexOf("languages.js") < lecturePage.indexOf("catalog.js"), true);
   assert.deepEqual(hits, []);
 });

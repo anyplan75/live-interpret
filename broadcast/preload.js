@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   pickBulletin: () => ipcRenderer.invoke("bulletin:pick"),
   listDevices: () => ipcRenderer.invoke("devices:list"),
   phoneJoin: () => ipcRenderer.invoke("phone:info"),
+  setPhoneCount: (count) => ipcRenderer.invoke("phone:set-count", count),
   addPhoneChannel: () => ipcRenderer.invoke("phone:add-channel"),
   pickFolder: () => ipcRenderer.invoke("dialog:folder"),
   monitor: (deviceKey, channel) => ipcRenderer.invoke("audio:monitor", deviceKey, channel),
