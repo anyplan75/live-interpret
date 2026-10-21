@@ -91,12 +91,18 @@ function findMasProvisioningProfile(bundleId = BUNDLE_ID) {
     });
   });
   if (!matches.length) return null;
-  const allowsAppGroup = (item) => {
+  const scoreProfile = (item) => {
     const xml = decodeProvisioningProfile(item.path);
-    return xml.includes("com.apple.security.application-groups");
+    let score = 0;
+    // 등록된 그룹 문자열이 들어 있는 프로파일이 TestFlight 설치에 필요하다.
+    // 와일드카드만 있는 프로파일은 설치 자료를 만들지 못한다.
+    if (xml.includes("group.com.anyplan.live-interpret")) score += 100;
+    if (xml.includes("com.apple.security.application-groups")) score += 10;
+    if (xml.includes("ProvisionedDevices")) score -= 50;
+    return score;
   };
   matches.sort((a, b) => {
-    const groupDelta = Number(allowsAppGroup(b)) - Number(allowsAppGroup(a));
+    const groupDelta = scoreProfile(b) - scoreProfile(a);
     if (groupDelta !== 0) return groupDelta;
     return a.name.localeCompare(b.name, "en");
   });

@@ -199,7 +199,15 @@ test("installers build per OS and publish draft releases", () => {
   assert.equal(pkg.build.mas.entitlementsInherit, "build/entitlements.mas.inherit.plist");
   assert.match(read("build/entitlements.mas.plist"), /com\.apple\.security\.app-sandbox/);
   assert.match(read("build/entitlements.mas.plist"), /files\.user-selected\.read-write/);
+  assert.match(read("build/entitlements.mas.plist"), /ZJYZ656BL8\.com\.anyplan\.live-interpret/);
+  assert.match(read("build/entitlements.mas.plist"), /group\.com\.anyplan\.live-interpret/);
+  assert.match(read("build/entitlements.mas.plist"), /allow-jit/);
+  assert.match(read("build/entitlements.mas.plist"), /allow-unsigned-executable-memory/);
+  assert.match(read("build/entitlements.mas.plist"), /disable-library-validation/);
   assert.match(read("build/entitlements.mas.inherit.plist"), /com\.apple\.security\.inherit/);
+  assert.match(read("build/entitlements.mas.inherit.plist"), /allow-jit/);
+  assert.match(read("build/entitlements.mas.inherit.plist"), /disable-library-validation/);
+  assert.doesNotMatch(read("build/entitlements.mas.inherit.plist"), /network\.client/);
   assert.match(read("scripts/pack-mas.js"), /--mac",\s*"mas"/);
 
   const packMac = read("scripts/pack-mac.js");

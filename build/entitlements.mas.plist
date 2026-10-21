@@ -7,16 +7,22 @@
   <string>ZJYZ656BL8.com.anyplan.live-interpret</string>
   <key>com.apple.developer.team-identifier</key>
   <string>ZJYZ656BL8</string>
-  <!-- 샌드박스가 자식 프로세스와 통신하는 권한. 값은 팀 식별자.번들 ID 이고, 프로파일의 ZJYZ656BL8.* 에 들어간다. group. 접두사는 붙이지 않는다. -->
+  <!-- 샌드박스가 부모와 자식을 이어 주는 통로.
+       팀 식별자.번들 ID 가 없으면 설치 직후 바로 죽는다. 이 값에는 group. 을 붙이지 않는다.
+       group.com.anyplan.live-interpret 는 개발자 사이트에 등록된 그룹이고, 프로파일에 그대로 들어 있다.
+       프로파일은 Live Interpret Mac App Store Exact 를 쓴다. 와일드카드만 있는 프로파일은 설치가 거절된다. -->
   <key>com.apple.security.application-groups</key>
   <array>
     <string>ZJYZ656BL8.com.anyplan.live-interpret</string>
+    <string>group.com.anyplan.live-interpret</string>
   </array>
   <key>com.apple.security.app-sandbox</key>
   <true/>
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
   <true/>
   <key>com.apple.security.device.audio-input</key>
   <true/>
