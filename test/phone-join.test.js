@@ -134,6 +134,9 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.doesNotMatch(card, /id="joinId"|id="joinPin"/);
   assert.match(read("broadcast/renderer/renderer.js"), /onChannelSpoken\(/);
   assert.match(read("broadcast/preload.js"), /setPhoneCount/);
+  const setCount = read("broadcast/main.js");
+  const handler = setCount.slice(setCount.indexOf('ipcMain.handle("phone:set-count"'), setCount.indexOf('ipcMain.handle("phone:add-channel"'));
+  assert.ok(handler.indexOf("ensureAuth") < handler.indexOf("lectureJoins"));
   assert.match(desk[".read"], /ABCDEFGHJKLMNPQRSTUVWXYZ23456789/);
   assert.match(desk[".write"], /!newData\.child\('pin'\)\.exists\(\)/);
   assert.match(desk[".write"], /!newData\.child\('password'\)\.exists\(\)/);

@@ -385,7 +385,12 @@ function registerIpc() {
   });
   ipcMain.handle("platform:keyStatus", async () => ({ configured: Boolean(resolveKey()) }));
   ipcMain.handle("phone:set-count", async (_event, count) => {
+    await ensureAuth();
     if (!phoneJoin) throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
+    if (!/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) await phoneJoin.start();
+    if (!/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) {
+      throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
+    }
     let changed;
     try {
       changed = phoneJoin.setPhoneCount(count);

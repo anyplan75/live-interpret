@@ -518,7 +518,7 @@ async function renderLinks() {
     const text = document.createElement("p");
     text.className = "text";
     text.textContent = state.lines[item.code] || "대기 중...";
-    card.append(header, text, linkRow("성도", item.listen), linkRow("OBS", item.overlay));
+    card.append(header, text, linkRow("자막", item.listen), linkRow("OBS", item.overlay));
     cardsEl.append(card);
   });
 }
