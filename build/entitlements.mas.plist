@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- 프로비저닝 프로파일에 있는 앱 식별자와 같아야 TestFlight 설치가 된다. -->
+  <key>com.apple.application-identifier</key>
+  <string>ZJYZ656BL8.com.anyplan.live-interpret</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>ZJYZ656BL8</string>
   <key>com.apple.security.app-sandbox</key>
   <true/>
   <key>com.apple.security.cs.allow-jit</key>

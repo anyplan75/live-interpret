@@ -106,7 +106,8 @@
       },
       "executableName": "live-interpret",
       "identity": "ZJYZ656BL8",
-      "type": "distribution"
+      "type": "distribution",
+      "preAutoEntitlements": false
     },
     "win": {
       "executableName": "live-interpret",
