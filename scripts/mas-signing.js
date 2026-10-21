@@ -91,12 +91,15 @@ function findMasProvisioningProfile(bundleId = BUNDLE_ID) {
     });
   });
   if (!matches.length) return null;
+  // Exact 프로파일만 팀 식별자 통로(ZJYZ656BL8.*)와 등록된 그룹을 같이 가진다.
+  // Launch 처럼 통로가 없는 프로파일로 서명하면 설치는 되어도 시작하자마자 꺼진다.
+  const exact = matches.find((item) => item.name === "Live Interpret Mac App Store Exact");
+  if (exact) return exact;
   const scoreProfile = (item) => {
     const xml = decodeProvisioningProfile(item.path);
     let score = 0;
-    // 등록된 그룹 문자열이 들어 있는 프로파일이 TestFlight 설치에 필요하다.
-    // 와일드카드만 있는 프로파일은 설치 자료를 만들지 못한다.
-    if (xml.includes("group.com.anyplan.live-interpret")) score += 100;
+    if (xml.includes("ZJYZ656BL8.*")) score += 50;
+    if (xml.includes("group.com.anyplan.live-interpret")) score += 40;
     if (xml.includes("com.apple.security.application-groups")) score += 10;
     if (xml.includes("ProvisionedDevices")) score -= 50;
     return score;
@@ -104,7 +107,7 @@ function findMasProvisioningProfile(bundleId = BUNDLE_ID) {
   matches.sort((a, b) => {
     const groupDelta = scoreProfile(b) - scoreProfile(a);
     if (groupDelta !== 0) return groupDelta;
-    return a.name.localeCompare(b.name, "en");
+    return b.path.localeCompare(a.path);
   });
   return matches[0];
 }

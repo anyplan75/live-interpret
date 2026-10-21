@@ -1,6 +1,6 @@
 "use strict";
 
-const { execFileSync } = require("child_process");
+const { execFileSync, spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -92,7 +92,19 @@ async function bakeInto(context, opts = {}) {
   // 맥 앱스토어 패키지는 루트만 읽는 파일을 거절한다. 앱을 실행하는 사용자도 이 파일을 읽을 수 있어야 한다.
   fs.writeFileSync(dest, packagedEnvText(apiKey), { mode: 0o644 });
   log(`설치 파일에 Firebase 웹 접속 키를 넣었습니다. 길이 ${apiKey.length}`);
+  alignMasHelperNames(context, log);
   return dest;
+}
+
+function alignMasHelperNames(context, log) {
+  const appOutDir = context && context.appOutDir;
+  if (!appOutDir || path.basename(appOutDir).indexOf("mas-") !== 0) return;
+  const script = path.join(__dirname, "name-mac-app.js");
+  const result = spawnSync(process.execPath, [script, appOutDir, "--nfd-bundle-name"], { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(String(result.stderr || result.stdout || "앱 이름표를 맞추지 못했습니다."));
+  }
+  log("맥 앱스토어 앱 이름표를 도우미 폴더와 같은 한글 저장 방식으로 맞췄습니다.");
 }
 
 module.exports = bakeInto;

@@ -55,7 +55,7 @@ function main() {
   const env = { ...process.env };
   if (!env.APPLE_TEAM_ID) env.APPLE_TEAM_ID = "ZJYZ656BL8";
 
-  run(builder, [
+  const args = [
     "--mac",
     "mas",
     "--arm64",
@@ -63,7 +63,18 @@ function main() {
     "never",
     `-c.mas.identity=ZJYZ656BL8`,
     `-c.mas.provisioningProfile=${profile.path}`,
-  ], env);
+  ];
+  // 시험 설치 빌드 번호. 마케팅 버전 0.1.0 은 두고, 이 숫자만 이전 TestFlight 빌드보다 올린다.
+  const buildVersion = String(process.env.MAS_BUILD_VERSION || "").trim();
+  if (buildVersion) {
+    if (!/^\d+(\.\d+){0,2}$/.test(buildVersion)) {
+      console.error("MAS_BUILD_VERSION 형식이 올바르지 않습니다.");
+      process.exit(1);
+    }
+    args.push(`-c.buildVersion=${buildVersion}`);
+    console.log(`빌드 번호: ${buildVersion}`);
+  }
+  run(builder, args, env);
 
   const pkg = require(path.join(root, "package.json"));
   const version = pkg.version || "0.0.0";

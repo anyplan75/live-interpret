@@ -80,6 +80,7 @@
       "minimumSystemVersion": "12.0",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
+      "icon": "ios/LiveInterpret/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
@@ -105,6 +106,7 @@
         "CFBundleDisplayName": "실시간 통역시스템",
         "ElectronTeamID": "ZJYZ656BL8"
       },
+      "icon": "ios/LiveInterpret/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
       "executableName": "live-interpret",
       "identity": "ZJYZ656BL8",
       "type": "distribution",

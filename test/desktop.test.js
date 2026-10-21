@@ -199,16 +199,23 @@ test("installers build per OS and publish draft releases", () => {
   assert.equal(pkg.build.mas.entitlementsInherit, "build/entitlements.mas.inherit.plist");
   assert.match(read("build/entitlements.mas.plist"), /com\.apple\.security\.app-sandbox/);
   assert.match(read("build/entitlements.mas.plist"), /files\.user-selected\.read-write/);
+  assert.match(read("build/entitlements.mas.plist"), /application-groups/);
   assert.match(read("build/entitlements.mas.plist"), /ZJYZ656BL8\.com\.anyplan\.live-interpret/);
-  assert.match(read("build/entitlements.mas.plist"), /group\.com\.anyplan\.live-interpret/);
+  assert.doesNotMatch(read("build/entitlements.mas.plist"), /group\.com\.anyplan\.live-interpret/);
   assert.match(read("build/entitlements.mas.plist"), /allow-jit/);
   assert.match(read("build/entitlements.mas.plist"), /allow-unsigned-executable-memory/);
-  assert.match(read("build/entitlements.mas.plist"), /disable-library-validation/);
+  assert.doesNotMatch(read("build/entitlements.mas.plist"), /disable-library-validation/);
+  assert.equal(pkg.build.mas.extendInfo.ElectronTeamID, "ZJYZ656BL8");
+  assert.match(pkg.build.mac.icon, /icon-1024\.png$/);
+  assert.match(pkg.build.mas.icon, /icon-1024\.png$/);
   assert.match(read("build/entitlements.mas.inherit.plist"), /com\.apple\.security\.inherit/);
   assert.match(read("build/entitlements.mas.inherit.plist"), /allow-jit/);
-  assert.match(read("build/entitlements.mas.inherit.plist"), /disable-library-validation/);
+  assert.doesNotMatch(read("build/entitlements.mas.inherit.plist"), /disable-library-validation/);
+  assert.doesNotMatch(read("build/entitlements.mas.inherit.plist"), /application-groups/);
   assert.doesNotMatch(read("build/entitlements.mas.inherit.plist"), /network\.client/);
+  assert.match(read("scripts/mas-signing.js"), /Live Interpret Mac App Store Exact/);
   assert.match(read("scripts/pack-mas.js"), /--mac",\s*"mas"/);
+  assert.match(read("scripts/pack-mas.js"), /MAS_BUILD_VERSION/);
 
   const packMac = read("scripts/pack-mac.js");
   assert.match(packMac, /--mac", "dir", "--arm64/);

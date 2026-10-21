@@ -6,7 +6,7 @@ const path = require("path");
 // Finder shows 실시간 통역시스템.app. The executable stays live-interpret.
 const DISPLAY_APP = "실시간 통역시스템.app";
 const BUNDLE_NAME = "live-interpret";
-const dir = path.join(__dirname, "..", "dist", "mac-arm64");
+const DEFAULT_DIR = path.join(__dirname, "..", "dist", "mac-arm64");
 
 function plistGet(file, key) {
   const result = spawnSync("plutil", ["-extract", key, "raw", "-o", "-", file], { encoding: "utf8" });
@@ -58,7 +58,35 @@ function fixHelper(frameworks, entry) {
   plistSet(plist, "CFBundleDisplayName", targetBase);
 }
 
-function mainApp() {
+function alignMacAppNames(dir, options = {}) {
+  const appPath = mainApp(dir);
+  const frameworks = path.join(appPath, "Contents", "Frameworks");
+  if (fs.existsSync(frameworks)) {
+    fs.readdirSync(frameworks).forEach((entry) => {
+      if (entry.endsWith(".app")) fixHelper(frameworks, entry);
+    });
+  }
+  const plist = path.join(appPath, "Contents", "Info.plist");
+  const macOs = path.join(appPath, "Contents", "MacOS");
+  renameExecutable(macOs, plistGet(plist, "CFBundleExecutable"), BUNDLE_NAME);
+  plistSet(plist, "CFBundleExecutable", BUNDLE_NAME);
+  plistSet(plist, "CFBundleName", BUNDLE_NAME);
+  plistSet(plist, "CFBundleDisplayName", "실시간 통역시스템");
+
+  if (options.keepBundleName) {
+    console.log(appPath);
+    return appPath;
+  }
+  const finalPath = path.join(dir, DISPLAY_APP);
+  if (appPath !== finalPath) {
+    if (fs.existsSync(finalPath)) fs.rmSync(finalPath, { recursive: true, force: true });
+    fs.renameSync(appPath, finalPath);
+  }
+  console.log(finalPath);
+  return finalPath;
+}
+
+function mainApp(dir) {
   const fresh = path.join(dir, `${BUNDLE_NAME}.app`);
   if (fs.existsSync(fresh)) return fresh;
   const wanted = path.join(dir, DISPLAY_APP);
@@ -66,27 +94,31 @@ function mainApp() {
   const apps = fs.readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name.endsWith(".app"))
     .map((entry) => entry.name);
-  if (!apps.length) throw new Error(`dist/mac-arm64 에 .app 이 없습니다. (${DISPLAY_APP})`);
+  if (!apps.length) throw new Error(`${dir} 에 .app 이 없습니다. (${DISPLAY_APP})`);
   return path.join(dir, apps[0]);
 }
 
-const appPath = mainApp();
-const frameworks = path.join(appPath, "Contents", "Frameworks");
-if (fs.existsSync(frameworks)) {
-  fs.readdirSync(frameworks).forEach((entry) => {
-    if (entry.endsWith(".app")) fixHelper(frameworks, entry);
-  });
-}
-const plist = path.join(appPath, "Contents", "Info.plist");
-const macOs = path.join(appPath, "Contents", "MacOS");
-renameExecutable(macOs, plistGet(plist, "CFBundleExecutable"), BUNDLE_NAME);
-plistSet(plist, "CFBundleExecutable", BUNDLE_NAME);
-plistSet(plist, "CFBundleName", BUNDLE_NAME);
-plistSet(plist, "CFBundleDisplayName", "실시간 통역시스템");
+const PRODUCT_NAME = "실시간 통역시스템";
 
-const finalPath = path.join(dir, DISPLAY_APP);
-if (appPath !== finalPath) {
-  if (fs.existsSync(finalPath)) fs.rmSync(finalPath, { recursive: true, force: true });
-  fs.renameSync(appPath, finalPath);
+// 맥 디스크는 한글을 풀어 저장한다. 앱 이름표가 모아쓰기이면 도우미 경로 글자가 달라 시작하자마자 끊긴다.
+function alignMasBundleName(dir) {
+  const appPath = mainApp(dir);
+  const plist = path.join(appPath, "Contents", "Info.plist");
+  plistSet(plist, "CFBundleName", PRODUCT_NAME.normalize("NFD"));
+  plistSet(plist, "CFBundleDisplayName", PRODUCT_NAME.normalize("NFC"));
+  console.log(appPath);
+  return appPath;
 }
-console.log(finalPath);
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const dirArg = args.find((arg) => !arg.startsWith("--"));
+  const dir = dirArg || DEFAULT_DIR;
+  if (args.includes("--nfd-bundle-name")) {
+    alignMasBundleName(dir);
+  } else {
+    alignMacAppNames(dir, { keepBundleName: args.includes("--keep-bundle-name") });
+  }
+}
+
+module.exports = { alignMacAppNames, alignMasBundleName, BUNDLE_NAME, PRODUCT_NAME };
