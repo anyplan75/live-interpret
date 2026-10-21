@@ -89,7 +89,8 @@ async function bakeInto(context, opts = {}) {
   const dir = resourcesDir(context);
   fs.mkdirSync(dir, { recursive: true });
   const dest = path.join(dir, ".env");
-  fs.writeFileSync(dest, packagedEnvText(apiKey), { mode: 0o600 });
+  // 맥 앱스토어 패키지는 루트만 읽는 파일을 거절한다. 앱을 실행하는 사용자도 이 파일을 읽을 수 있어야 한다.
+  fs.writeFileSync(dest, packagedEnvText(apiKey), { mode: 0o644 });
   log(`설치 파일에 Firebase 웹 접속 키를 넣었습니다. 길이 ${apiKey.length}`);
   return dest;
 }
