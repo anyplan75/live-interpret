@@ -7,6 +7,11 @@
   <string>ZJYZ656BL8.com.anyplan.live-interpret</string>
   <key>com.apple.developer.team-identifier</key>
   <string>ZJYZ656BL8</string>
+  <!-- 샌드박스가 자식 프로세스와 통신하는 권한. 값은 팀 식별자.번들 ID 이고, 프로파일의 ZJYZ656BL8.* 에 들어간다. group. 접두사는 붙이지 않는다. -->
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>ZJYZ656BL8.com.anyplan.live-interpret</string>
+  </array>
   <key>com.apple.security.app-sandbox</key>
   <true/>
   <key>com.apple.security.cs.allow-jit</key>

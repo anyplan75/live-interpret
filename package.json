@@ -102,7 +102,8 @@
       "entitlementsLoginHelper": "build/entitlements.mas.inherit.plist",
       "extendInfo": {
         "NSMicrophoneUsageDescription": "설교 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
-        "CFBundleDisplayName": "실시간 통역시스템"
+        "CFBundleDisplayName": "실시간 통역시스템",
+        "ElectronTeamID": "ZJYZ656BL8"
       },
       "executableName": "live-interpret",
       "identity": "ZJYZ656BL8",

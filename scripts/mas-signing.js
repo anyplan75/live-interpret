@@ -91,7 +91,15 @@ function findMasProvisioningProfile(bundleId = BUNDLE_ID) {
     });
   });
   if (!matches.length) return null;
-  matches.sort((a, b) => a.name.localeCompare(b.name, "en"));
+  const allowsAppGroup = (item) => {
+    const xml = decodeProvisioningProfile(item.path);
+    return xml.includes("com.apple.security.application-groups");
+  };
+  matches.sort((a, b) => {
+    const groupDelta = Number(allowsAppGroup(b)) - Number(allowsAppGroup(a));
+    if (groupDelta !== 0) return groupDelta;
+    return a.name.localeCompare(b.name, "en");
+  });
   return matches[0];
 }
 
