@@ -106,8 +106,12 @@ if ! grep -q '말하는 언어' "$JOIN_HTML"; then
   echo "입장 화면에 말하는 언어가 없습니다." >&2
   exit 1
 fi
-if grep -q '접속 번호' "$JOIN_HTML"; then
-  echo "옛 접속 번호 화면이 앱 안에 있습니다." >&2
+if ! grep -q 'QR 스캔' "$JOIN_HTML"; then
+  echo "입장 화면에 QR 스캔이 없습니다." >&2
+  exit 1
+fi
+if grep -q '접속 번호' "$JOIN_HTML" || grep -q 'id="joinId"' "$JOIN_HTML"; then
+  echo "옛 암호 입력 화면이 앱 안에 있습니다." >&2
   exit 1
 fi
 

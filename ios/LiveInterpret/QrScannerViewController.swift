@@ -2,9 +2,11 @@ import AVFoundation
 import UIKit
 import Vision
 
-/// 대면 통역에서 상대 휴대폰 화면의 QR을 읽는다. 읽은 주소는 기존 대면 페이지로 연다.
+/// 송출 컴퓨터나 상대 휴대폰에 나온 QR을 읽는다.
 final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
     var onLink: ((URL) -> Void)?
+    var hintText = "QR을 비추세요."
+    var accept: (String) -> URL? = { FaceLink.joinURL(from: $0) }
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "liveinterpret.qr.session")
@@ -26,7 +28,7 @@ final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputS
         view.layer.addSublayer(preview)
 
         let hint = UILabel()
-        hint.text = "상대 휴대폰에 나온 QR을 비추세요."
+        hint.text = hintText
         hint.textColor = .white
         hint.textAlignment = .center
         hint.font = .systemFont(ofSize: 16, weight: .semibold)
@@ -89,7 +91,7 @@ final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputS
     private func explainDenied() {
         let alert = UIAlertController(
             title: "카메라가 필요합니다",
-            message: "대면 통역 QR을 읽으려면 설정에서 이 앱의 카메라를 허용해 주세요.",
+            message: "QR을 읽으려면 설정에서 이 앱의 카메라를 허용해 주세요.",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "닫기", style: .cancel) { [weak self] _ in
@@ -162,7 +164,7 @@ final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputS
         try? handler.perform([request])
         guard let codes = request.results else { return }
         for code in codes {
-            guard let raw = code.payloadStringValue, let url = FaceLink.joinURL(from: raw) else { continue }
+            guard let raw = code.payloadStringValue, let url = accept(raw) else { continue }
             didFinish = true
             session.stopRunning()
             DispatchQueue.main.async { [weak self] in

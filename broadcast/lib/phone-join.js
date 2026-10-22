@@ -111,6 +111,7 @@ class PhoneJoin {
       channelIndex: desk.channelIndex,
       connected: Boolean(desk.holderPeerId),
       loginError: desk.loginError || "",
+      qrDataUrl: desk.qrDataUrl || "",
     }));
     return {
       ...this.infoCache,
@@ -157,14 +158,14 @@ class PhoneJoin {
       qrDataUrl,
       connectionId: "",
       pin: "",
-      note: "휴대폰은 이름과 암호로 로그인합니다. 암호는 저장하지 않습니다.",
+      note: "휴대폰 앱으로 이 칸의 QR을 스캔한 뒤 이름과 말하는 언어를 입력합니다.",
     };
     if (!this.countChosen && this.desks.length === 0) this._makeDesk();
     const first = this.desks[0];
     return { connectionId: first ? first.connectionId : "", token: this.token };
   }
 
-  /** 시작 전에 운영자가 고른 대수만큼 암호를 준비한다. 이미 만든 암호는 지우지 않고 수를 맞춘다. */
+  /** 시작 전에 운영자가 고른 대수만큼 칸을 준비한다. 이미 만든 칸은 지우지 않고 수를 맞춘다. */
   setPhoneCount(count) {
     const n = Number(count);
     if (!Number.isInteger(n) || n < 0 || n > 8) throw new Error("휴대폰 수는 0부터 8까지입니다.");
@@ -179,6 +180,15 @@ class PhoneJoin {
     this.phoneCount = n;
     this._notify();
     return { added, removed };
+  }
+
+  /** 칸마다 QR 그림을 만든다. 주소 안의 신호 열쇠는 그림에만 있고, 화면 글자로는 내지 않는다. */
+  async refreshQrs() {
+    if (!/^[a-f0-9]{32}$/.test(this.token || "")) return;
+    for (const desk of this.desks) {
+      const url = orgServices.lectureSlotUrl(catalog.pagesBase, desk.connectionId, this.token);
+      desk.qrDataUrl = await QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
+    }
   }
 
   addDesk() {
@@ -226,7 +236,7 @@ class PhoneJoin {
       ...this.infoCache,
       connectionId: "",
       pin: "",
-      note: "설정에서 휴대폰 수를 고르면 암호가 나옵니다.",
+      note: "설정에서 휴대폰 수를 고르면 QR이 나옵니다.",
     };
     peers.forEach((peerId) => this._toLink({ type: "close", peerId }));
     return ids;
@@ -237,7 +247,7 @@ class PhoneJoin {
       const connectionId = orgServices.makeConnectionId();
       if (!this.desks.some((desk) => desk.connectionId === connectionId)) return connectionId;
     }
-    throw new Error("접속 번호를 만들지 못했습니다. 다시 시도해 주세요.");
+    throw new Error("휴대폰 칸을 만들지 못했습니다. 다시 시도해 주세요.");
   }
 
   _notify() {
@@ -266,7 +276,7 @@ class PhoneJoin {
     const connectionId = orgServices.normalizeConnectionId(message.connectionId);
     const desk = connectionId ? this.desks.find((item) => item.connectionId === connectionId) : null;
     if (!desk) {
-      this._refuse(peerId, "접속 번호를 확인해 주세요.");
+      this._refuse(peerId, "이 QR의 칸을 찾지 못했습니다.");
       return;
     }
     const spoken = String(message.spoken || "").trim() || "ko";

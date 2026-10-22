@@ -511,13 +511,14 @@ function registerIpc() {
         await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
       }
       for (const connectionId of changed.removed) {
-        try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 없는 암호는 넘어갑니다 */ }
+        try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 없는 칸은 넘어갑니다 */ }
       }
     } catch (err) {
       changed.added.forEach((connectionId) => phoneJoin.dropDesk(connectionId));
       send({ type: "phone-join", info: phoneJoin.info() });
-      throw new Error("휴대폰 암호를 열지 못했습니다. 다시 시도해 주세요.");
+      throw new Error("휴대폰 QR을 만들지 못했습니다. 다시 시도해 주세요.");
     }
+    await phoneJoin.refreshQrs();
     send({ type: "phone-join", info: phoneJoin.info() });
     return phoneJoin.info();
   });
@@ -531,8 +532,9 @@ function registerIpc() {
     } catch (err) {
       phoneJoin.dropDesk(desk.connectionId);
       send({ type: "phone-join", info: phoneJoin.info() });
-      throw new Error("휴대폰 채널을 열지 못했습니다. 다시 시도해 주세요.");
+      throw new Error("휴대폰 칸을 열지 못했습니다. 다시 시도해 주세요.");
     }
+    await phoneJoin.refreshQrs();
     send({ type: "phone-join", info: phoneJoin.info() });
     return { connectionId: desk.connectionId };
   });
@@ -661,6 +663,7 @@ function registerIpc() {
         for (const connectionId of opened) {
           await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
         }
+        await phoneJoin.refreshQrs();
         send({ type: "phone-join", info: phoneJoin.info() });
       } catch (err) {
         const created = phoneJoin.closeSession();
@@ -670,7 +673,7 @@ function registerIpc() {
         }
         send({ type: "phone-join", info: phoneJoin.info() });
         try { await engine.stop(); } catch (_) { /* 시작이 취소되면 방송도 멈춥니다 */ }
-        throw new Error("접속 번호를 열지 못했습니다. 방송을 다시 시작해 주세요.");
+        throw new Error("휴대폰 QR을 열지 못했습니다. 방송을 다시 시작해 주세요.");
       }
     }
     return {
@@ -684,7 +687,10 @@ function registerIpc() {
     const stopped = await engine.stop();
     const ids = phoneJoin ? phoneJoin.closeSession() : [];
     const fresh = phoneJoin && Array.isArray(phoneJoin.preparedAfterClose) ? phoneJoin.preparedAfterClose : [];
-    if (phoneJoin) send({ type: "phone-join", info: phoneJoin.info() });
+    if (phoneJoin) {
+      await phoneJoin.refreshQrs();
+      send({ type: "phone-join", info: phoneJoin.info() });
+    }
     for (const connectionId of ids) {
       try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 지워진 번호는 무시합니다 */ }
     }

@@ -17,7 +17,7 @@ enum PhonePage {
     var detail: String {
         switch self {
         case .lecture:
-            return "휴대폰 마이크로 송출 컴퓨터에 연결합니다."
+            return "송출 컴퓨터의 QR을 스캔한 뒤 이름과 말하는 언어를 입력합니다."
         case .face:
             return "QR을 보여 주거나, 상대 QR을 카메라로 읽습니다."
         }
@@ -46,6 +46,12 @@ enum PhonePage {
 
 enum FaceLink {
     private static let host = "anyplan75.github.io"
+    private static let connectionAlphabet = CharacterSet(charactersIn: "ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+
+    struct LectureSlot {
+        let connectionId: String
+        let token: String
+    }
 
     /// 대면 통역 QR에 들어 있는 주소인지 확인한다. 형태는 `/face/?s=` 이다.
     static func joinURL(from raw: String) -> URL? {
@@ -54,8 +60,38 @@ enum FaceLink {
         return url
     }
 
+    /// 강연·회의 QR. 형태는 `/lecture/?c=칸&s=신호열쇠` 이다.
+    static func lectureSlot(from raw: String) -> LectureSlot? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              url.scheme?.lowercased() == "https",
+              url.host?.lowercased() == host else { return nil }
+        let path = url.path
+        let lecture = path == "/live-interpret/lecture" || path == "/live-interpret/lecture/"
+        let booth = path == "/live-interpret/phone-booth" || path == "/live-interpret/phone-booth/"
+        guard lecture || booth else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let connectionId = (items.first { $0.name == "c" }?.value ?? "").uppercased()
+        let token = items.first { $0.name == "s" }?.value ?? ""
+        guard isConnectionId(connectionId), isToken(token) else { return nil }
+        return LectureSlot(connectionId: connectionId, token: token)
+    }
+
+    static func lectureSlotURL(from raw: String) -> URL? {
+        guard lectureSlot(from: raw) != nil else { return nil }
+        return URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func isConnectionId(_ value: String) -> Bool {
+        value.count == 6 && value.unicodeScalars.allSatisfy { connectionAlphabet.contains($0) }
+    }
+
+    private static func isToken(_ value: String) -> Bool {
+        value.count == 32 && value.unicodeScalars.allSatisfy { ("0"..."9").contains(Character($0)) || ("a"..."f").contains(Character($0)) }
+    }
+
     /// 웹뷰가 그대로 열어도 되는 주소. 대면 통역 페이지만 해당한다.
-    /// 강연·회의의 공개 주소는 옛 접속 번호 화면이라 앱 안에서 다시 열지 않는다.
+    /// 강연·회의 QR은 앱 안 화면으로 넘기고, 공개 웹 주소로는 다시 열지 않는다.
     static func isShellPage(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https",
               url.host?.lowercased() == host else { return false }

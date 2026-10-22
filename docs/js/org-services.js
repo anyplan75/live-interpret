@@ -69,7 +69,7 @@
       return {
         ok: false,
         holderPeerId,
-        reason: "이 접속 번호는 이미 다른 기기에서 연결되어 있습니다. 먼저 연결을 끊은 뒤에 다시 들어오세요.",
+        reason: "이 QR은 이미 다른 기기에서 연결되어 있습니다. 먼저 연결을 끊은 뒤에 다시 들어오세요.",
       };
     }
     return { ok: true, holderPeerId: peerId, reason: "" };
@@ -96,6 +96,31 @@
 
   function lectureAppUrl(pagesBase) {
     return `${publicBase(pagesBase)}/lecture/`;
+  }
+
+  /** 한 칸의 QR에 넣는 주소. c는 칸 번호, s는 신호 열쇠입니다. 비밀번호는 없습니다. */
+  function lectureSlotUrl(pagesBase, connectionId, token) {
+    const id = normalizeConnectionId(connectionId);
+    if (!id) throw new Error("참여 칸이 올바르지 않습니다.");
+    if (!validToken(token)) throw new Error("참여 토큰이 올바르지 않습니다.");
+    return `${lectureAppUrl(pagesBase)}?c=${id}&s=${token}`;
+  }
+
+  function parseLectureSlot(value, pagesBase) {
+    let parsed;
+    try { parsed = new URL(String(value || "")); } catch (_) { return null; }
+    if (parsed.protocol !== "https:") return null;
+    let expected;
+    try { expected = new URL(publicBase(pagesBase || "https://anyplan75.github.io/live-interpret")); }
+    catch (_) { return null; }
+    if (parsed.host !== expected.host) return null;
+    const root = expected.pathname.replace(/\/$/, "");
+    const path = parsed.pathname.replace(/\/$/, "");
+    if (path !== `${root}/lecture` && path !== `${root}/phone-booth`) return null;
+    const connectionId = normalizeConnectionId(parsed.searchParams.get("c"));
+    const token = String(parsed.searchParams.get("s") || "");
+    if (!connectionId || !validToken(token)) return null;
+    return { connectionId, token };
   }
 
   function faceAppUrl(pagesBase) {
@@ -530,6 +555,8 @@
     releaseConnection,
     publicBase,
     lectureAppUrl,
+    lectureSlotUrl,
+    parseLectureSlot,
     faceAppUrl,
     faceJoinUrl,
     serviceNode,

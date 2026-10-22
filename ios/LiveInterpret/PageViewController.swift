@@ -3,11 +3,20 @@ import UIKit
 import WebKit
 
 /// 고른 입구의 공개 페이지를 그대로 연다. 통역 계산은 이 화면이 다시 만들지 않는다.
+final class LectureScanBridge: NSObject, WKScriptMessageHandler {
+    weak var owner: PageViewController?
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.scanQr()
+    }
+}
+
 final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDelegate {
     private let page: PhonePage
     private let webView: WKWebView
+    private let lectureBridge = LectureScanBridge()
     private let spinner = UIActivityIndicatorView(style: .large)
     private let errorLabel = UILabel()
+    private var lectureSlot: FaceLink.LectureSlot?
 
     init(page: PhonePage) {
         self.page = page
@@ -15,8 +24,12 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        if page == .lecture {
+            configuration.userContentController.add(lectureBridge, name: "scanLecture")
+        }
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init(nibName: nil, bundle: nil)
+        lectureBridge.owner = self
     }
 
     required init?(coder: NSCoder) { nil }
@@ -25,7 +38,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         super.viewDidLoad()
         view.backgroundColor = ShellColor.background
         navigationItem.title = page.title
-        if page == .face {
+        if page == .face || page == .lecture {
             navigationItem.rightBarButtonItem = UIBarButtonItem(
                 title: "QR 스캔",
                 style: .plain,
@@ -107,18 +120,39 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         webView.load(URLRequest(url: url))
     }
 
-    @objc private func scanQr() {
+    @objc func scanQr() {
         let scanner = QrScannerViewController()
+        if page == .lecture {
+            scanner.hintText = "송출 컴퓨터에 나온 QR을 비추세요."
+            scanner.accept = { FaceLink.lectureSlotURL(from: $0) }
+        } else {
+            scanner.hintText = "상대 휴대폰에 나온 QR을 비추세요."
+            scanner.accept = { FaceLink.joinURL(from: $0) }
+        }
         scanner.onLink = { [weak self] url in
-            self?.loadPage(url)
+            guard let self else { return }
+            if self.page == .lecture, let slot = FaceLink.lectureSlot(from: url.absoluteString) {
+                self.applyLectureScan(slot)
+                return
+            }
+            self.loadPage(url)
         }
         let sheet = UINavigationController(rootViewController: scanner)
         sheet.modalPresentationStyle = .fullScreen
         present(sheet, animated: true)
     }
 
+    private func applyLectureScan(_ slot: FaceLink.LectureSlot) {
+        lectureSlot = slot
+        let script = "window.LIJoin&&window.LIJoin.applyScan({\"connectionId\":\"\(slot.connectionId)\",\"token\":\"\(slot.token)\"})"
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         spinner.stopAnimating()
+        if let lectureSlot {
+            applyLectureScan(lectureSlot)
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

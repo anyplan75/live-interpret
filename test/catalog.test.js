@@ -255,13 +255,14 @@ test("firebase api key is not committed", () => {
   const lecturePage = fs.readFileSync(path.join(root, "docs/lecture/index.html"), "utf8");
   assert.equal(lecturePage.includes("phone-firebase-env.js"), false);
   assert.equal(lecturePage.includes('type="password"'), false);
-  assert.match(lecturePage, /id="joinId"/);
+  assert.match(lecturePage, /id="scanQr"/);
+  assert.match(lecturePage, /applyScan/);
+  assert.doesNotMatch(lecturePage, /id="joinId"/);
   assert.match(lecturePage, /id="name"/);
   assert.match(lecturePage, /id="spoken"/);
-  assert.match(lecturePage, /for="joinId">암호</);
   assert.match(lecturePage, /for="name">이름</);
   assert.match(lecturePage, /for="spoken">말하는 언어</);
-  assert.ok(lecturePage.indexOf('for="joinId"') < lecturePage.indexOf('for="name"'));
+  assert.ok(lecturePage.indexOf('id="scanQr"') < lecturePage.indexOf('for="name"'));
   assert.ok(lecturePage.indexOf('for="name"') < lecturePage.indexOf('for="spoken"'));
   assert.match(lecturePage, /lang\.flag/);
   assert.doesNotMatch(lecturePage, /spoken:\s*["']ko["']/);

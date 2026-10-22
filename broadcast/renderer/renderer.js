@@ -486,7 +486,7 @@ function renderPhoneDesks() {
   if (!desks.length) {
     const empty = document.createElement("p");
     empty.className = "hint";
-    empty.textContent = "휴대폰 수를 고르면 각 휴대폰의 암호가 나옵니다.";
+    empty.textContent = "휴대폰 수를 고르면 각 칸에 QR이 나옵니다.";
     root.append(empty);
     return;
   }
@@ -495,15 +495,16 @@ function renderPhoneDesks() {
     wrap.className = "phone-desk";
     const title = document.createElement("h3");
     title.textContent = `휴대폰 ${index + 1}`;
-    const idLabel = document.createElement("label");
-    idLabel.textContent = "암호";
-    const idInput = document.createElement("input");
-    idInput.className = "join-code";
-    idInput.type = "text";
-    idInput.readOnly = true;
-    idInput.autocomplete = "off";
-    idInput.value = desk.connectionId || "";
-    idInput.setAttribute("aria-label", `휴대폰 ${index + 1} 암호`);
+    const qr = document.createElement("img");
+    qr.className = "phone-qr";
+    qr.alt = `휴대폰 ${index + 1} QR`;
+    if (desk.qrDataUrl) qr.src = desk.qrDataUrl;
+    else qr.hidden = true;
+    const qrHint = document.createElement("p");
+    qrHint.className = "hint";
+    qrHint.textContent = desk.qrDataUrl
+      ? "휴대폰 앱으로 이 QR을 스캔하세요."
+      : "QR을 준비하는 중입니다.";
     const view = deskView(desk);
     const channelIndex = deskChannelIndex(view);
     const select = document.createElement("select");
@@ -516,10 +517,10 @@ function renderPhoneDesks() {
       select.value = knownSpoken(state.channels[channelIndex].spoken);
       select.addEventListener("change", () => onChannelSpoken(channelIndex, select.value));
     }
-    wrap.append(title);
+    wrap.append(title, qr, qrHint);
     appendPhoneLive(wrap, index + 1, view);
     appendPhoneNameEditor(wrap, index + 1, view);
-    wrap.append(idLabel, idInput, select);
+    if (channelIndex >= 0) wrap.append(select);
     root.append(wrap);
   });
   if (!keep || !keep.id) return;
@@ -1410,7 +1411,7 @@ document.getElementById("phoneCount").addEventListener("change", async () => {
   try {
     showPhoneJoin(await window.broadcast.setPhoneCount(count));
     await persist({ phoneCount: count });
-    if (msg) msg.textContent = count === 0 ? "휴대폰 없이 시작합니다." : "각 휴대폰에 이름과 암호를 알려 주세요.";
+    if (msg) msg.textContent = count === 0 ? "휴대폰 없이 시작합니다." : "각 휴대폰 앱에서 그 칸의 QR을 스캔하세요.";
   } catch (err) {
     if (msg) msg.textContent = err.message || String(err);
     log(err.message || String(err), "error");

@@ -122,12 +122,13 @@ test("one connection id stays on the first device until it leaves", () => {
   const card = phoneCard(read("broadcast/renderer/index.html"));
   const rules = JSON.parse(read("firebase/live-interpret.rules.json"));
   const desk = rules["live-interpret"].lectureJoins.$joinId;
-  assert.match(lecture, /id="joinId"/);
+  assert.match(lecture, /id="scanQr"/);
+  assert.match(lecture, /applyScan/);
   assert.match(lecture, /id="name"/);
   assert.match(lecture, /id="spoken"/);
-  assert.match(lecture, /암호/);
   assert.match(lecture, /말하는 언어/);
-  assert.ok(lecture.indexOf('for="joinId"') < lecture.indexOf('for="name"'));
+  assert.doesNotMatch(lecture, /id="joinId"/);
+  assert.ok(lecture.indexOf('id="scanQr"') < lecture.indexOf('for="name"'));
   assert.ok(lecture.indexOf('for="name"') < lecture.indexOf('for="spoken"'));
   assert.doesNotMatch(lecture, /spoken:\s*["']ko["']/);
   assert.doesNotMatch(lecture, /id="joinPin"|id="phoneQr"|qrcode|접속\s*번호|4자리/);
@@ -139,14 +140,18 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(pageVC, /loadHTMLString/);
   assert.match(pageVC, /sw-register\.js/);
   assert.match(pageVC, /forResource: "index"/);
+  assert.match(pageVC, /scanLecture/);
+  assert.match(pageVC, /lectureSlot/);
   assert.match(phonePages, /phone-booth/);
+  assert.match(phonePages, /func lectureSlot/);
   assert.match(read("ios/LiveInterpret/PhonePages.swift"), /isRemoteLecturePage/);
   assert.match(pageVC, /isRemoteLecturePage/);
   assert.match(project, /\.\.\/\.\.\/docs\/lecture\/index\.html/);
   assert.equal(lecture.indexOf("languages.js") < lecture.indexOf("catalog.js"), true);
   assert.match(card, /id="phoneDesks"/);
   assert.match(card, /id="phoneCount"/);
-  assert.match(card, /암호/);
+  assert.match(card, /QR/);
+  assert.doesNotMatch(card, /암호/);
   assert.doesNotMatch(card, /id="addPhoneChannel"|id="phoneQr"|id="phoneJoinUrl"|이번 세션 4자리 암호/);
   assert.doesNotMatch(card, /id="joinId"|id="joinPin"/);
   assert.match(read("broadcast/renderer/renderer.js"), /onChannelSpoken\(/);
@@ -183,7 +188,9 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(read("broadcast/lib/engine.js"), /setShowPreacherName/);
   assert.match(read("broadcast/lib/engine.js"), /setPhoneDisplay/);
   assert.match(screen, /이 이름을 자막에 표시/);
-  assert.match(screen, /appendPhoneNameEditor/);
+  assert.match(screen, /phone-qr/);
+  assert.match(screen, /qrDataUrl/);
+  assert.match(read("broadcast/lib/phone-join.js"), /refreshQrs/);
   assert.match(read("docs/lecture/index.html"), /type: "hello", name/);
   assert.doesNotMatch(screen, /음성 신호가 들어오고 있습니다/);
   assert.doesNotMatch(screen, /음성 신호가 아직 없습니다/);
@@ -529,8 +536,8 @@ test("named phones join through data-channel messages without a certificate", as
     assert.equal(info.url.includes("http://"), false);
     assert.match(info.qrDataUrl, /^data:image\/png;base64,/);
     server.ingestText("peer0001aa", JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001", pin: "1234", spoken: "ko" }));
-    assert.match(sent.at(-1).message, /접속 번호를 확인해 주세요/);
-    assert.equal(server.info().loginError, "접속 번호를 확인해 주세요.");
+    assert.match(sent.at(-1).message, /이 QR의 칸을 찾지 못했습니다/);
+    assert.equal(server.info().loginError, "이 QR의 칸을 찾지 못했습니다.");
     const first = await server.openSession();
     const second = server.addDesk();
     assert.equal(first.connectionId.length, 6);
@@ -578,6 +585,27 @@ test("named phones join through data-channel messages without a certificate", as
   } finally {
     await server.stop();
   }
+});
+
+test("each phone slot has its own lecture QR", async () => {
+  const org = require("../docs/js/org-services");
+  const token = "ab".repeat(16);
+  const server = new PhoneJoin();
+  await server.start({ signal: false, token });
+  server.setPhoneCount(2);
+  await server.refreshQrs();
+  const info = server.info();
+  assert.equal(info.channels.length, 2);
+  assert.match(info.channels[0].qrDataUrl, /^data:image\/png;base64,/);
+  assert.match(info.channels[1].qrDataUrl, /^data:image\/png;base64,/);
+  assert.notEqual(info.channels[0].connectionId, info.channels[1].connectionId);
+  const url = org.lectureSlotUrl("https://anyplan75.github.io/live-interpret", info.channels[0].connectionId, token);
+  const parsed = org.parseLectureSlot(url);
+  assert.equal(parsed.connectionId, info.channels[0].connectionId);
+  assert.equal(parsed.token, token);
+  assert.equal(org.parseLectureSlot(`https://evil.example/lecture/?c=${info.channels[0].connectionId}&s=${token}`), null);
+  assert.equal(info.channels[0].qrDataUrl.includes(token), false);
+  await server.stop();
 });
 
 test("the operator picks how many phones and a name plus auth code is enough", async () => {

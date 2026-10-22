@@ -7,3 +7,4 @@ user-data/
 .electron-cache/
 .env
 build/ios-phone/
+build/ios-sim/
