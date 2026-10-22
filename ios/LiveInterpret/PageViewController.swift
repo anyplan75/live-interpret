@@ -1,6 +1,37 @@
 import AVFoundation
+import Darwin
 import UIKit
 import WebKit
+
+/// 같은 와이파이에서 이 휴대폰의 숫자 주소. 설치된 맥은 숨은 .local 이름을 찾지 못한다.
+enum LocalAddress {
+    static func wifiIPv4() -> String {
+        var pointer: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&pointer) == 0, let first = pointer else { return "" }
+        defer { freeifaddrs(pointer) }
+        var fallback = ""
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let iface = cursor {
+            defer { cursor = iface.pointee.ifa_next }
+            let name = String(cString: iface.pointee.ifa_name)
+            let flags = Int32(iface.pointee.ifa_flags)
+            let up = (flags & IFF_UP) != 0
+            let loopback = (flags & IFF_LOOPBACK) != 0
+            guard up, !loopback, name == "en0" || name.hasPrefix("en") else { continue }
+            guard let addr = iface.pointee.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(addr, socklen_t(addr.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) != 0 {
+                continue
+            }
+            let text = String(cString: host)
+            guard text.range(of: #"^\d{1,3}(?:\.\d{1,3}){3}$"#, options: .regularExpression) != nil else { continue }
+            guard text != "0.0.0.0", !text.hasPrefix("169.254.") else { continue }
+            if name == "en0" { return text }
+            if fallback.isEmpty { fallback = text }
+        }
+        return fallback
+    }
+}
 
 /// 고른 입구의 공개 페이지를 그대로 연다. 통역 계산은 이 화면이 다시 만들지 않는다.
 final class LectureScanBridge: NSObject, WKScriptMessageHandler {
@@ -36,6 +67,14 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         if page == .lecture {
+            let address = LocalAddress.wifiIPv4()
+            if address.range(of: #"^\d{1,3}(?:\.\d{1,3}){3}$"#, options: .regularExpression) != nil {
+                configuration.userContentController.addUserScript(WKUserScript(
+                    source: "window.__liLocalAddress = \"\(address)\";",
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: true
+                ))
+            }
             let openScanner = """
             document.addEventListener("click", function (event) {
               var node = event.target && event.target.closest ? event.target.closest("#scanQr") : null;
@@ -197,7 +236,15 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     func lectureMicOpened() {
         lectureMicOpen = true
+        publishLocalAddress()
         prepareLectureSession(active: true)
+    }
+
+    /// 마이크를 열기 전에, 숨은 이름 대신 쓸 숫자 주소를 페이지에 알려 준다.
+    private func publishLocalAddress() {
+        let address = LocalAddress.wifiIPv4()
+        guard address.range(of: #"^\d{1,3}(?:\.\d{1,3}){3}$"#, options: .regularExpression) != nil else { return }
+        webView.evaluateJavaScript("window.LIJoin&&window.LIJoin.setLocalAddress&&window.LIJoin.setLocalAddress(\"\(address)\")")
     }
 
     func lectureMicStopped() {
@@ -303,6 +350,9 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         spinner.stopAnimating()
+        if page == .lecture {
+            publishLocalAddress()
+        }
         if let lectureSlot {
             applyLectureScan(lectureSlot) { [weak self] accepted in
                 guard accepted, let self, self.presentedViewController != nil else { return }

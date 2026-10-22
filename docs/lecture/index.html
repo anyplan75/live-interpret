@@ -102,6 +102,12 @@
     };
   }
 
+  function numericCandidate(value) {
+    const host = (root.LIJoin && root.LIJoin.localAddress) || root.__liLocalAddress || "";
+    if (typeof value !== "string" || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return value;
+    return value.replace(/\b[A-Za-z0-9-]+\.local\b/g, host);
+  }
+
   async function putJson(url, body) {
     const res = await fetch(url, {
       method: "PUT",
@@ -289,7 +295,7 @@
         if (!event.candidate || !event.candidate.candidate) return;
         if (/\btyp relay\b/.test(event.candidate.candidate)) return;
         const payload = JSON.stringify({
-          candidate: event.candidate.candidate,
+          candidate: numericCandidate(event.candidate.candidate),
           sdpMid: event.candidate.sdpMid,
           sdpMLineIndex: event.candidate.sdpMLineIndex,
         });
@@ -299,7 +305,7 @@
       link.stopWatch = watchSignal(link, `${base}.json`);
       pc.createOffer().then(async (offer) => {
         await pc.setLocalDescription(offer);
-        await putJson(`${base}/offer.json`, { type: "offer", sdp: offer.sdp });
+        await putJson(`${base}/offer.json`, { type: "offer", sdp: numericCandidate(offer.sdp) });
       }).catch(() => {
         onStatus("연결하지 못했습니다. 다시 시도해 주세요.");
       });
@@ -395,6 +401,11 @@
       },
       holdMic() {
         if (link && typeof link.hold === "function") link.hold();
+      },
+      setLocalAddress(ip) {
+        if (typeof ip !== "string" || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) return;
+        this.localAddress = ip;
+        window.__liLocalAddress = ip;
       },
     };
 
