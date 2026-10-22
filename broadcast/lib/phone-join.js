@@ -109,8 +109,14 @@ class PhoneJoin {
       phoneId: desk.phoneId,
       channelIndex: desk.channelIndex,
       connected: Boolean(desk.holderPeerId),
+      loginError: desk.loginError || "",
     }));
-    return { ...this.infoCache, ips: (this.infoCache.ips || []).slice(), channels };
+    return {
+      ...this.infoCache,
+      ips: (this.infoCache.ips || []).slice(),
+      loginError: this.loginError || "",
+      channels,
+    };
   }
 
   attachLink(link) {
@@ -256,10 +262,6 @@ class PhoneJoin {
       this._refuse(peerId, "이름을 입력해 주세요.");
       return;
     }
-    if (!this.sessionOpen) {
-      this._refuse(peerId, "강연·회의가 아직 시작되지 않았습니다.");
-      return;
-    }
     const connectionId = orgServices.normalizeConnectionId(message.connectionId);
     const desk = connectionId ? this.desks.find((item) => item.connectionId === connectionId) : null;
     if (!desk) {
@@ -268,17 +270,17 @@ class PhoneJoin {
     }
     const spoken = String(message.spoken || "").trim() || "ko";
     if (!catalog.langByCode[spoken]) {
-      this._refuse(peerId, "말하는 언어를 선택해 주세요.");
+      this._refuse(peerId, "말하는 언어를 선택해 주세요.", desk);
       return;
     }
     const rawPin = message.pin == null ? "" : String(message.pin).trim();
     if (rawPin && (!orgServices.validSessionPin(rawPin) || rawPin !== desk.pin)) {
-      this._refuse(peerId, "이번 세션 암호가 맞지 않습니다.");
+      this._refuse(peerId, "이번 세션 암호가 맞지 않습니다.", desk);
       return;
     }
     const seat = orgServices.claimConnection(desk.holderPeerId, peerId);
     if (!seat.ok) {
-      this._refuse(peerId, seat.reason);
+      this._refuse(peerId, seat.reason, desk);
       return;
     }
     desk.holderPeerId = seat.holderPeerId;
@@ -290,15 +292,18 @@ class PhoneJoin {
     } catch (err) {
       row.phoneId = "";
       if (desk.holderPeerId === peerId) desk.holderPeerId = "";
-      this._refuse(peerId, err.message || "연결하지 못했습니다.");
+      this._refuse(peerId, err.message || "연결하지 못했습니다.", desk);
       return;
     }
     if (joined && typeof joined.then === "function") {
       joined.then((value) => this._completeHello(peerId, desk, row, requested, name, spoken, value))
         .catch((err) => {
-          row.phoneId = "";
-          if (desk.holderPeerId === peerId) desk.holderPeerId = "";
-          this._refuse(peerId, err && err.message ? err.message : "연결하지 못했습니다.");
+          this._completeHello(peerId, desk, row, requested, name, spoken, {
+            name,
+            phoneId: requested,
+            spoken,
+            loginError: err && err.message ? err.message : "연결하지 못했습니다.",
+          });
         });
       return;
     }
@@ -313,6 +318,8 @@ class PhoneJoin {
     desk.name = accepted.name || name;
     desk.spoken = accepted.spoken || spoken;
     desk.channelIndex = Number.isInteger(accepted.index) ? accepted.index : -1;
+    desk.loginError = accepted.loginError || "";
+    if (!desk.loginError) this.loginError = "";
     this._send(peerId, {
       type: "joined",
       phoneId,
@@ -344,7 +351,10 @@ class PhoneJoin {
     this._notify();
   }
 
-  _refuse(peerId, message) {
+  _refuse(peerId, message, desk) {
+    if (desk) desk.loginError = message;
+    else this.loginError = message;
+    this._notify();
     this._send(peerId, { type: "error", message });
     this._toLink({ type: "close", peerId });
   }

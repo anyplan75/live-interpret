@@ -170,8 +170,16 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(read("broadcast/main.js"), /started\.already/);
   assert.match(read("broadcast/lib/engine.js"), /broadcastLive/);
   assert.doesNotMatch(screen, /휴대폰\$\{slot\} 켜짐/);
+  assert.match(screen, /아직 연결되지 않았습니다/);
+  assert.match(screen, /appendPhoneLive\(wrap/);
+  assert.match(screen, /showPreacherName/);
+  assert.match(screen, /preacherNameShown/);
   assert.match(screen, /data-phone-level/);
   assert.match(read("broadcast/renderer/index.html"), /id="phoneLevels"/);
+  assert.match(read("broadcast/renderer/index.html"), /id="showPreacherName"/);
+  assert.match(read("broadcast/renderer/index.html"), /강연자 이름을 자막에 표시/);
+  assert.match(read("broadcast/preload.js"), /setShowPreacherName/);
+  assert.match(read("broadcast/lib/engine.js"), /setShowPreacherName/);
   assert.doesNotMatch(screen, /음성 신호가 들어오고 있습니다/);
   assert.doesNotMatch(screen, /음성 신호가 아직 없습니다/);
   assert.doesNotMatch(screen, /연결됨/);
@@ -235,6 +243,29 @@ test("a live broadcast is kept and a stuck flag is cleared", async () => {
   stuck.channelSessions = new Map();
   await assert.rejects(() => stuck.start({}), /OpenAI 키/);
   assert.equal(stuck.running, false);
+});
+
+test("hiding the preacher name clears only the Mac speaker", () => {
+  const engine = new Engine(() => {});
+  engine.preacherName = "이종찬";
+  engine.showPreacherName = true;
+  engine.channelRows = [
+    { spoken: "ko", on: true, source: "device", name: "" },
+    { spoken: "ko", on: true, source: "phone", name: "민수", phoneId: "phone0001" },
+  ];
+  const device = { name: "이종찬", pipeline: { speaker: "이종찬" } };
+  const phone = { name: "민수", pipeline: { speaker: "민수" } };
+  engine.channelSessions = new Map([[0, device], [1, phone]]);
+  assert.equal(engine.deviceSpeaker(engine.channelRows[0], 0), "이종찬");
+  assert.equal(engine.deviceSpeaker(engine.channelRows[1], 1), "");
+  assert.equal(engine.setShowPreacherName(false).showPreacherName, false);
+  assert.equal(device.name, "");
+  assert.equal(device.pipeline.speaker, "");
+  assert.equal(phone.name, "민수");
+  assert.equal(phone.pipeline.speaker, "민수");
+  engine.setShowPreacherName(true);
+  assert.equal(device.pipeline.speaker, "이종찬");
+  assert.equal(phone.pipeline.speaker, "민수");
 });
 
 test("a connected phone shows a signal only after audio arrives", async () => {
@@ -455,7 +486,8 @@ test("named phones join through data-channel messages without a certificate", as
     assert.equal(info.url.includes("http://"), false);
     assert.match(info.qrDataUrl, /^data:image\/png;base64,/);
     server.ingestText("peer0001aa", JSON.stringify({ type: "hello", name: "민수", phoneId: "phone0001", pin: "1234", spoken: "ko" }));
-    assert.match(sent.at(-1).message, /아직 시작되지/);
+    assert.match(sent.at(-1).message, /접속 번호를 확인해 주세요/);
+    assert.equal(server.info().loginError, "접속 번호를 확인해 주세요.");
     const first = await server.openSession();
     const second = server.addDesk();
     assert.equal(first.connectionId.length, 6);
@@ -522,13 +554,21 @@ test("the operator picks how many phones and a name plus auth code is enough", a
   server.ingestText("peerbefore", JSON.stringify({
     type: "hello", name: "민수", connectionId: kept[0],
   }));
-  assert.match(sent.at(-1).message, /아직 시작되지/);
+  assert.equal(sent.some((row) => row.type === "joined" && row.name === "민수"), true);
+  assert.equal(server.info().channels[0].connected, true);
+  assert.equal(server.info().channels[0].name, "민수");
+  assert.equal(server.info().channels[0].loginError, "");
+  server.ingestText("peerbadlang", JSON.stringify({
+    type: "hello", name: "영희", connectionId: kept[1], spoken: "zz",
+  }));
+  assert.equal(server.info().channels[1].loginError, "말하는 언어를 선택해 주세요.");
+  assert.equal(server.info().channels[1].connected, false);
   await server.openSession();
   assert.deepEqual(server.desks.map((desk) => desk.connectionId), kept);
   server.ingestText("peerafter1", JSON.stringify({
     type: "hello", name: "민수", connectionId: kept[0],
   }));
-  assert.equal(sent.some((row) => row.type === "joined" && row.name === "민수"), true);
+  assert.match(sent.at(-1).message, /다른 기기/);
   assert.throws(() => server.setPhoneCount(9), /0부터 8까지/);
   assert.throws(() => server.setPhoneCount(0), /연결된 휴대폰/);
   const shrunk = server.setPhoneCount(1);
@@ -602,13 +642,27 @@ function browserSecureContext(bin, url) {
       returnByValue: true,
     });
     ws.close();
-    chrome.kill("SIGKILL");
-    fs.rmSync(profile, { recursive: true, force: true });
+    await closeBrowser(chrome, profile);
     return JSON.parse(evaluated.result.result.value);
-  }).catch((err) => {
-    chrome.kill("SIGKILL");
-    fs.rmSync(profile, { recursive: true, force: true });
+  }).catch(async (err) => {
+    await closeBrowser(chrome, profile);
     throw err;
+  });
+}
+
+function closeBrowser(chrome, profile) {
+  try { chrome.kill("SIGKILL"); } catch (_) { /* 이미 끝난 브라우저는 넘어갑니다 */ }
+  return new Promise((resolve) => {
+    const finish = () => {
+      try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 80 }); }
+      catch (_) { /* 임시 프로필이 남아도 보안 맥락 판정은 유지합니다 */ }
+      resolve();
+    };
+    if (chrome.exitCode != null || chrome.signalCode != null) finish();
+    else {
+      chrome.once("exit", finish);
+      setTimeout(finish, 400);
+    }
   });
 }
 

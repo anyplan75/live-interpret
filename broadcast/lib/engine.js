@@ -752,7 +752,7 @@ class Engine {
     if (this.channelSessions.has(index)) return this.channelSessions.get(index);
     const row = this.channelRows[index] || { spoken: "ko", on: true, source: "device" };
     const phone = row.source === "phone";
-    const plan = channelRecognition(row, this.outputs || [], index === 0 ? this.preacherName : "");
+    const plan = channelRecognition(row, this.outputs || [], this.deviceSpeaker(row, index));
     const spoken = plan.spoken;
     const speaker = plan.speaker;
     const channelKey = phone ? `p${row.phoneId}` : `d${index}`;
@@ -774,9 +774,9 @@ class Engine {
       usage: this.usage,
       cloud,
       sharedTexts: this.sharedTexts,
-      onLive: (text) => this.emit({ type: "live", channel: index, name: speaker, text }),
-      onHeard: (heard) => this.emit({ type: "heard", channel: index, name: speaker, ...heard }),
-      onLine: (line) => this.emit({ type: "line", channel: index, ...line, name: speaker }),
+      onLive: (text) => this.emit({ type: "live", channel: index, name: pipeline.speaker, text }),
+      onHeard: (heard) => this.emit({ type: "heard", channel: index, name: pipeline.speaker, ...heard }),
+      onLine: (line) => this.emit({ type: "line", channel: index, ...line, name: pipeline.speaker }),
       onLog: (text) => this.emit({ type: "log", level: "info", text }),
     });
     pipeline.startTicker();
@@ -942,12 +942,15 @@ class Engine {
       const churchId = this.church && this.church.id ? this.church.id : "";
       const turned = await this.setChannelOn(churchId, added.index, true);
       if (!turned || turned.on !== true) {
-        throw new Error((turned && turned.message) || "휴대폰 마이크를 입력으로 열지 못했습니다.");
+        return {
+          ...added,
+          listening: false,
+          loginError: (turned && turned.message) || "휴대폰 마이크를 입력으로 열지 못했습니다.",
+        };
       }
     } catch (err) {
       if (this.channelRows[added.index]) this.channelRows[added.index].on = false;
-      this.markPhoneAway(added.phoneId);
-      throw err;
+      return { ...added, listening: false, loginError: err.message || "휴대폰 마이크를 입력으로 열지 못했습니다." };
     }
     this.flushPhonePcm(added.phoneId);
     return {
@@ -1045,6 +1048,26 @@ class Engine {
     this.emit({ type: "level", channel: index, peak: level });
   }
 
+  deviceSpeaker(row, index) {
+    if (row && row.source === "phone") return "";
+    if (index === 0 && this.showPreacherName !== false) return this.preacherName || "";
+    return "";
+  }
+
+  setShowPreacherName(on) {
+    this.showPreacherName = on !== false;
+    if (this.channelSessions) {
+      this.channelSessions.forEach((session, index) => {
+        const row = this.channelRows && this.channelRows[index];
+        if (!session || !row || row.source === "phone") return;
+        const name = this.deviceSpeaker(row, index);
+        session.name = name;
+        if (session.pipeline) session.pipeline.speaker = name;
+      });
+    }
+    return { showPreacherName: this.showPreacherName };
+  }
+
   broadcastLive() {
     if (!this.running || !this.channelSessions || !this.channelSessions.size) return false;
     for (const session of this.channelSessions.values()) {
@@ -1104,7 +1127,15 @@ class Engine {
       this.monitor(opts.deviceKey, opts.channel || 0);
     }
     const channelCount = this.device && this.device.inputChannels ? this.device.inputChannels : 1;
+    const keptPhones = (this.channelRows || []).filter((row) => row && row.source === "phone" && row.connected !== false && row.name && row.phoneId);
     this.channelRows = normalizeChannelRows(opts.channels, channelCount, opts.spoken);
+    keptPhones.forEach((phone) => {
+      const exists = this.channelRows.some((row) => row && row.source === "phone" && (row.phoneId === phone.phoneId || (phone.connectionId && row.connectionId === phone.connectionId)));
+      if (!exists) this.channelRows.push({ ...phone, on: true });
+    });
+    this.channelRows.forEach((row) => {
+      if (row && row.source === "phone" && row.connected !== false && row.name) row.on = true;
+    });
     this.paidChannels = new Set();
     this.channelSessions = new Map();
     this.sharedTexts = { texts: {}, chain: Promise.resolve() };
@@ -1140,6 +1171,7 @@ class Engine {
     this.sessionModel = model;
     this.preacherId = selected.id;
     this.preacherName = selected.name || "";
+    this.showPreacherName = opts.showPreacherName !== false;
 
     let extracted = null;
     if (opts.bulletinPath) {

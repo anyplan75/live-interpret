@@ -391,6 +391,42 @@ function phoneRowText(slot, info) {
   return `휴대폰${slot} ${who} 켜짐`;
 }
 
+function phoneStatusText(slot, info) {
+  if (phoneJoined(info)) return phoneRowText(slot, info);
+  const own = info && info.loginError;
+  const shared = state.phoneJoin && state.phoneJoin.loginError;
+  return own || shared || "아직 연결되지 않았습니다";
+}
+
+function appendPhoneLive(parent, slot, view) {
+  const box = document.createElement("div");
+  box.className = "phone-live";
+  const label = document.createElement("p");
+  label.className = "phone-level-name";
+  const joined = phoneJoined(view);
+  label.textContent = phoneStatusText(slot, view);
+  if (!joined && label.textContent !== "아직 연결되지 않았습니다") label.classList.add("phone-error");
+  const meter = document.createElement("div");
+  meter.className = "meter";
+  meter.setAttribute("aria-label", `휴대폰${slot} 소리 크기`);
+  const bar = document.createElement("span");
+  const channelIndex = joined ? deskChannelIndex(view) : -1;
+  if (channelIndex >= 0) {
+    bar.dataset.phoneLevel = String(channelIndex);
+    const saved = levelWidths.get(String(channelIndex));
+    if (saved) bar.style.width = saved;
+  }
+  meter.append(bar);
+  box.append(label, meter);
+  if (joined && view && view.loginError) {
+    const err = document.createElement("p");
+    err.className = "phone-error";
+    err.textContent = view.loginError;
+    box.append(err);
+  }
+  parent.append(box);
+}
+
 function deskView(desk) {
   const view = { ...(desk || {}) };
   const index = deskChannelIndex(desk);
@@ -419,32 +455,10 @@ function renderPhoneLevels() {
   const root = document.getElementById("phoneLevels");
   if (!root) return;
   const desks = state.phoneJoin && Array.isArray(state.phoneJoin.channels) ? state.phoneJoin.channels : [];
-  const kept = new Map();
-  root.querySelectorAll("[data-phone-level]").forEach((bar) => {
-    if (bar.style.width) kept.set(bar.dataset.phoneLevel, bar.style.width);
-  });
   root.innerHTML = "";
   root.hidden = desks.length === 0;
   desks.forEach((desk, index) => {
-    const view = deskView(desk);
-    const row = document.createElement("div");
-    row.className = "phone-level";
-    const name = document.createElement("span");
-    name.className = "phone-level-name";
-    name.textContent = phoneRowText(index + 1, view);
-    const meter = document.createElement("div");
-    meter.className = "meter";
-    meter.setAttribute("aria-label", `휴대폰${index + 1} 소리 크기`);
-    const bar = document.createElement("span");
-    const channelIndex = phoneJoined(view) ? deskChannelIndex(view) : -1;
-    if (channelIndex >= 0) {
-      bar.dataset.phoneLevel = String(channelIndex);
-      const saved = kept.get(String(channelIndex)) || levelWidths.get(String(channelIndex));
-      if (saved) bar.style.width = saved;
-    }
-    meter.append(bar);
-    row.append(name, meter);
-    root.append(row);
+    appendPhoneLive(root, index + 1, deskView(desk));
   });
 }
 
@@ -490,14 +504,9 @@ function renderPhoneDesks() {
       select.value = knownSpoken(state.channels[channelIndex].spoken);
       select.addEventListener("change", () => onChannelSpoken(channelIndex, select.value));
     }
-    wrap.append(title, idLabel, idInput);
-    if (phoneJoined(view)) {
-      const who = document.createElement("p");
-      who.className = "phone-joined";
-      who.textContent = phoneRowText(index + 1, view);
-      wrap.append(who);
-    }
-    wrap.append(select);
+    wrap.append(title);
+    appendPhoneLive(wrap, index + 1, view);
+    wrap.append(idLabel, idInput, select);
     root.append(wrap);
   });
 }
@@ -1053,6 +1062,8 @@ async function boot() {
   state.catalog = await window.broadcast.catalog();
   state.settings = await window.broadcast.getSettings();
   sensitivityEl.value = state.settings.sensitivity || "normal";
+  const showName = document.getElementById("showPreacherName");
+  if (showName) showName.checked = !(state.settings && state.settings.showPreacherName === false);
   const kind = document.getElementById("sessionKind");
   if (kind && state.settings.sessionKind) kind.value = state.settings.sessionKind;
   paintFolderHint();
@@ -1288,16 +1299,29 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
   }
 });
 
+function preacherNameShown() {
+  const box = document.getElementById("showPreacherName");
+  return !(box && box.checked === false);
+}
+
 function channelPrefix(index, text, name) {
   const value = String(text || "");
   if (!value) return value;
   const row = Number.isInteger(index) ? state.channels[index] : null;
   const who = String(name || (row && row.name) || "").trim();
   if (who) return speakerCaption(who, value);
+  if (row && row.source !== "phone" && !preacherNameShown()) return value;
   if (!Number.isInteger(index) || activeChannelRows().length < 2) return value;
   return speakerCaption(`채널 ${index + 1}`, value);
 }
 
+document.getElementById("showPreacherName").addEventListener("change", async () => {
+  const showPreacherName = document.getElementById("showPreacherName").checked;
+  await persist({ showPreacherName });
+  if (!state.running) return;
+  try { await window.broadcast.setShowPreacherName(showPreacherName); }
+  catch (err) { log(err.message || String(err), "error"); }
+});
 document.getElementById("openSettings").addEventListener("click", () => openSettings());
 document.getElementById("closeSettings").addEventListener("click", () => closeSettings());
 document.getElementById("sessionKind").addEventListener("change", async () => {
@@ -1379,6 +1403,7 @@ async function runBroadcastStart() {
     sessionKind: sessionKindValue(),
     deviceKey: deviceEl.value,
     channel: state.audio ? state.audio.deviceChannel : 0,
+    showPreacherName: !(document.getElementById("showPreacherName") && document.getElementById("showPreacherName").checked === false),
   });
   adoptBroadcast(started);
   if (started && started.already) return;
