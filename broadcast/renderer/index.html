@@ -79,8 +79,8 @@
           </div>
         </div>
 
-        <div class="card">
-          <h2>내용</h2>
+        <details class="card fold">
+          <summary><span class="fold-title">내용</span><span class="fold-value" id="kindGlance">선택 안 함</span></summary>
           <p class="hint">이번 시간에 무엇을 통역하는지 고릅니다.</p>
           <label for="sessionKind">종류</label>
           <select id="sessionKind">
@@ -90,54 +90,53 @@
             <option value="연설">연설</option>
             <option value="행사">행사</option>
           </select>
-        </div>
+        </details>
 
-        <div class="card">
-          <h2>진행자료</h2>
+        <details class="card fold">
+          <summary><span class="fold-title">진행자료</span><span class="fold-value" id="bulletinGlance">없음</span></summary>
           <p class="hint">큐시트나 순서지 사진을 올리면 이 컴퓨터와 이번 기록에 남깁니다. 번호, 곡 제목, 본문, 제목, 강연자 이름을 뽑아 인식과 번역에 넣습니다.</p>
           <button type="button" class="warn" id="pickBulletin">진행자료 올리기</button>
           <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
           <pre id="bulletinText" class="extract" hidden></pre>
-        </div>
+        </details>
 
-        <div class="card">
-          <h2>강연자</h2>
+        <details class="card fold">
+          <summary><span class="fold-title">강연자</span><span class="fold-value" id="preacherGlance">선택 안 함</span></summary>
           <p class="hint">이번 시간의 강연자 한 명을 고릅니다. 끝나면 말투, 교정, 용어가 쌓여 다음에 반영됩니다.</p>
           <select id="preacher"></select>
           <label for="preacherName">이름</label>
           <input id="preacherName" type="text" maxlength="80">
-          <label for="traits">말투</label>
-          <textarea id="traits"></textarea>
-          <label for="corrections">교정</label>
-          <textarea id="corrections"></textarea>
-          <label for="terms">용어</label>
-          <textarea id="terms"></textarea>
-          <label for="learned">방송에서 쌓인 내용 (자동, 보기만)</label>
-          <pre id="learned" class="hint extract"></pre>
           <label class="check" for="showPreacherName">
             <input id="showPreacherName" type="checkbox" checked>
             강연자 이름을 자막에 표시
           </label>
+          <details class="fold-inner">
+            <summary><span class="fold-title">말투와 교정</span><span class="fold-value" id="speechGlance">감도 보통</span></summary>
+            <label for="traits">말투</label>
+            <textarea id="traits"></textarea>
+            <label for="corrections">교정</label>
+            <textarea id="corrections"></textarea>
+            <label for="terms">용어</label>
+            <textarea id="terms"></textarea>
+            <label for="sensitivity">인식 감도</label>
+            <select id="sensitivity" title="입력 감도">
+              <option value="high">감도 높음</option>
+              <option value="normal" selected>감도 보통</option>
+              <option value="low">감도 낮음</option>
+            </select>
+            <p class="hint" id="keyHint">번역 키는 관리 페이지에 있습니다. 이 계정은 그 키를 읽지 않습니다.</p>
+            <label for="learned">방송에서 쌓인 내용 (자동, 보기만)</label>
+            <pre id="learned" class="hint extract"></pre>
+          </details>
           <div class="row" style="margin-top:8px;">
             <button type="button" id="addPreacher">새 강연자</button>
             <button type="button" class="ghost" id="savePreacher">프로필 저장</button>
           </div>
           <p class="hint" id="preacherMsg"></p>
-        </div>
+        </details>
 
-        <div class="card">
-          <h2>인식 감도</h2>
-          <select id="sensitivity" title="입력 감도">
-            <option value="high">감도 높음</option>
-            <option value="normal" selected>감도 보통</option>
-            <option value="low">감도 낮음</option>
-          </select>
-          <p class="hint" id="keyHint">번역 키는 관리 페이지에 있습니다. 이 계정은 그 키를 읽지 않습니다.</p>
-        </div>
-
-        <div class="card">
-          <h2>입력 소스와 채널</h2>
-          <h2>오늘 번역할 언어</h2>
+        <details class="card fold">
+          <summary><span class="fold-title">오늘 번역할 언어</span><span class="fold-value" id="langGlance">번역 없음</span></summary>
           <div class="row">
             <button type="button" class="ghost" id="pickDefault">추천만</button>
             <button type="button" class="ghost" id="pickAll">전체</button>
@@ -145,34 +144,42 @@
           </div>
           <div id="langs" class="langs" style="margin-top:10px;"></div>
           <p class="hint" id="langCount"></p>
-          <div class="row">
-            <select id="device" class="grow"></select>
-            <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
-          </div>
-          <div id="channels" class="channels"></div>
-          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 각 칸의 말하는 언어는 그 칸에 있습니다. 채널 1은 기본 요금에 포함됩니다. 다른 채널을 켜면 채널당 10,000원이 한 번 빠지고, 30분 추가 요금에는 다시 포함되지 않습니다.</p>
-        </div>
+        </details>
 
         <div class="card" id="phoneJoinCard">
           <h2>휴대폰</h2>
-          <p class="hint">송출 컴퓨터에서 휴대폰 수를 고릅니다. 칸마다 QR이 나옵니다. 휴대폰 앱이 그 QR을 스캔한 뒤 이름과 말하는 언어를 입력합니다. 비밀번호는 치지 않습니다. 각 칸 맨 위에 말하는 언어, 자막에 보일 이름, 이 이름을 자막에 표시가 있습니다.</p>
+          <p class="glance" id="phoneGlance">휴대폰 수 0</p>
+          <details class="fold-inner">
+            <summary><span class="fold-title">참여 안내</span><span class="fold-value">QR</span></summary>
+            <p class="hint">송출 컴퓨터에서 휴대폰 수를 고릅니다. 칸마다 QR이 나옵니다. 휴대폰 앱이 그 QR을 스캔한 뒤 이름과 말하는 언어를 입력합니다. 비밀번호는 치지 않습니다. 각 칸은 접혀 있어도 켜짐과 소리 크기 막대가 위에 남고, 말하는 언어를 누르면 자막에 보일 이름과 이 이름을 자막에 표시가 나옵니다.</p>
+          </details>
           <label for="phoneCount">휴대폰 수</label>
           <input id="phoneCount" type="number" min="0" max="8" step="1" value="0">
           <div id="phoneDesks"></div>
           <p class="hint" id="phoneCountMsg">0이면 휴대폰 없이 시작합니다. 8대까지 고를 수 있습니다.</p>
         </div>
 
-        <div class="card">
-          <h2>저장 폴더</h2>
+        <details class="card fold" id="inputCard">
+          <summary><span class="fold-title">입력 소스와 채널</span><span class="fold-value" id="inputGlance">채널 없음</span></summary>
+          <div class="row">
+            <select id="device" class="grow"></select>
+            <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
+          </div>
+          <div id="channels" class="channels"></div>
+          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 말하는 언어는 그 칸 너비로 펼칩니다. 채널 1은 기본 요금에 포함됩니다. 다른 채널을 켜면 채널당 10,000원이 한 번 빠지고, 30분 추가 요금에는 다시 포함되지 않습니다.</p>
+        </details>
+
+        <details class="card fold">
+          <summary><span class="fold-title">저장 폴더</span><span class="fold-value" id="folderGlance">선택 안 함</span></summary>
           <div class="row">
             <button type="button" class="warn" id="pickFolder">폴더 선택</button>
             <button type="button" class="ghost" id="showSession" disabled>저장 폴더 열기</button>
           </div>
           <p class="hint" id="folderHint">계정 이름 / 날짜_시각 / 언어.txt 로 저장됩니다.</p>
-        </div>
+        </details>
 
-        <div class="card" id="subtitleStyleCard">
-          <h2>자막 위치와 글자</h2>
+        <details class="card fold" id="subtitleStyleCard">
+          <summary><span class="fold-title">자막 위치와 글자</span><span class="fold-value" id="styleGlance">아래 · 가운데</span></summary>
           <div class="style-grid">
             <label>위치
               <select id="layout">
@@ -196,7 +203,7 @@
           <div id="fontRows"></div>
           <button type="button" id="saveStyle" style="margin-top:10px;">자막 모양 저장</button>
           <p class="hint" id="styleMsg"></p>
-        </div>
+        </details>
         </div>
       </div>
 

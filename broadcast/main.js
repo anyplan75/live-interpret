@@ -612,6 +612,7 @@ function registerIpc() {
     return engine.setChannelSpoken(church.id, index, spoken);
   });
   ipcMain.handle("preacher:show-name", (_event, on) => engine.setShowPreacherName(on));
+  ipcMain.handle("source-style:set", (_event, key, style) => engine.applySourceStyle(key, style));
   ipcMain.handle("phone:display", (_event, connectionId, patch) => {
     const shown = engine.setPhoneDisplay(connectionId, patch || {});
     if (phoneJoin) phoneJoin.setDisplay(connectionId, shown);

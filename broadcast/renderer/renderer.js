@@ -192,9 +192,10 @@ function paintFolderHint() {
   if (!folderHint || !state.settings) return;
   if (state.settings.folder && state.settings.folderReady !== true) {
     folderHint.textContent = "고른 폴더에 기록을 만들 수 없습니다. 폴더 선택을 다시 눌러 주세요.";
-    return;
+  } else if (state.settings.folder) {
+    folderHint.textContent = state.settings.folder;
   }
-  if (state.settings.folder) folderHint.textContent = state.settings.folder;
+  paintGlances();
 }
 
 function paintSetupGaps() {
@@ -289,6 +290,7 @@ async function onTargetsChanged(sync = true) {
   }
   if (state.style) fillStyle(state.style);
   await renderLinks();
+  paintGlances();
   paintSetupGaps();
 }
 
@@ -337,20 +339,214 @@ function deviceChannelCount() {
   return state.channels.filter((row) => row.source !== "phone").length;
 }
 
+function sensitivityLabel(value) {
+  if (value === "high") return "감도 높음";
+  if (value === "low") return "감도 낮음";
+  return "감도 보통";
+}
+
+function nameShownText(shown) {
+  return shown === false ? "이름 숨김" : "이름 표시";
+}
+
+function lecturerStyle() {
+  return {
+    traits: document.getElementById("traits") ? document.getElementById("traits").value : "",
+    corrections: document.getElementById("corrections") ? document.getElementById("corrections").value : "",
+    terms: document.getElementById("terms") ? document.getElementById("terms").value : "",
+    sensitivity: sensitivityEl ? sensitivityEl.value : "normal",
+  };
+}
+
+function styleKey(row, index) {
+  if (row && row.source === "phone") return row.connectionId ? `phone:${row.connectionId}` : "";
+  return `device:${index}`;
+}
+
+function styleFor(row, index) {
+  if (!row || row.source !== "phone") return lecturerStyle();
+  const all = state.settings && state.settings.sourceStyles;
+  const saved = all && all[styleKey(row, index)];
+  if (saved) return { ...saved };
+  return { traits: "", corrections: "", terms: "", sensitivity: sensitivityEl ? sensitivityEl.value : "normal" };
+}
+
+function speechSummary(style) {
+  const bits = [sensitivityLabel(style && style.sensitivity)];
+  if (style && String(style.traits || "").trim()) bits.push("말투 있음");
+  if (style && String(style.corrections || "").trim()) bits.push("교정 있음");
+  if (style && String(style.terms || "").trim()) bits.push("용어 있음");
+  return bits.join(" · ");
+}
+
+function cleanStyle(style) {
+  const src = style || {};
+  return {
+    traits: String(src.traits || "").slice(0, 800),
+    corrections: String(src.corrections || "").slice(0, 2000),
+    terms: String(src.terms || "").slice(0, 2000),
+    sensitivity: src.sensitivity === "high" || src.sensitivity === "low" ? src.sensitivity : "normal",
+  };
+}
+
+function rememberStyle(key, style) {
+  if (!key) return;
+  const next = cleanStyle(style);
+  const all = { ...((state.settings && state.settings.sourceStyles) || {}), [key]: next };
+  persist({ sourceStyles: all, sensitivity: sensitivityEl ? sensitivityEl.value : next.sensitivity }).catch((err) => log(err.message || String(err), "error"));
+  if (state.running && window.broadcast.setSourceStyle) {
+    window.broadcast.setSourceStyle(key, next).catch((err) => log(err.message || String(err), "error"));
+  }
+}
+
+function paintGlances() {
+  const kind = document.getElementById("kindGlance");
+  if (kind) kind.textContent = sessionKindValue() || "선택 안 함";
+  const bulletin = document.getElementById("bulletinGlance");
+  const bulletinMsg = document.getElementById("bulletinMsg");
+  if (bulletin) bulletin.textContent = bulletinMsg && bulletinMsg.textContent && bulletinMsg.textContent.indexOf("없습니다") < 0 ? "올렸습니다" : "없음";
+  const preacher = document.getElementById("preacherGlance");
+  if (preacher) {
+    const typed = document.getElementById("preacherName") && document.getElementById("preacherName").value.trim();
+    const picked = preacherEl && preacherEl.selectedOptions && preacherEl.selectedOptions[0] ? preacherEl.selectedOptions[0].textContent : "";
+    const name = typed || (picked && picked.indexOf("없") < 0 && picked !== "강연자 선택" ? picked : "선택 안 함");
+    preacher.textContent = `${name} · ${nameShownText(preacherNameShown())}`;
+  }
+  const speech = document.getElementById("speechGlance");
+  if (speech) speech.textContent = speechSummary(lecturerStyle());
+  const lang = document.getElementById("langGlance");
+  if (lang) {
+    const names = selectedTargets().map((code) => spokenTitle(code)).filter(Boolean);
+    lang.textContent = names.length ? names.join(" · ") : "번역 없음";
+  }
+  const phone = document.getElementById("phoneGlance");
+  if (phone) phone.textContent = phoneGlanceText();
+  const input = document.getElementById("inputGlance");
+  if (input) {
+    const devices = (state.channels || []).map((row, index) => ({ row, index })).filter((item) => !item.row || item.row.source !== "phone");
+    input.textContent = devices.length
+      ? devices.map((item) => `채널 ${item.index + 1}${item.row.on ? " 켜짐" : " 꺼짐"} · ${spokenTitle(item.row.spoken)} · ${nameShownText(preacherNameShown())}`).join(" · ")
+      : "채널 없음";
+  }
+  const folder = document.getElementById("folderGlance");
+  if (folder) {
+    const saved = state.settings && state.settings.folder ? String(state.settings.folder) : "";
+    const leaf = saved.split("/").filter(Boolean).slice(-1)[0];
+    folder.textContent = leaf || "선택 안 함";
+  }
+  const style = document.getElementById("styleGlance");
+  if (style) {
+    const layout = document.getElementById("layout");
+    const align = document.getElementById("align");
+    const layoutName = { bottom: "아래", top: "위", left: "왼쪽", right: "오른쪽" };
+    const alignName = { left: "왼쪽", center: "가운데", right: "오른쪽" };
+    style.textContent = `${layoutName[layout && layout.value] || "아래"} · ${alignName[align && align.value] || "가운데"}`;
+  }
+}
+
+function phoneGlanceText() {
+  const desks = state.phoneJoin && Array.isArray(state.phoneJoin.channels) ? state.phoneJoin.channels : [];
+  if (!desks.length) return "휴대폰 수 0";
+  const parts = desks.map((desk, index) => {
+    const view = deskView(desk);
+    if (phoneJoined(view)) return phoneRowText(index + 1, view);
+    return `휴대폰${index + 1} 꺼짐`;
+  });
+  return [`휴대폰 수 ${desks.length}`, ...parts].join(" · ");
+}
+
+function appendSpokenBlock(parent, summaryText, select) {
+  const details = document.createElement("details");
+  details.className = "fold-inner";
+  const summary = document.createElement("summary");
+  const title = document.createElement("span");
+  title.className = "fold-title";
+  title.textContent = "말하는 언어";
+  const value = document.createElement("span");
+  value.className = "fold-value";
+  value.textContent = summaryText;
+  summary.append(title, value);
+  const label = document.createElement("label");
+  label.className = "spoken-label";
+  select.classList.add("spoken-full");
+  label.append(document.createTextNode("말하는 언어"), select);
+  details.append(summary, label);
+  parent.append(details);
+}
+
+function appendSpeechStyle(parent, row, index) {
+  const key = styleKey(row, index);
+  const current = styleFor(row, index);
+  const details = document.createElement("details");
+  details.className = "fold-inner";
+  const summary = document.createElement("summary");
+  const title = document.createElement("span");
+  title.className = "fold-title";
+  title.textContent = "말투와 교정";
+  const value = document.createElement("span");
+  value.className = "fold-value";
+  value.textContent = speechSummary(current);
+  summary.append(title, value);
+  details.append(summary);
+  ["traits", "corrections", "terms"].forEach((field) => {
+    const label = document.createElement("label");
+    label.textContent = field === "traits" ? "말투" : field === "corrections" ? "교정" : "용어";
+    const area = document.createElement("textarea");
+    area.dataset.styleKey = key;
+    area.dataset.styleField = field;
+    area.value = current[field] || "";
+    area.addEventListener("change", () => {
+      const next = styleFor(row, index);
+      next[field] = area.value;
+      if (!row || row.source !== "phone") {
+        const canon = document.getElementById(field);
+        if (canon) canon.value = area.value;
+      }
+      value.textContent = speechSummary(next);
+      rememberStyle(key, next);
+      paintGlances();
+    });
+    label.append(area);
+    details.append(label);
+  });
+  const senseLabel = document.createElement("label");
+  senseLabel.textContent = "인식 감도";
+  const sense = document.createElement("select");
+  sense.dataset.styleKey = key;
+  sense.dataset.styleField = "sensitivity";
+  [["high", "감도 높음"], ["normal", "감도 보통"], ["low", "감도 낮음"]].forEach(([code, text]) => {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = text;
+    sense.append(option);
+  });
+  sense.value = current.sensitivity === "high" || current.sensitivity === "low" ? current.sensitivity : "normal";
+  sense.addEventListener("change", () => {
+    const next = styleFor(row, index);
+    next.sensitivity = sense.value;
+    if (!row || row.source !== "phone") {
+      if (sensitivityEl) sensitivityEl.value = sense.value;
+    }
+    value.textContent = speechSummary(next);
+    rememberStyle(key, next);
+    paintGlances();
+  });
+  senseLabel.append(sense);
+  details.append(senseLabel);
+  parent.append(details);
+}
+
 function renderChannels(count) {
   const total = Number.isInteger(count) ? count : deviceChannelCount();
   ensureChannels(total);
   channelsEl.innerHTML = "";
   state.channels.forEach((row, i) => {
+    if (row && row.source === "phone") return;
     const wrap = document.createElement("div");
-    wrap.className = `channel${row.on ? " on" : ""}${row.source === "phone" ? " phone" : ""}`;
+    wrap.className = `channel${row.on ? " on" : ""}`;
     const button = document.createElement("button");
     button.type = "button";
-    if (row.source === "phone") {
-      button.textContent = phoneRowText(phoneSlotForRow(row), row);
-    } else {
-      button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
-    }
+    button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
     button.addEventListener("click", () => toggleChannel(i));
     const meter = document.createElement("div");
     meter.className = "meter";
@@ -358,23 +554,22 @@ function renderChannels(count) {
     bar.dataset.channel = String(i);
     meter.append(bar);
     const select = document.createElement("select");
-    select.className = "channel-spoken";
+    select.className = "channel-spoken spoken-full";
     select.dataset.channel = String(i);
-    select.setAttribute("aria-label", row.source === "phone" ? `${row.name || `휴대폰 ${phoneSlotForRow(row)}`} 말하는 언어` : `채널 ${i + 1} 말하는 언어`);
+    select.setAttribute("aria-label", `채널 ${i + 1} 말하는 언어`);
     if (i === 0) select.id = "spoken";
     fillSpokenSelect(select, row.spoken);
     select.addEventListener("change", () => onChannelSpoken(i, select.value));
     const head = document.createElement("div");
     head.className = "channel-head";
     head.append(button, meter);
-    const spokenLabel = document.createElement("label");
-    spokenLabel.className = "spoken-label";
-    spokenLabel.textContent = "말하는 언어";
-    spokenLabel.append(select);
-    wrap.append(head, spokenLabel);
+    wrap.append(head);
+    appendSpokenBlock(wrap, `${spokenTitle(row.spoken)} · ${nameShownText(preacherNameShown())}`, select);
+    appendSpeechStyle(wrap, row, i);
     channelsEl.append(wrap);
   });
   renderHeardTitle();
+  paintGlances();
 }
 
 function deskChannelIndex(desk) {
@@ -498,6 +693,7 @@ function renderPhoneDesks() {
     empty.className = "hint";
     empty.textContent = "휴대폰 수를 고르면 각 칸에 QR이 나옵니다.";
     root.append(empty);
+    paintGlances();
     return;
   }
   desks.forEach((desk, index) => {
@@ -527,6 +723,7 @@ function renderPhoneDesks() {
     fillSpokenSelect(select, spokenCode || "ko");
     select.addEventListener("change", () => {
       const chosen = knownSpoken(select.value);
+      spokenValue.textContent = `${spokenTitle(chosen)} · ${nameShownText(view.showName !== false)}`;
       if (channelIndex >= 0) {
         onChannelSpoken(channelIndex, chosen);
         return;
@@ -534,16 +731,30 @@ function renderPhoneDesks() {
       if (desk.connectionId) pendingPhoneSpoken.set(desk.connectionId, chosen);
       desk.spoken = chosen;
     });
+    select.classList.add("spoken-full");
+    const spokenDetails = document.createElement("details");
+    spokenDetails.className = "fold-inner";
+    const spokenSummary = document.createElement("summary");
+    const spokenTitleEl = document.createElement("span");
+    spokenTitleEl.className = "fold-title";
+    spokenTitleEl.textContent = "말하는 언어";
+    const spokenValue = document.createElement("span");
+    spokenValue.className = "fold-value";
+    spokenValue.textContent = `${spokenTitle(spokenCode || "ko")} · ${nameShownText(view.showName !== false)}`;
+    spokenSummary.append(spokenTitleEl, spokenValue);
     const spokenLabel = document.createElement("label");
     spokenLabel.className = "spoken-label";
-    spokenLabel.textContent = "말하는 언어";
-    spokenLabel.append(select);
-    wrap.append(title, spokenLabel);
-    appendPhoneNameEditor(wrap, index + 1, view);
+    spokenLabel.append(document.createTextNode("말하는 언어"), select);
+    const nameBox = document.createElement("div");
+    appendPhoneNameEditor(nameBox, index + 1, view);
+    spokenDetails.append(spokenSummary, spokenLabel, nameBox, qr, qrHint);
+    wrap.append(title);
     appendPhoneLive(wrap, index + 1, view);
-    wrap.append(qr, qrHint);
+    wrap.append(spokenDetails);
+    appendSpeechStyle(wrap, { ...view, source: "phone" }, index);
     root.append(wrap);
   });
+  paintGlances();
   if (!keep || !keep.id) return;
   const next = root.querySelector(`[data-phone-edit="${keep.kind}"][data-connection-id="${keep.id}"]`);
   if (!next) return;
@@ -846,6 +1057,7 @@ function showBulletin(bulletin, error) {
     msg.textContent = "아직 올린 진행자료가 없습니다.";
     pre.hidden = true;
     pre.textContent = "";
+    paintGlances();
     return;
   }
   msg.textContent = error
@@ -854,6 +1066,7 @@ function showBulletin(bulletin, error) {
   const text = bulletinSummary(bulletin.extracted);
   pre.hidden = !text;
   pre.textContent = text;
+  paintGlances();
 }
 
 function fillPreacherForm(preacher) {
@@ -867,6 +1080,14 @@ function fillPreacherForm(preacher) {
     ["자연스러움 교정", preacher.naturalness],
   ].filter(([, value]) => value && String(value).trim()).map(([label, value]) => `${label}\n${String(value).trim()}`).join("\n\n") : "";
   document.getElementById("learned").textContent = learned || "아직 없습니다. 방송을 마치면 쌓입니다.";
+  document.querySelectorAll('[data-style-key="device:0"]').forEach((mirror) => {
+    const field = mirror.dataset.styleField;
+    if (!field || document.activeElement === mirror) return;
+    mirror.value = field === "sensitivity"
+      ? (sensitivityEl ? sensitivityEl.value : "normal")
+      : (document.getElementById(field) ? document.getElementById(field).value : "");
+  });
+  paintGlances();
 }
 
 function renderPreachers() {
@@ -1442,6 +1663,7 @@ async function applyPhoneDisplay(connectionId, patch) {
 
 document.getElementById("showPreacherName").addEventListener("change", async () => {
   const showPreacherName = document.getElementById("showPreacherName").checked;
+  paintGlances();
   await persist({ showPreacherName });
   if (!state.running) return;
   try { await window.broadcast.setShowPreacherName(showPreacherName); }
@@ -1451,6 +1673,7 @@ document.getElementById("openSettings").addEventListener("click", () => openSett
 document.getElementById("closeSettings").addEventListener("click", () => closeSettings());
 document.getElementById("sessionKind").addEventListener("change", async () => {
   await persist({ sessionKind: sessionKindValue() });
+  paintGlances();
   paintSetupGaps();
 });
 document.getElementById("phoneCount").addEventListener("change", async () => {
@@ -1468,7 +1691,24 @@ document.getElementById("phoneCount").addEventListener("change", async () => {
 });
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 deviceEl.addEventListener("change", chooseDevice);
-sensitivityEl.addEventListener("change", () => persist({ sensitivity: sensitivityEl.value }));
+sensitivityEl.addEventListener("change", () => {
+  persist({ sensitivity: sensitivityEl.value }).catch((err) => log(err.message || String(err), "error"));
+  rememberStyle("device:0", lecturerStyle());
+  paintGlances();
+});
+["traits", "corrections", "terms"].forEach((id) => {
+  const field = document.getElementById(id);
+  if (!field) return;
+  field.addEventListener("change", () => {
+    rememberStyle("device:0", lecturerStyle());
+    paintGlances();
+  });
+});
+["layout", "align"].forEach((id) => {
+  const field = document.getElementById(id);
+  if (!field) return;
+  field.addEventListener("change", () => paintGlances());
+});
 document.getElementById("pickDefault").addEventListener("click", () => renderLangs(state.catalog.defaultTargets));
 document.getElementById("pickAll").addEventListener("click", () => {
   renderLangs(state.catalog.languages.filter((lang) => lang.code !== "ko").map((lang) => lang.code));
@@ -1520,6 +1760,8 @@ async function runBroadcastStart() {
   state.captions = {};
   const started = await window.broadcast.start({
     sensitivity: sensitivityEl.value,
+    speechStyle: lecturerStyle(),
+    sourceStyles: (state.settings && state.settings.sourceStyles) || {},
     folder: state.settings.folder,
     targets: selectedTargets(),
     spoken: state.spoken,

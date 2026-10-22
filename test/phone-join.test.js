@@ -15,7 +15,7 @@ const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
 
 function phoneCard(html) {
   const start = html.indexOf('id="phoneJoinCard"');
-  const end = html.indexOf('<div class="card">', start);
+  const end = html.indexOf('id="inputCard"', start);
   assert.ok(start > 0 && end > start);
   return html.slice(start, end);
 }

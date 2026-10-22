@@ -749,6 +749,61 @@ class Engine {
     };
   }
 
+  sourceStyleKey(row, index) {
+    if (row && row.source === "phone" && row.connectionId) return `phone:${row.connectionId}`;
+    return `device:${index}`;
+  }
+
+  cleanSourceStyle(style) {
+    const src = style && typeof style === "object" ? style : {};
+    return {
+      traits: String(src.traits || "").slice(0, 800),
+      corrections: String(src.corrections || "").slice(0, 2000),
+      terms: String(src.terms || "").slice(0, 2000),
+      sensitivity: src.sensitivity === "high" || src.sensitivity === "low" ? src.sensitivity : "normal",
+    };
+  }
+
+  bitsForRow(row, index) {
+    const base = this.channelBroadcastBits();
+    const saved = this.sourceStyles && this.sourceStyles[this.sourceStyleKey(row, index)];
+    if (!saved) return base;
+    const style = this.cleanSourceStyle(saved);
+    if (!(row && row.source === "phone")) {
+      return { ...base, sensitivity: style.sensitivity || base.sensitivity };
+    }
+    const person = {
+      name: row.name || "",
+      traits: style.traits,
+      corrections: style.corrections,
+      terms: style.terms,
+    };
+    const glossary = [base.glossary, style.terms].map((part) => String(part || "").trim()).filter(Boolean).join("\n");
+    const context = [base.sessionContext, sessionContextText({ preacher: person })].filter(Boolean).join("\n").slice(0, 3600);
+    return { ...base, glossary, sessionContext: context, sensitivity: style.sensitivity || base.sensitivity };
+  }
+
+  applySourceStyle(key, style) {
+    const id = String(key || "");
+    if (!/^(device:\d+|phone:[A-Za-z0-9_-]{6,64})$/.test(id)) return { ok: false };
+    if (!this.sourceStyles) this.sourceStyles = {};
+    this.sourceStyles[id] = this.cleanSourceStyle(style);
+    if (!this.channelRows || !this.channelSessions) return { ok: true };
+    this.channelRows.forEach((row, index) => {
+      if (this.sourceStyleKey(row, index) !== id) return;
+      const session = this.channelSessions.get(index);
+      if (!session) return;
+      const bits = this.bitsForRow(row, index);
+      session.speech.glossary = bits.glossary;
+      session.speech.sessionContext = bits.sessionContext;
+      session.speech.setSensitivity(bits.sensitivity);
+      if (session.speech.ready && session.speech.sendSession) session.speech.sendSession();
+      session.pipeline.glossary = bits.glossary;
+      session.pipeline.sessionContext = bits.sessionContext;
+    });
+    return { ok: true };
+  }
+
   async openChannel(index) {
     if (!this.channelSessions) this.channelSessions = new Map();
     if (!this.sharedTexts) this.sharedTexts = { texts: {}, chain: Promise.resolve() };
@@ -760,7 +815,7 @@ class Engine {
     const speaker = plan.speaker;
     const channelKey = phone ? `p${row.phoneId}` : `d${index}`;
     const targets = plan.targets;
-    const bits = this.channelBroadcastBits();
+    const bits = this.bitsForRow(row, index);
     const cloud = this.sessionCloud;
     const pipeline = new Pipeline({
       apiKey: bits.apiKey,
@@ -1245,13 +1300,29 @@ class Engine {
       }
     }
 
+    const speechStyle = this.cleanSourceStyle(opts.speechStyle || { sensitivity: opts.sensitivity || "normal" });
+    if (opts.speechStyle) {
+      selected = {
+        ...selected,
+        traits: speechStyle.traits,
+        corrections: speechStyle.corrections,
+        terms: speechStyle.terms,
+      };
+    }
     const sessionContext = sessionContextText({ bulletin: extracted, preacher: selected });
     const extraKeywords = contextKeywords(extracted, selected);
     this.sessionGlossary = glossary;
     this.sessionContext = sessionContext;
     this.sessionKeywords = extraKeywords;
     this.sessionPauseTails = preacherLib.pauseTails(selected);
-    this.sessionSensitivity = opts.sensitivity || "normal";
+    this.sourceStyles = {};
+    const incoming = opts.sourceStyles && typeof opts.sourceStyles === "object" ? opts.sourceStyles : {};
+    Object.keys(incoming).slice(0, 24).forEach((key) => {
+      if (!/^(device:\d+|phone:[A-Za-z0-9_-]{6,64})$/.test(key)) return;
+      this.sourceStyles[key] = this.cleanSourceStyle(incoming[key]);
+    });
+    this.sourceStyles["device:0"] = speechStyle;
+    this.sessionSensitivity = speechStyle.sensitivity || opts.sensitivity || "normal";
     await this.syncSettings(church.id, outputCodes);
     await firebase.setSessionMeta(church.id, this.folderName, {
       churchName: church.name,
