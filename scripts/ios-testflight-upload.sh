@@ -114,6 +114,14 @@ if grep -q '접속 번호' "$JOIN_HTML" || grep -q 'id="joinId"' "$JOIN_HTML"; t
   echo "옛 암호 입력 화면이 앱 안에 있습니다." >&2
   exit 1
 fi
+if ! grep -q 'postServer("hello"' "$JOIN_HTML"; then
+  echo "입장 화면이 서버 가입 기록을 올리지 않습니다." >&2
+  exit 1
+fi
+if ! grep -q 'postServer("pcm"' "$JOIN_HTML"; then
+  echo "입장 화면이 서버 소리 기록을 올리지 않습니다." >&2
+  exit 1
+fi
 
 echo "== 배포 서명 후 TestFlight 업로드 =="
 rm -rf "$EXPORT_DIR"

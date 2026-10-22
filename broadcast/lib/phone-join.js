@@ -24,6 +24,16 @@ function publicMicUrl(pagesBase, token) {
   return `${parsed.origin}${parsed.pathname.replace(/\/$/, "")}/mic/?s=${token}`;
 }
 
+function readServerMessage(value) {
+  let text = value;
+  if (text && typeof text === "object" && text.type) return text;
+  if (typeof text !== "string" || !text) return null;
+  let body;
+  try { body = JSON.parse(text); } catch (_) { return null; }
+  if (!body || typeof body !== "object" || (body.type !== "hello" && body.type !== "pcm")) return null;
+  return body;
+}
+
 function parseIce(value) {
   if (typeof value !== "string" || !value || value.length > 2000) return null;
   let body;
@@ -344,13 +354,16 @@ class PhoneJoin {
     this._notify();
   }
 
-  ingestPcm(peerId, data) {
+  ingestPcm(peerId, data, via) {
     const row = this.peers.get(peerId);
-    if (!row || !row.phoneId) return;
+    if (!row || !row.phoneId) return false;
+    if (via !== "server" && row.serverAudio) return false;
     const buf = asBuffer(data);
     const even = buf.length - (buf.length % 2);
-    if (even < 2) return;
+    if (even < 2) return false;
+    if (via === "server") row.serverAudio = true;
     this.onPcm(row.phoneId, even === buf.length ? buf : buf.subarray(0, even));
+    return true;
   }
 
   peerLeft(peerId) {
@@ -494,17 +507,42 @@ class PhoneJoin {
     }
   }
 
-  async _pollOnce() {
-    if (!this.databaseURL || !this.token) return;
-    const res = await netFetch(this._signalUrl("peers.json"), {
+  async _getSignal(suffix) {
+    const res = await netFetch(this._signalUrl(suffix), {
       cache: "no-store",
       headers: { "Cache-Control": "no-cache" },
     });
     const text = await res.text();
     if (!res.ok) throw new Error(`휴대폰 연결 신호 ${res.status}: ${text.slice(0, 160)}`);
-    if (!text || text === "null") return;
-    const data = JSON.parse(text);
-    this._applyPath("/", data);
+    if (!text || text === "null") return null;
+    return JSON.parse(text);
+  }
+
+  async _pollOnce() {
+    if (!this.databaseURL || !this.token) return;
+    const peers = await this._getSignal("peers.json?shallow=true");
+    if (!peers || typeof peers !== "object") return;
+    for (const peerId of Object.keys(peers)) {
+      if (!PEER_RE.test(peerId)) continue;
+      await this._pollPeer(peerId);
+    }
+  }
+
+  /** 서버에 쌓인 가입과 소리만 새로 읽습니다. 랜 이름은 보지 않습니다. */
+  async _pollPeer(peerId) {
+    if (!this.seenOffers.has(peerId)) {
+      const offer = await this._getSignal(`peers/${peerId}/offer.json`);
+      if (offer && offer.sdp) this._onOffer(peerId, offer.sdp);
+    }
+    const ices = await this._getSignal(`peers/${peerId}/phoneIce.json?shallow=true`);
+    if (!ices || typeof ices !== "object") return;
+    const ids = Object.keys(ices).sort();
+    for (const iceId of ids) {
+      const key = `${peerId}/${iceId}`;
+      if (this.seenIce.has(key)) continue;
+      const value = await this._getSignal(`peers/${peerId}/phoneIce/${iceId}.json`);
+      this._onPhoneIce(peerId, iceId, value);
+    }
   }
 
   _applyPath(path, data) {
@@ -554,9 +592,29 @@ class PhoneJoin {
   _onPhoneIce(peerId, iceId, value) {
     if (!PEER_RE.test(peerId) || !ICE_ID_RE.test(iceId || "")) return;
     const key = `${peerId}/${iceId}`;
-    if (this.seenIce.has(key)) return;
+    if (this.seenIce.has(key) || value == null) return;
+    const message = readServerMessage(value);
+    if (message && message.type === "hello") {
+      this.seenIce.add(key);
+      this.ingestText(peerId, JSON.stringify(message));
+      return;
+    }
+    if (message && message.type === "pcm") {
+      const row = this.peers.get(peerId);
+      if (!row || !row.phoneId) return;
+      const pcm = pcmFromSignal(message.pcm);
+      if (!this.ingestPcm(peerId, pcm, "server")) {
+        this.seenIce.add(key);
+        return;
+      }
+      this.seenIce.add(key);
+      return;
+    }
     const parsed = parseIce(value);
-    if (!parsed) return;
+    if (!parsed) {
+      this.seenIce.add(key);
+      return;
+    }
     this.seenIce.add(key);
     this._toLink({ type: "ice", peerId, ...parsed });
   }

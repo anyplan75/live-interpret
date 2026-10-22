@@ -796,6 +796,68 @@ test("qr join reaches the mac card immediately and the lecture mic stays up with
   assert.doesNotMatch(page, /isIdleTimerDisabled\s*=\s*true/);
 });
 
+test("a server hello updates the mac phone card without a lan address", async () => {
+  const heard = [];
+  const server = new PhoneJoin({
+    onHello(phone) {
+      heard.push(phone);
+      return { index: 1, name: phone.name, phoneId: phone.id, listening: false };
+    },
+    onPcm(_id, pcm) { heard.push(pcm); },
+  });
+  await server.start({ signal: false });
+  const opened = await server.openSession();
+  server._onPhoneIce("peer0001aa", "helloabc123", JSON.stringify({
+    type: "hello",
+    name: "홍길동",
+    spoken: "ko",
+    connectionId: opened.connectionId,
+    phoneId: "phone0001",
+  }));
+  const card = server.info().channels[0];
+  assert.equal(card.connected, true);
+  assert.equal(card.name, "홍길동");
+  assert.equal(card.channelIndex, 1);
+  assert.equal(heard[0].name, "홍길동");
+  const pcm = Buffer.from([0, 16, 0, 32]);
+  server._onPhoneIce("peer0001aa", "pcmabc12345", JSON.stringify({ type: "pcm", pcm: pcm.toString("base64") }));
+  assert.equal(Buffer.isBuffer(heard.at(-1)), true);
+  assert.equal(heard.at(-1).length, 4);
+
+  const renderer = read("broadcast/renderer/renderer.js");
+  const chunk = renderer.slice(renderer.indexOf("function deskChannelIndex"), renderer.indexOf("function deskView"));
+  function createElement() {
+    return {
+      className: "",
+      textContent: "",
+      style: {},
+      dataset: {},
+      classList: { add() {} },
+      setAttribute() {},
+      children: [],
+      append(...nodes) { this.children.push(...nodes); },
+    };
+  }
+  const api = new Function("document", "state", `const levelWidths = new Map();\n${chunk}\nreturn { appendPhoneLive };`)(
+    { createElement },
+    { channels: [], phoneJoin: { channels: [card] } },
+  );
+  const parent = createElement();
+  api.appendPhoneLive(parent, 1, card);
+  const box = parent.children[0];
+  const label = box.children.find((node) => node.className === "phone-level-name");
+  const meter = box.children.find((node) => node.className === "meter");
+  assert.equal(label.textContent, "휴대폰1 홍길동 켜짐");
+  assert.equal(meter.children[0].dataset.phoneLevel, "1");
+
+  const lecture = read("docs/lecture/index.html");
+  const linkFn = lecture.slice(lecture.indexOf("function startLink"), lecture.indexOf("pc.createOffer"));
+  assert.match(linkFn, /postServer\("hello"/);
+  assert.match(linkFn, /serverBase = base/);
+  assert.match(read("broadcast/lib/phone-join.js"), /peers\.json\?shallow=true/);
+  assert.match(read("broadcast/lib/phone-join.js"), /message\.type === "hello"/);
+});
+
 test("plain http hides the microphone and https exposes it", { timeout: 60000 }, async (t) => {
   const bin = chromeBin();
   if (!bin) {

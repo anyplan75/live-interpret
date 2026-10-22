@@ -148,6 +148,39 @@
     const source = audioContext.createMediaStreamSource(mediaStream);
     // 출력을 0으로 두면 아이폰이 마이크 처리를 멈춰, 연결만 되고 소리가 안 간다.
     const sink = audioContext.createMediaStreamDestination();
+    let serverBase = "";
+    let pcmBusy = false;
+    const pcmQueue = [];
+    function bytesToBase64(bytes) {
+      let binary = "";
+      const step = 0x8000;
+      for (let i = 0; i < bytes.length; i += step) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+      }
+      return btoa(binary);
+    }
+    function postServer(idPrefix, message) {
+      if (!serverBase) return Promise.resolve();
+      const text = JSON.stringify(message);
+      if (!text || text.length > 2000) return Promise.resolve();
+      return putJson(`${serverBase}/phoneIce/${idPrefix}${randomHex(8)}.json`, text).catch(() => {});
+    }
+    function drainPcm() {
+      if (pcmBusy || !pcmQueue.length) return;
+      const next = pcmQueue.shift();
+      pcmBusy = true;
+      postServer("pcm", { type: "pcm", pcm: bytesToBase64(next) }).finally(() => {
+        pcmBusy = false;
+        drainPcm();
+      });
+    }
+    function postServerPcm(pcm) {
+      if (!pcm || !pcm.length || !serverBase) return;
+      const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+      for (let i = 0; i < bytes.length; i += 1400) pcmQueue.push(bytes.slice(i, i + 1400));
+      if (pcmQueue.length > 12) pcmQueue.splice(0, pcmQueue.length - 12);
+      drainPcm();
+    }
     const sendInput = (input) => {
       let peak = 0;
       for (let i = 0; i < input.length; i += 32) {
@@ -156,12 +189,12 @@
       }
       onLevel(Math.max(0, Math.min(100, Math.round(peak * 140))));
       if (!sending) return;
-      const current = active && active.channel;
-      if (!current || current.readyState !== "open") return;
       const pcm = LI.pcm.downsampleFloatToPcm16(input, audioContext.sampleRate, 24000);
-      if (!pcm.length || current.bufferedAmount > 262144) return;
+      if (pcm.length) postServerPcm(pcm);
+      const current = active && active.channel;
+      if (!current || current.readyState !== "open" || current.bufferedAmount > 262144) return;
       const copy = pcm.slice();
-      try { current.send(copy.buffer); } catch (_) { /* 한 조각이 실패해도 다음 소리는 계속 보냅니다 */ }
+      try { current.send(copy.buffer); } catch (_) { /* 서버로 올린 소리는 계속 갑니다 */ }
     };
     const workletSource = [
       "class PcmCapture extends AudioWorkletProcessor {",
@@ -259,6 +292,16 @@
         },
       };
       active = link;
+      serverBase = base;
+      postServer("hello", {
+        type: "hello",
+        name,
+        phoneId,
+        pin,
+        spoken: options.spoken ? String(options.spoken) : "",
+        connectionId: options.connectionId ? String(options.connectionId) : "",
+        role: options.role || "mic",
+      });
       channel.onopen = () => {
         const hello = { type: "hello", name, phoneId, pin, role: options.role || "mic" };
         if (options.spoken) hello.spoken = String(options.spoken);
