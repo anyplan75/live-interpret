@@ -807,7 +807,7 @@ function paintConfirm(preview) {
 function showChurch(church) {
   state.church = church;
   document.getElementById("churchName").textContent = church.name;
-  document.getElementById("churchLine").textContent = `${church.name} 계정으로 로그인했습니다.`;
+  document.getElementById("churchLine").textContent = "이 계정으로 로그인했습니다.";
   document.getElementById("churchHint").textContent = church.active
     ? "이 교회만 방송합니다. 모델, 용어집, 활성화, 키는 관리 페이지에 있습니다."
     : "이 교회는 비활성 상태입니다. 관리 페이지에서 활성화하기 전에는 방송을 시작할 수 없습니다.";
@@ -994,7 +994,7 @@ document.getElementById("churchSignIn").addEventListener("click", async () => {
     if (auth.church) showChurch(auth.church);
     await refreshKeyHint();
     await loadChurch();
-    log(`${auth.church ? auth.church.name : "교회"} 계정으로 로그인했습니다.`);
+    log("이 계정으로 로그인했습니다.");
   } catch (err) {
     msg.textContent = err.message || String(err);
   }

@@ -73,6 +73,8 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(html, /id="balanceCost"/);
   assert.match(html, /id="churchCost"/);
   assert.match(html, /id="live"/);
+  assert.match(renderer, /getElementById\("churchLine"\)\.textContent = "이 계정으로 로그인했습니다\."/);
+  assert.doesNotMatch(renderer, /\$\{[^}]+\} 계정으로 로그인했습니다/);
   assert.match(renderer, /linkRow\("자막"/);
   assert.doesNotMatch(renderer, /linkRow\("성도"/);
   assert.match(renderer, /missingSetup/);
