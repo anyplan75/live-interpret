@@ -69,6 +69,11 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   const deviceAt = html.indexOf('id="device"');
   const langsAt = html.indexOf('id="langs"');
   assert.ok(settingsAt < folderAt && settingsAt < preacherAt && settingsAt < deviceAt && settingsAt < langsAt);
+  const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
+  assert.match(header, /id="prepaidTime"/);
+  assert.match(header, /class="cost-figure time"/);
+  const costCard = html.slice(html.indexOf('id="costCard"'), html.indexOf('id="startConfirm"'));
+  assert.doesNotMatch(costCard, /id="prepaidTime"|<h2>남은 시간<\/h2>/);
   assert.match(html, /id="prepaidTime"/);
   assert.match(html, /id="balanceCost"/);
   assert.match(html, /id="churchCost"/);

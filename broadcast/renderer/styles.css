@@ -34,7 +34,18 @@ header {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 18px 22px 8px;
+  background: var(--bg);
+}
+
+.title-block { min-width: 0; }
+header .cost-figure.time {
+  margin: 0;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 h1 { margin: 0; font-size: 1.45rem; letter-spacing: -0.03em; }
