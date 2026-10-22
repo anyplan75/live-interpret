@@ -344,7 +344,7 @@ function renderChannels(count) {
     const button = document.createElement("button");
     button.type = "button";
     if (row.source === "phone") {
-      const mark = row.connected === false ? "끊김" : (row.on ? "켜짐" : "꺼짐");
+      const mark = row.connected === false ? "끊김" : (row.signal ? "음성 신호" : "연결됨");
       button.textContent = `${row.name} · ${spokenName(row.spoken)} · ${mark}`;
     } else {
       button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
@@ -413,9 +413,12 @@ function renderPhoneDesks() {
     const channelIndex = deskChannelIndex(desk);
     const status = document.createElement("p");
     status.className = "hint";
-    if (desk.connected && desk.name) {
-      const live = channelIndex >= 0 && state.channels[channelIndex] && state.channels[channelIndex].on;
-      status.textContent = live ? `${desk.name} 마이크가 입력입니다` : `${desk.name} 연결됨`;
+    const channel = channelIndex >= 0 ? state.channels[channelIndex] : null;
+    if (desk.connected && desk.name && channel && channel.signal) {
+      status.className = "hint phone-signal";
+      status.textContent = `${desk.name} 음성 신호가 들어오고 있습니다`;
+    } else if (desk.connected && desk.name) {
+      status.textContent = `${desk.name} 연결됨 · 음성 신호가 아직 없습니다`;
     } else if (desk.name) status.textContent = `${desk.name} · 끊김`;
     else status.textContent = "이름과 이 암호로 로그인하면 연결됩니다.";
     const select = document.createElement("select");
@@ -447,6 +450,7 @@ function mapChannel(row) {
     phoneId: row && row.source === "phone" ? (row.phoneId || "") : "",
     connectionId: row && row.source === "phone" ? (row.connectionId || "") : "",
     connected: !(row && row.source === "phone") || row.connected !== false,
+    signal: !!(row && row.source === "phone" && row.signal),
   };
 }
 

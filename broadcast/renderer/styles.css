@@ -183,6 +183,8 @@ input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d12
 
 .channel.on { border-color: var(--accent); background: rgba(31, 143, 106, 0.2); }
 
+.phone-signal { color: #ffd666; font-weight: 800; }
+
 .meter {
   height: 10px;
   border-radius: 99px;

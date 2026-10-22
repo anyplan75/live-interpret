@@ -862,6 +862,7 @@ class Engine {
       phoneId: row.source === "phone" ? (row.phoneId || "") : "",
       connectionId: row.source === "phone" ? (row.connectionId || "") : "",
       connected: row.source === "phone" ? row.connected !== false : true,
+      signal: row.source === "phone" ? !!row.signal : false,
     }));
   }
 
@@ -963,7 +964,13 @@ class Engine {
     const index = (this.channelRows || []).findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
     if (index < 0) return;
     this.channelRows[index].connected = false;
+    this.channelRows[index].signal = false;
     if (this.phonePcmWait) this.phonePcmWait.delete(phoneId);
+    if (this.phoneSignalTimers) {
+      const timer = this.phoneSignalTimers.get(phoneId);
+      if (timer) clearTimeout(timer);
+      this.phoneSignalTimers.delete(phoneId);
+    }
     this.emitPhones();
     this.emit({ type: "log", level: "info", text: `${this.channelRows[index].name} 휴대폰 연결이 끊겼습니다.` });
   }
@@ -989,13 +996,43 @@ class Engine {
     queued.forEach((chunk) => session.speech.push(chunk));
   }
 
+  /** 연결만으로는 부족합니다. 실제 음성 표본이 들어와야 신호로 봅니다. */
+  notePhoneSignal(index, peak) {
+    const row = this.channelRows && this.channelRows[index];
+    if (!row || row.source !== "phone") return;
+    if (!(peak >= 0.02)) return;
+    const phoneId = row.phoneId || String(index);
+    if (!this.phoneSignalTimers) this.phoneSignalTimers = new Map();
+    const previous = this.phoneSignalTimers.get(phoneId);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => {
+      if (this.phoneSignalTimers) this.phoneSignalTimers.delete(phoneId);
+      if (!row.signal) return;
+      row.signal = false;
+      this.emitPhones();
+    }, 1500);
+    if (typeof timer.unref === "function") timer.unref();
+    this.phoneSignalTimers.set(phoneId, timer);
+    if (row.signal) return;
+    row.signal = true;
+    this.emitPhones();
+  }
+
   pushPhonePcm(phoneId, pcm) {
     if (!pcm || !this.channelRows) return;
     const index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
     if (index < 0) return;
+    let peak = 0;
+    for (let i = 0; i + 1 < pcm.length; i += 2) {
+      const value = Math.abs(pcm.readInt16LE(i));
+      if (value > peak) peak = value;
+    }
+    const level = peak / 32768;
+    this.notePhoneSignal(index, level);
     const session = this.channelSessions && this.channelSessions.get(index);
     if (!session || session.source !== "phone" || !session.speech) {
       this.queuePhonePcm(phoneId, pcm);
+      this.emit({ type: "level", channel: index, peak: level });
       return;
     }
     this.flushPhonePcm(phoneId);
@@ -1003,12 +1040,7 @@ class Engine {
     const now = Date.now();
     if (session.lastLevelAt && now - session.lastLevelAt < 80) return;
     session.lastLevelAt = now;
-    let peak = 0;
-    for (let i = 0; i + 1 < pcm.length; i += 2) {
-      const value = Math.abs(pcm.readInt16LE(i));
-      if (value > peak) peak = value;
-    }
-    this.emit({ type: "level", channel: index, peak: peak / 32768 });
+    this.emit({ type: "level", channel: index, peak: level });
   }
 
   async start(opts) {

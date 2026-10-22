@@ -161,6 +161,66 @@ test("one connection id stays on the first device until it leaves", () => {
   const packaged = JSON.parse(read("package.json")).build.files;
   assert.ok(packaged.includes("docs/js/org-services.js"));
   assert.ok(packaged.includes("docs/js/cost.js"));
+  assert.ok(packaged.includes("docs/js/speaker-lines.js"));
+  assert.match(read("broadcast/renderer/renderer.js"), /음성 신호가 들어오고 있습니다/);
+  assert.match(read("broadcast/renderer/renderer.js"), /음성 신호가 아직 없습니다/);
+  assert.doesNotMatch(read("broadcast/renderer/renderer.js"), /마이크가 입력입니다/);
+});
+
+test("the packaged app includes every file the main process requires", () => {
+  const root = path.join(__dirname, "..");
+  const patterns = JSON.parse(read("package.json")).build.files;
+  function packed(rel) {
+    const normal = rel.split(path.sep).join("/");
+    return patterns.some((pattern) => {
+      if (pattern.endsWith("/**/*")) return normal.startsWith(pattern.slice(0, -5));
+      return normal === pattern;
+    });
+  }
+  const seen = new Set();
+  function walk(file) {
+    const rel = path.relative(root, file);
+    if (seen.has(rel)) return;
+    seen.add(rel);
+    assert.equal(packed(rel), true, rel);
+    if (!rel.endsWith(".js")) return;
+    const text = fs.readFileSync(file, "utf8");
+    const specs = [...text.matchAll(/require\(\s*["'](\.[^"']+)["']\s*\)/g)].map((match) => match[1]);
+    [...text.matchAll(/path\.join\(\s*__dirname\s*,\s*["']([^"']+\.js)["']\s*\)/g)].forEach((match) => {
+      specs.push(`./${match[1]}`);
+    });
+    specs.forEach((spec) => {
+      let target = path.resolve(path.dirname(file), spec);
+      if (!path.extname(target)) {
+        if (fs.existsSync(`${target}.js`)) target = `${target}.js`;
+        else if (fs.existsSync(path.join(target, "index.js"))) target = path.join(target, "index.js");
+      }
+      if (!target.startsWith(root)) return;
+      walk(target);
+    });
+  }
+  walk(path.join(root, "broadcast/main.js"));
+  assert.ok(seen.has(path.join("docs/js", "speaker-lines.js")));
+  assert.ok(seen.has(path.join("docs/js", "languages.js")));
+  assert.ok(seen.has(path.join("docs/js", "cost.js")));
+});
+
+test("a connected phone shows a signal only after audio arrives", () => {
+  const events = [];
+  const engine = new Engine((payload) => events.push(payload));
+  engine.channelRows = [{ spoken: "ko", on: true, source: "device" }];
+  engine.addPhone({ id: "phone0009", name: "왕웨이", spoken: "zh-CN", connectionId: "AB234K" });
+  engine.pushPhonePcm("phone0009", Buffer.alloc(4800));
+  assert.equal(engine.channelRows[1].signal, undefined);
+  assert.equal(engine.publicChannels()[1].signal, false);
+  const loud = Buffer.alloc(4800);
+  for (let i = 0; i < loud.length; i += 2) loud.writeInt16LE(8000, i);
+  engine.pushPhonePcm("phone0009", loud);
+  assert.equal(engine.channelRows[1].signal, true);
+  assert.equal(engine.publicChannels()[1].signal, true);
+  assert.equal(events.some((event) => event.type === "phones" && event.channels[1] && event.channels[1].signal), true);
+  engine.markPhoneAway("phone0009");
+  assert.equal(engine.channelRows[1].signal, false);
 });
 
 test("pcm from a phone mic is 24 kHz int16", () => {

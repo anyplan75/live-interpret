@@ -50,6 +50,7 @@
       "docs/js/languages.js",
       "docs/js/org-services.js",
       "docs/js/cost.js",
+      "docs/js/speaker-lines.js",
       "package.json"
     ],
     "directories": {
