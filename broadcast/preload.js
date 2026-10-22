@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   setChannelSpoken: (index, spoken) => ipcRenderer.invoke("channel:spoken", index, spoken),
   setChannelOn: (index, on) => ipcRenderer.invoke("channel:on", index, on),
   setShowPreacherName: (on) => ipcRenderer.invoke("preacher:show-name", on),
+  setPhoneDisplay: (connectionId, patch) => ipcRenderer.invoke("phone:display", connectionId, patch),
   links: (targets, spoken) => ipcRenderer.invoke("links", "", targets, spoken),
   start: (opts) => ipcRenderer.invoke("broadcast:start", opts),
   stop: () => ipcRenderer.invoke("broadcast:stop"),

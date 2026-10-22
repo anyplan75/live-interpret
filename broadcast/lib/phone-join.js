@@ -105,6 +105,7 @@ class PhoneJoin {
       connectionId: desk.connectionId,
       pin: desk.pin,
       name: desk.name,
+      showName: desk.showName !== false,
       spoken: desk.spoken,
       phoneId: desk.phoneId,
       channelIndex: desk.channelIndex,
@@ -319,6 +320,7 @@ class PhoneJoin {
     desk.spoken = accepted.spoken || spoken;
     desk.channelIndex = Number.isInteger(accepted.index) ? accepted.index : -1;
     desk.loginError = accepted.loginError || "";
+    desk.showName = true;
     if (!desk.loginError) this.loginError = "";
     this._send(peerId, {
       type: "joined",
@@ -357,6 +359,22 @@ class PhoneJoin {
     this._notify();
     this._send(peerId, { type: "error", message });
     this._toLink({ type: "close", peerId });
+  }
+
+  /** 맥에서 고친 자막 이름을 그 휴대폰 카드에 반영합니다. 휴대폰이 다시 들어오면 휴대폰에 적은 이름으로 돌아갑니다. */
+  setDisplay(connectionId, patch) {
+    const id = orgServices.normalizeConnectionId(connectionId);
+    const desk = id ? this.desks.find((item) => item.connectionId === id) : null;
+    if (!desk) return null;
+    const next = patch || {};
+    if (next.name) desk.name = String(next.name);
+    if (Object.prototype.hasOwnProperty.call(next, "showName")) desk.showName = next.showName !== false;
+    this._notify();
+    return {
+      connectionId: id,
+      name: desk.name || "",
+      showName: desk.showName !== false,
+    };
   }
 
   setListening(phoneId, listening) {

@@ -7,7 +7,7 @@ const { spawn } = require("child_process");
 const { PhoneJoin, publicMicUrl, parseIce } = require("../broadcast/lib/phone-join");
 const { downsampleFloatToPcm16 } = require("../broadcast/lib/pcm16");
 const { createSubtitleBoard } = require("../broadcast/lib/subtitle-board");
-const { Engine, normalizeChannelRows } = require("../broadcast/lib/engine");
+const { Engine, normalizeChannelRows, channelRecognition } = require("../broadcast/lib/engine");
 const speakerLines = require("../docs/js/speaker-lines");
 
 const root = path.join(__dirname, "..");
@@ -179,7 +179,12 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(read("broadcast/renderer/index.html"), /id="showPreacherName"/);
   assert.match(read("broadcast/renderer/index.html"), /강연자 이름을 자막에 표시/);
   assert.match(read("broadcast/preload.js"), /setShowPreacherName/);
+  assert.match(read("broadcast/preload.js"), /setPhoneDisplay/);
   assert.match(read("broadcast/lib/engine.js"), /setShowPreacherName/);
+  assert.match(read("broadcast/lib/engine.js"), /setPhoneDisplay/);
+  assert.match(screen, /이 이름을 자막에 표시/);
+  assert.match(screen, /appendPhoneNameEditor/);
+  assert.match(read("docs/lecture/index.html"), /type: "hello", name/);
   assert.doesNotMatch(screen, /음성 신호가 들어오고 있습니다/);
   assert.doesNotMatch(screen, /음성 신호가 아직 없습니다/);
   assert.doesNotMatch(screen, /연결됨/);
@@ -266,6 +271,44 @@ test("hiding the preacher name clears only the Mac speaker", () => {
   engine.setShowPreacherName(true);
   assert.equal(device.pipeline.speaker, "이종찬");
   assert.equal(phone.pipeline.speaker, "민수");
+});
+
+test("a Mac rename replaces one phone name and hiding drops only that phone", () => {
+  const engine = new Engine(() => {});
+  engine.preacherName = "이종찬";
+  engine.showPreacherName = true;
+  engine.channelRows = [{ spoken: "ko", on: true, source: "device" }];
+  const first = engine.addPhone({ id: "phone0001", name: "홍길동", spoken: "ko", connectionId: "AB234K" });
+  const second = engine.addPhone({ id: "phone0002", name: "민수", spoken: "en", connectionId: "CD456M" });
+  assert.equal(first.name, "홍길동");
+  assert.equal(engine.publicChannels()[first.index].showName, true);
+  const devicePipe = { speaker: "이종찬" };
+  const firstPipe = { speaker: "홍길동" };
+  const secondPipe = { speaker: "민수" };
+  engine.channelSessions = new Map([
+    [0, { name: "이종찬", pipeline: devicePipe }],
+    [first.index, { name: "홍길동", pipeline: firstPipe }],
+    [second.index, { name: "민수", pipeline: secondPipe }],
+  ]);
+  const renamed = engine.setPhoneDisplay("ab234k", { name: "김집사" });
+  assert.equal(renamed.name, "김집사");
+  assert.equal(renamed.showName, true);
+  assert.equal(firstPipe.speaker, "김집사");
+  assert.equal(secondPipe.speaker, "민수");
+  assert.equal(devicePipe.speaker, "이종찬");
+  engine.setPhoneDisplay("AB234K", { showName: false });
+  assert.equal(engine.channelRows[first.index].name, "김집사");
+  assert.equal(firstPipe.speaker, "");
+  assert.equal(secondPipe.speaker, "민수");
+  assert.equal(devicePipe.speaker, "이종찬");
+  engine.setShowPreacherName(false);
+  assert.equal(devicePipe.speaker, "");
+  assert.equal(secondPipe.speaker, "민수");
+  assert.equal(firstPipe.speaker, "");
+  assert.equal(channelRecognition({ source: "phone", spoken: "ko", name: "김집사", showName: false }, ["en"]).speaker, "");
+  assert.equal(channelRecognition({ source: "phone", spoken: "ko", name: "김집사" }, ["en"]).speaker, "김집사");
+  assert.throws(() => engine.setPhoneDisplay("AB234K", { name: "   " }), /이름을 입력해 주세요/);
+  assert.equal(engine.channelRows[first.index].name, "김집사");
 });
 
 test("a connected phone shows a signal only after audio arrives", async () => {

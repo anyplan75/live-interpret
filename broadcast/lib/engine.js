@@ -47,7 +47,9 @@ function channelRecognition(row, outputs, deviceName) {
     spoken,
     transcription: transcriptionLanguage(spoken),
     targets: targetsForChannel(outputs, spoken),
-    speaker: phone ? cleanDisplayName(row.name) : cleanDisplayName(deviceName || ""),
+    speaker: phone
+      ? (row.showName === false ? "" : cleanDisplayName(row.name))
+      : cleanDisplayName(deviceName || ""),
   };
 }
 
@@ -74,6 +76,7 @@ function phoneRow(row) {
     phoneId,
     connectionId: cleanConnectionId(row.connectionId),
     connected: row.connected !== false,
+    showName: row.showName !== false,
   };
 }
 
@@ -863,6 +866,7 @@ class Engine {
       connectionId: row.source === "phone" ? (row.connectionId || "") : "",
       connected: row.source === "phone" ? row.connected !== false : true,
       signal: row.source === "phone" ? !!row.signal : false,
+      showName: row.source === "phone" ? row.showName !== false : true,
     }));
   }
 
@@ -908,9 +912,11 @@ class Engine {
         phoneId,
         connectionId,
         connected: true,
+        showName: true,
       });
     } else {
       this.channelRows[index].name = name;
+      this.channelRows[index].showName = true;
       this.channelRows[index].phoneId = phoneId;
       this.channelRows[index].connectionId = connectionId || this.channelRows[index].connectionId || "";
       this.channelRows[index].connected = true;
@@ -1048,6 +1054,37 @@ class Engine {
     this.emit({ type: "level", channel: index, peak: level });
   }
 
+  /** 진행자가 휴대폰 카드에서 자막 이름을 바꾸거나, 그 휴대폰 이름만 빼는 자리입니다. */
+  setPhoneDisplay(connectionId, patch) {
+    const id = cleanConnectionId(connectionId);
+    if (!id) throw new Error("휴대폰을 찾지 못했습니다.");
+    const index = (this.channelRows || []).findIndex((row) => row && row.source === "phone" && row.connectionId === id);
+    if (index < 0) throw new Error("아직 들어온 휴대폰이 없습니다.");
+    const row = this.channelRows[index];
+    const next = patch || {};
+    if (Object.prototype.hasOwnProperty.call(next, "name")) {
+      const name = cleanDisplayName(next.name);
+      if (!name) throw new Error("이름을 입력해 주세요.");
+      row.name = name;
+    }
+    if (Object.prototype.hasOwnProperty.call(next, "showName")) row.showName = next.showName !== false;
+    else if (row.showName == null) row.showName = true;
+    const speaker = row.showName === false ? "" : (row.name || "");
+    const session = this.channelSessions && this.channelSessions.get(index);
+    if (session) {
+      session.name = speaker;
+      if (session.pipeline) session.pipeline.speaker = speaker;
+    }
+    this.emitPhones();
+    return {
+      index,
+      name: row.name || "",
+      showName: row.showName !== false,
+      connectionId: id,
+      phoneId: row.phoneId || "",
+    };
+  }
+
   deviceSpeaker(row, index) {
     if (row && row.source === "phone") return "";
     if (index === 0 && this.showPreacherName !== false) return this.preacherName || "";
@@ -1130,8 +1167,16 @@ class Engine {
     const keptPhones = (this.channelRows || []).filter((row) => row && row.source === "phone" && row.connected !== false && row.name && row.phoneId);
     this.channelRows = normalizeChannelRows(opts.channels, channelCount, opts.spoken);
     keptPhones.forEach((phone) => {
-      const exists = this.channelRows.some((row) => row && row.source === "phone" && (row.phoneId === phone.phoneId || (phone.connectionId && row.connectionId === phone.connectionId)));
-      if (!exists) this.channelRows.push({ ...phone, on: true });
+      const found = this.channelRows.find((row) => row && row.source === "phone" && (row.phoneId === phone.phoneId || (phone.connectionId && row.connectionId === phone.connectionId)));
+      if (!found) {
+        this.channelRows.push({ ...phone, on: true });
+        return;
+      }
+      found.name = phone.name;
+      found.showName = phone.showName !== false;
+      found.phoneId = phone.phoneId || found.phoneId;
+      found.connectionId = phone.connectionId || found.connectionId;
+      found.connected = phone.connected !== false;
     });
     this.channelRows.forEach((row) => {
       if (row && row.source === "phone" && row.connected !== false && row.name) row.on = true;

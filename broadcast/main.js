@@ -603,6 +603,11 @@ function registerIpc() {
     return engine.setChannelSpoken(church.id, index, spoken);
   });
   ipcMain.handle("preacher:show-name", (_event, on) => engine.setShowPreacherName(on));
+  ipcMain.handle("phone:display", (_event, connectionId, patch) => {
+    const shown = engine.setPhoneDisplay(connectionId, patch || {});
+    if (phoneJoin) phoneJoin.setDisplay(connectionId, shown);
+    return shown;
+  });
   ipcMain.handle("channel:on", async (_event, index, on) => {
     const church = await requireChurch();
     return engine.setChannelOn(church.id, index, on);

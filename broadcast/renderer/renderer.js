@@ -436,6 +436,8 @@ function deskView(desk) {
   if (!view.phoneId) view.phoneId = row.phoneId || "";
   if (row.connected === false) view.connected = false;
   else if (row.name) view.connected = true;
+  if (row.name) view.name = row.name;
+  if (row.showName != null) view.showName = row.showName !== false;
   if (!(Number.isInteger(view.channelIndex) && view.channelIndex >= 0)) view.channelIndex = index;
   return view;
 }
@@ -466,6 +468,16 @@ function renderPhoneDesks() {
   const root = document.getElementById("phoneDesks");
   renderPhoneLevels();
   if (!root) return;
+  const active = document.activeElement;
+  const keep = active && active.dataset && active.dataset.phoneEdit && root.contains(active)
+    ? {
+      kind: active.dataset.phoneEdit,
+      id: active.dataset.connectionId || "",
+      value: active.value,
+      start: active.selectionStart,
+      end: active.selectionEnd,
+    }
+    : null;
   const info = state.phoneJoin || {};
   const desks = Array.isArray(info.channels) ? info.channels : [];
   const countEl = document.getElementById("phoneCount");
@@ -506,9 +518,18 @@ function renderPhoneDesks() {
     }
     wrap.append(title);
     appendPhoneLive(wrap, index + 1, view);
+    appendPhoneNameEditor(wrap, index + 1, view);
     wrap.append(idLabel, idInput, select);
     root.append(wrap);
   });
+  if (!keep || !keep.id) return;
+  const next = root.querySelector(`[data-phone-edit="${keep.kind}"][data-connection-id="${keep.id}"]`);
+  if (!next) return;
+  if (keep.kind === "name") next.value = keep.value;
+  next.focus();
+  if (keep.kind === "name" && Number.isInteger(keep.start) && Number.isInteger(keep.end)) {
+    try { next.setSelectionRange(keep.start, keep.end); } catch (_) { /* 숫자 칸은 선택 범위를 두지 않습니다 */ }
+  }
 }
 
 function showPhoneJoin(info) {
@@ -526,6 +547,7 @@ function mapChannel(row) {
     connectionId: row && row.source === "phone" ? (row.connectionId || "") : "",
     connected: !(row && row.source === "phone") || row.connected !== false,
     signal: !!(row && row.source === "phone" && row.signal),
+    showName: !(row && row.source === "phone" && row.showName === false),
   };
 }
 
@@ -1098,7 +1120,9 @@ async function boot() {
     if (event.type === "live") hearing.live(channelPrefix(event.channel, event.text, event.name));
     if (event.type === "heard") hearing.heard(heardKey(event.channel, event.id), channelPrefix(event.channel, event.text, event.name));
     if (event.type === "line" && event.lang) {
-      const caption = speakerCaption(event.name, event.text);
+      const lineRow = Number.isInteger(event.channel) ? state.channels[event.channel] : null;
+      const lineName = lineRow && lineRow.source === "phone" && lineRow.showName === false ? "" : event.name;
+      const caption = speakerCaption(lineName, event.text);
       if (!state.captions) state.captions = {};
       if (!state.captions[event.lang]) state.captions[event.lang] = new Map();
       const key = Number.isInteger(event.channel) ? event.channel : 0;
@@ -1308,11 +1332,62 @@ function channelPrefix(index, text, name) {
   const value = String(text || "");
   if (!value) return value;
   const row = Number.isInteger(index) ? state.channels[index] : null;
+  if (row && row.source === "phone" && row.showName === false) return value;
   const who = String(name || (row && row.name) || "").trim();
   if (who) return speakerCaption(who, value);
   if (row && row.source !== "phone" && !preacherNameShown()) return value;
   if (!Number.isInteger(index) || activeChannelRows().length < 2) return value;
   return speakerCaption(`채널 ${index + 1}`, value);
+}
+
+function appendPhoneNameEditor(parent, slot, view) {
+  if (!phoneJoined(view) || !view.connectionId) return;
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "자막에 보일 이름";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 40;
+  input.className = "phone-display-name";
+  input.dataset.phoneEdit = "name";
+  input.dataset.connectionId = view.connectionId;
+  input.value = view.name || "";
+  input.setAttribute("aria-label", `휴대폰 ${slot} 자막 이름`);
+  input.addEventListener("change", () => {
+    applyPhoneDisplay(view.connectionId, { name: input.value });
+  });
+  const checkLabel = document.createElement("label");
+  checkLabel.className = "check";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.dataset.phoneEdit = "show";
+  box.dataset.connectionId = view.connectionId;
+  box.checked = view.showName !== false;
+  box.addEventListener("change", () => {
+    applyPhoneDisplay(view.connectionId, { showName: box.checked });
+  });
+  checkLabel.append(box, document.createTextNode(" 이 이름을 자막에 표시"));
+  parent.append(nameLabel, input, checkLabel);
+}
+
+async function applyPhoneDisplay(connectionId, patch) {
+  try {
+    const shown = await window.broadcast.setPhoneDisplay(connectionId, patch);
+    const desks = state.phoneJoin && Array.isArray(state.phoneJoin.channels) ? state.phoneJoin.channels : [];
+    const desk = desks.find((item) => item && item.connectionId === connectionId);
+    if (desk && shown) {
+      desk.name = shown.name;
+      desk.showName = shown.showName !== false;
+    }
+    const row = (state.channels || []).find((item) => item && item.source === "phone" && item.connectionId === connectionId);
+    if (row && shown) {
+      row.name = shown.name;
+      row.showName = shown.showName !== false;
+    }
+    renderPhoneDesks();
+  } catch (err) {
+    log(err.message || String(err), "error");
+    renderPhoneDesks();
+  }
 }
 
 document.getElementById("showPreacherName").addEventListener("change", async () => {
