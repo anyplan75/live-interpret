@@ -12,6 +12,7 @@ const consent = require("./lib/consent");
 const updater = require("./lib/updater");
 const { PhoneJoin } = require("./lib/phone-join");
 const { useFolder, releaseFolder } = require("./lib/folder-access");
+const operator = require("./lib/operator");
 
 app.setName("live-interpret");
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
@@ -114,6 +115,17 @@ async function requireChurch() {
     throw new Error("교회 계정이 이 교회와 맞지 않습니다.");
   }
   return church;
+}
+
+async function operatorGate() {
+  const token = await ensureAuth();
+  if (!token) throw new Error("로그인이 필요합니다.");
+  const session = secrets.readSession(userDir());
+  const adminUid = await firebase.get("admin/uid");
+  if (!operator.isOperatorAccount(session, typeof adminUid === "string" ? adminUid : "")) {
+    throw new Error("이 계정은 운영 화면을 열 수 없습니다.");
+  }
+  return session;
 }
 
 function settingsFile() {
@@ -274,11 +286,30 @@ function registerIpc() {
   }));
   ipcMain.handle("auth:status", async () => {
     const saved = secrets.readSession(userDir());
-    if (!saved) return { signedIn: false, email: "", church: null, keyReady: Boolean(resolveKey()) };
+    if (!saved) return { signedIn: false, operator: false, email: "", church: null, keyReady: Boolean(resolveKey()) };
     try {
+      if (operator.isOperatorEmail(saved.email)) {
+        await ensureAuth();
+        const adminUid = await firebase.get("admin/uid");
+        if (!operator.isOperatorAccount(secrets.readSession(userDir()), typeof adminUid === "string" ? adminUid : "")) {
+          idToken = "";
+          tokenExpiresAt = 0;
+          firebase.setIdToken("");
+          secrets.clearSession(userDir());
+          return { signedIn: false, operator: false, email: "", church: null, keyReady: Boolean(resolveKey()) };
+        }
+        return {
+          signedIn: true,
+          operator: true,
+          email: saved.email,
+          church: null,
+          keyReady: false,
+        };
+      }
       const church = await requireChurch();
       return {
         signedIn: true,
+        operator: false,
         email: saved.email,
         church: publicChurch(church),
         keyReady: Boolean(await cachePlatformKey()),
@@ -308,9 +339,23 @@ function registerIpc() {
       localId: session.localId,
     });
     try {
+      if (operator.isOperatorEmail(session.email)) {
+        const adminUid = await firebase.get("admin/uid");
+        if (!operator.isOperatorAccount(session, typeof adminUid === "string" ? adminUid : "")) {
+          throw new Error("이 계정은 운영 화면을 열 수 없습니다.");
+        }
+        return {
+          signedIn: true,
+          operator: true,
+          email: session.email,
+          church: null,
+          keyReady: false,
+        };
+      }
       const church = await requireChurch();
       return {
         signedIn: true,
+        operator: false,
         email: session.email,
         church: publicChurch(church),
         keyReady: Boolean(await cachePlatformKey()),
@@ -330,6 +375,42 @@ function registerIpc() {
     firebase.setIdToken("");
     secrets.clearSession(userDir());
     return { signedIn: false };
+  });
+  ipcMain.handle("operator:list", async () => {
+    await operatorGate();
+    const index = await firebase.get("churchIndex");
+    const entries = index && typeof index === "object" ? Object.entries(index) : [];
+    const accounts = [];
+    for (const [id, row] of entries) {
+      if (!catalog.isChurchId(id) || !row || typeof row !== "object") continue;
+      const [billing, usage, sessionIndex] = await Promise.all([
+        firebase.get(`churches/${id}/billing`),
+        firebase.get(`churches/${id}/live/usage`),
+        firebase.get(`churches/${id}/sessionIndex`),
+      ]);
+      accounts.push(operator.accountRow(id, row, billing, usage, sessionIndex));
+    }
+    accounts.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    return { accounts };
+  });
+  ipcMain.handle("operator:credit", async (_event, accountId, amountKrw) => {
+    const session = await operatorGate();
+    if (!catalog.isChurchId(accountId)) throw new Error("계정을 골라 주세요.");
+    const amount = Math.round(Number(amountKrw) || 0);
+    if (amount <= 0) throw new Error("더할 금액을 입력해 주세요.");
+    const index = await firebase.get("churchIndex");
+    if (!index || typeof index !== "object" || !index[accountId]) throw new Error("계정을 찾지 못했습니다.");
+    const billing = (await firebase.get(`churches/${accountId}/billing`)) || {};
+    const update = operator.creditUpdate({
+      balance: billing.balance,
+      amount,
+      accountId,
+      who: session.localId,
+      now: Date.now(),
+    });
+    if (!update.ok) throw new Error("선불 잔액을 더하지 못했습니다.");
+    await firebase.update(`churches/${accountId}/billing`, update.patch);
+    return { balanceKrw: update.balance, balanceLabel: update.balanceLabel };
   });
   ipcMain.handle("church:current", async () => {
     const church = await requireChurch();

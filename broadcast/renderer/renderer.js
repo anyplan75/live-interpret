@@ -24,6 +24,7 @@ const state = {
   audio: null,
   running: false,
   signedIn: false,
+  operator: false,
   lines: {},
   targets: [],
   spoken: "ko",
@@ -845,18 +846,74 @@ async function chooseDevice() {
 
 function setSignedIn(auth) {
   state.signedIn = !!(auth && auth.signedIn);
+  state.operator = !!(auth && auth.operator);
   document.getElementById("signInCard").hidden = state.signedIn;
-  document.getElementById("studio").hidden = !state.signedIn;
+  document.getElementById("studio").hidden = !state.signedIn || state.operator;
+  const operatorEl = document.getElementById("operator");
+  if (operatorEl) operatorEl.hidden = !state.operator;
+  const heard = document.getElementById("heardSection");
+  if (heard) heard.hidden = state.operator;
+  const prepaid = document.getElementById("prepaidTime");
+  if (prepaid) prepaid.hidden = state.operator;
   if (!state.signedIn) {
     state.church = null;
+    state.operator = false;
+    if (operatorEl) operatorEl.hidden = true;
+    if (heard) heard.hidden = false;
+    if (prepaid) prepaid.hidden = false;
     document.getElementById("churchLine").textContent = "교회 계정으로 로그인하면 그 교회만 열립니다.";
+  } else if (state.operator) {
+    document.getElementById("churchLine").textContent = "이 계정으로 로그인했습니다.";
+  }
+}
+
+function paintOperator(accounts) {
+  const board = document.getElementById("operatorList");
+  const select = document.getElementById("operatorAccount");
+  board.replaceChildren();
+  select.replaceChildren();
+  if (!accounts.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "등록된 계정이 없습니다.";
+    board.appendChild(empty);
+    return;
+  }
+  accounts.forEach((row) => {
+    const card = document.createElement("article");
+    card.className = "operator-account";
+    const title = document.createElement("h3");
+    title.textContent = row.name;
+    const balance = document.createElement("p");
+    balance.textContent = `남은 잔액 ${row.balanceLabel}`;
+    const time = document.createElement("p");
+    time.textContent = row.timeLabel;
+    const recent = document.createElement("p");
+    recent.className = "hint";
+    recent.textContent = row.recentLabel === "최근 사용 없음" ? row.recentLabel : `최근 사용 ${row.recentLabel}`;
+    card.append(title, balance, time, recent);
+    board.appendChild(card);
+    const option = document.createElement("option");
+    option.value = row.id;
+    option.textContent = row.name;
+    select.appendChild(option);
+  });
+}
+
+async function loadOperator() {
+  const msg = document.getElementById("operatorMsg");
+  try {
+    const result = await window.broadcast.operatorList();
+    paintOperator(result && result.accounts ? result.accounts : []);
+  } catch (err) {
+    if (msg) msg.textContent = err.message || String(err);
   }
 }
 
 async function refreshKeyHint() {
   const hint = document.getElementById("keyHint");
-  if (!state.signedIn) {
-    hint.textContent = "번역 키는 관리 페이지에 있습니다. 교회 계정은 그 키를 읽지 않습니다.";
+  if (!state.signedIn || state.operator) {
+    hint.textContent = state.operator ? "" : "번역 키는 관리 페이지에 있습니다. 교회 계정은 그 키를 읽지 않습니다.";
     return;
   }
   try {
@@ -906,6 +963,10 @@ async function boot() {
   const auth = await window.broadcast.authStatus();
   setSignedIn(auth);
   await refreshKeyHint();
+  if (state.operator) {
+    await loadOperator();
+    return;
+  }
   if (state.signedIn) {
     if (auth.church) showChurch(auth.church);
     await loadChurch();
@@ -991,6 +1052,11 @@ document.getElementById("churchSignIn").addEventListener("click", async () => {
     const auth = await window.broadcast.signIn(email, password);
     document.getElementById("churchPassword").value = "";
     setSignedIn(auth);
+    if (auth.operator) {
+      await loadOperator();
+      log("이 계정으로 로그인했습니다.");
+      return;
+    }
     if (auth.church) showChurch(auth.church);
     await refreshKeyHint();
     await loadChurch();
@@ -1000,13 +1066,42 @@ document.getElementById("churchSignIn").addEventListener("click", async () => {
   }
 });
 
+async function signOut() {
+  await window.broadcast.signOut();
+  setSignedIn({ signedIn: false });
+  cardsEl.innerHTML = "";
+  paintOperator([]);
+}
+
 document.getElementById("signOut").addEventListener("click", async () => {
   try {
-    await window.broadcast.signOut();
-    setSignedIn({ signedIn: false });
-    cardsEl.innerHTML = "";
+    await signOut();
   } catch (err) {
     log(err.message || String(err), "error");
+  }
+});
+
+document.getElementById("operatorSignOut").addEventListener("click", async () => {
+  const msg = document.getElementById("operatorMsg");
+  try {
+    await signOut();
+  } catch (err) {
+    if (msg) msg.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("operatorCredit").addEventListener("click", async () => {
+  const msg = document.getElementById("operatorMsg");
+  msg.textContent = "";
+  const accountId = document.getElementById("operatorAccount").value;
+  const amount = Math.round(Number(document.getElementById("operatorAmount").value) || 0);
+  try {
+    const result = await window.broadcast.operatorCredit(accountId, amount);
+    document.getElementById("operatorAmount").value = "";
+    msg.textContent = `${amount.toLocaleString("ko-KR")}원을 더했습니다. 남은 잔액은 ${result.balanceLabel}입니다.`;
+    await loadOperator();
+  } catch (err) {
+    msg.textContent = err.message || String(err);
   }
 });
 

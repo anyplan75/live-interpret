@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("broadcast", {
   authStatus: () => ipcRenderer.invoke("auth:status"),
   signIn: (email, password) => ipcRenderer.invoke("auth:signIn", email, password),
   signOut: () => ipcRenderer.invoke("auth:signOut"),
+  operatorList: () => ipcRenderer.invoke("operator:list"),
+  operatorCredit: (accountId, amountKrw) => ipcRenderer.invoke("operator:credit", accountId, amountKrw),
   currentChurch: () => ipcRenderer.invoke("church:current"),
   previewBilling: (targets, spoken, extraChannels) => ipcRenderer.invoke("billing:preview", targets, spoken, extraChannels),
   saveStyle: (style) => ipcRenderer.invoke("style:set", style),

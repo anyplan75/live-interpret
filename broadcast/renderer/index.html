@@ -197,9 +197,31 @@
         </div>
         </div>
       </div>
+
+      <div id="operator" hidden>
+        <div class="card">
+          <h2>계정 사용</h2>
+          <p class="hint">이 계정만 모든 계정의 남은 잔액, 남은 시간, 최근 사용을 봅니다.</p>
+          <div id="operatorList"></div>
+          <div class="row" style="margin-top:10px;">
+            <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>선불 잔액</h2>
+          <label for="operatorAccount">계정</label>
+          <select id="operatorAccount"></select>
+          <label for="operatorAmount">더할 금액 (원)</label>
+          <input id="operatorAmount" type="number" min="1" step="1" inputmode="numeric">
+          <div class="row" style="margin-top:10px;">
+            <button type="button" id="operatorCredit">선불 잔액 더하기</button>
+          </div>
+          <p class="hint" id="operatorMsg"></p>
+        </div>
+      </div>
     </section>
 
-    <section>
+    <section id="heardSection">
       <div class="card">
         <h2 id="heardTitle">지금 듣는 한국어</h2>
         <p class="hint">말하는 언어는 채널마다 고릅니다. 노란 칸은 지금 듣는 말입니다. 끝난 말은 아래에 듣는 말로 쌓이고, 교정은 그 듣는 말 바로 아래에 붙습니다.</p>

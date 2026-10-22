@@ -22,8 +22,8 @@
       }
     },
     "churchIndex": {
-      ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()",
-      ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
+      ".read": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com'",
+      ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com'"
     },
     "deposits": {
       "$depositId": {
@@ -69,7 +69,7 @@
     },
     "churches": {
       "$churchId": {
-        ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+        ".read": "auth != null && ((auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com') || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
         "name": {
           ".read": true,
           ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val()"
@@ -121,11 +121,11 @@
           ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val()"
         },
         "sessionIndex": {
-          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".read": "auth != null && ((auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com') || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
           ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false"
         },
         "sessions": {
-          ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
+          ".read": "auth != null && ((auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com') || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
           ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && root.child('live-interpret/churches').child($churchId).child('active').val() !== false",
           "$folder": {
             "bulletin": {
@@ -136,7 +136,7 @@
         "billing": {
           "balance": {
             ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
-            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.parent().child('lastEntryId').isString() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).exists() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() == newData.val() - (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('balanceAfter').val() == newData.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('amountKrw').val() == newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() && ((auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && data.exists() && newData.val() < data.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() < 0) || (auth.uid === root.child('live-interpret/admin/uid').val() && newData.val() > (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() > 0))"
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.parent().child('lastEntryId').isString() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).exists() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() == newData.val() - (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('balanceAfter').val() == newData.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('amountKrw').val() == newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() && ((auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && data.exists() && newData.val() < data.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() < 0) || (auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com' && newData.val() > (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() > 0))"
           },
           "lastEntryId": {
             ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
