@@ -971,6 +971,7 @@ class Engine {
       if (timer) clearTimeout(timer);
       this.phoneSignalTimers.delete(phoneId);
     }
+    this.emit({ type: "level", channel: index, peak: 0 });
     this.emitPhones();
     this.emit({ type: "log", level: "info", text: `${this.channelRows[index].name} 휴대폰 연결이 끊겼습니다.` });
   }
@@ -1009,6 +1010,7 @@ class Engine {
       if (this.phoneSignalTimers) this.phoneSignalTimers.delete(phoneId);
       if (!row.signal) return;
       row.signal = false;
+      this.emit({ type: "level", channel: index, peak: 0 });
       this.emitPhones();
     }, 1500);
     if (typeof timer.unref === "function") timer.unref();

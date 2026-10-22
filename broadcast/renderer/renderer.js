@@ -344,8 +344,7 @@ function renderChannels(count) {
     const button = document.createElement("button");
     button.type = "button";
     if (row.source === "phone") {
-      const mark = row.connected === false ? "끊김" : (row.signal ? "음성 신호" : "연결됨");
-      button.textContent = `${row.name} · ${spokenName(row.spoken)} · ${mark}`;
+      button.textContent = phoneSlotLabel(phoneSlotForRow(row));
     } else {
       button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
     }
@@ -381,8 +380,56 @@ function deskChannelIndex(desk) {
   return -1;
 }
 
+function phoneSlotLabel(slot) {
+  return `휴대폰${slot} 켜짐`;
+}
+
+function phoneSlotForRow(row) {
+  const desks = state.phoneJoin && Array.isArray(state.phoneJoin.channels) ? state.phoneJoin.channels : [];
+  if (row && row.connectionId) {
+    const found = desks.findIndex((desk) => desk && desk.connectionId === row.connectionId);
+    if (found >= 0) return found + 1;
+  }
+  const phones = (state.channels || []).filter((item) => item && item.source === "phone");
+  const index = phones.indexOf(row);
+  return index >= 0 ? index + 1 : 1;
+}
+
+function renderPhoneLevels() {
+  const root = document.getElementById("phoneLevels");
+  if (!root) return;
+  const desks = state.phoneJoin && Array.isArray(state.phoneJoin.channels) ? state.phoneJoin.channels : [];
+  const kept = new Map();
+  root.querySelectorAll("[data-phone-level]").forEach((bar) => {
+    if (bar.style.width) kept.set(bar.dataset.phoneLevel, bar.style.width);
+  });
+  root.innerHTML = "";
+  root.hidden = desks.length === 0;
+  desks.forEach((desk, index) => {
+    const row = document.createElement("div");
+    row.className = "phone-level";
+    const name = document.createElement("span");
+    name.className = "phone-level-name";
+    name.textContent = phoneSlotLabel(index + 1);
+    const meter = document.createElement("div");
+    meter.className = "meter";
+    meter.setAttribute("aria-label", `휴대폰${index + 1} 소리 크기`);
+    const bar = document.createElement("span");
+    const channelIndex = deskChannelIndex(desk);
+    if (channelIndex >= 0) {
+      bar.dataset.phoneLevel = String(channelIndex);
+      const saved = kept.get(String(channelIndex));
+      if (saved) bar.style.width = saved;
+    }
+    meter.append(bar);
+    row.append(name, meter);
+    root.append(row);
+  });
+}
+
 function renderPhoneDesks() {
   const root = document.getElementById("phoneDesks");
+  renderPhoneLevels();
   if (!root) return;
   const info = state.phoneJoin || {};
   const desks = Array.isArray(info.channels) ? info.channels : [];
@@ -411,16 +458,6 @@ function renderPhoneDesks() {
     idInput.value = desk.connectionId || "";
     idInput.setAttribute("aria-label", `휴대폰 ${index + 1} 암호`);
     const channelIndex = deskChannelIndex(desk);
-    const status = document.createElement("p");
-    status.className = "hint";
-    const channel = channelIndex >= 0 ? state.channels[channelIndex] : null;
-    if (desk.connected && desk.name && channel && channel.signal) {
-      status.className = "hint phone-signal";
-      status.textContent = `${desk.name} 음성 신호가 들어오고 있습니다`;
-    } else if (desk.connected && desk.name) {
-      status.textContent = `${desk.name} 연결됨 · 음성 신호가 아직 없습니다`;
-    } else if (desk.name) status.textContent = `${desk.name} · 끊김`;
-    else status.textContent = "이름과 이 암호로 로그인하면 연결됩니다.";
     const select = document.createElement("select");
     select.className = "channel-spoken";
     select.setAttribute("aria-label", `휴대폰 ${index + 1} 말하는 언어`);
@@ -431,7 +468,7 @@ function renderPhoneDesks() {
       select.value = knownSpoken(state.channels[channelIndex].spoken);
       select.addEventListener("change", () => onChannelSpoken(channelIndex, select.value));
     }
-    wrap.append(title, idLabel, idInput, status, select);
+    wrap.append(title, idLabel, idInput, select);
     root.append(wrap);
   });
 }
@@ -521,10 +558,10 @@ async function onChannelSpoken(index, code) {
 }
 
 function paintLevel(index, peak) {
-  const bar = channelsEl.querySelector(`[data-channel="${index}"]`);
-  if (!bar) return;
-  const width = Math.max(0, Math.min(100, Math.round(peak * 140)));
-  bar.style.width = `${width}%`;
+  const width = `${Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * 140)))}%`;
+  document.querySelectorAll(`[data-channel="${index}"], [data-phone-level="${index}"]`).forEach((bar) => {
+    bar.style.width = width;
+  });
 }
 
 function applyLevels(peaks) {

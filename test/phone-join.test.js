@@ -162,9 +162,14 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.ok(packaged.includes("docs/js/org-services.js"));
   assert.ok(packaged.includes("docs/js/cost.js"));
   assert.ok(packaged.includes("docs/js/speaker-lines.js"));
-  assert.match(read("broadcast/renderer/renderer.js"), /음성 신호가 들어오고 있습니다/);
-  assert.match(read("broadcast/renderer/renderer.js"), /음성 신호가 아직 없습니다/);
-  assert.doesNotMatch(read("broadcast/renderer/renderer.js"), /마이크가 입력입니다/);
+  const screen = read("broadcast/renderer/renderer.js");
+  assert.match(screen, /휴대폰\$\{slot\} 켜짐/);
+  assert.match(screen, /data-phone-level/);
+  assert.match(read("broadcast/renderer/index.html"), /id="phoneLevels"/);
+  assert.doesNotMatch(screen, /음성 신호가 들어오고 있습니다/);
+  assert.doesNotMatch(screen, /음성 신호가 아직 없습니다/);
+  assert.doesNotMatch(screen, /연결됨/);
+  assert.doesNotMatch(screen, /마이크가 입력입니다/);
 });
 
 test("the packaged app includes every file the main process requires", () => {
@@ -205,22 +210,29 @@ test("the packaged app includes every file the main process requires", () => {
   assert.ok(seen.has(path.join("docs/js", "cost.js")));
 });
 
-test("a connected phone shows a signal only after audio arrives", () => {
+test("a connected phone shows a signal only after audio arrives", async () => {
   const events = [];
   const engine = new Engine((payload) => events.push(payload));
   engine.channelRows = [{ spoken: "ko", on: true, source: "device" }];
   engine.addPhone({ id: "phone0009", name: "왕웨이", spoken: "zh-CN", connectionId: "AB234K" });
+  const levels = () => events.filter((event) => event.type === "level" && event.channel === 1);
   engine.pushPhonePcm("phone0009", Buffer.alloc(4800));
   assert.equal(engine.channelRows[1].signal, undefined);
   assert.equal(engine.publicChannels()[1].signal, false);
+  assert.equal(levels().at(-1).peak, 0);
   const loud = Buffer.alloc(4800);
   for (let i = 0; i < loud.length; i += 2) loud.writeInt16LE(8000, i);
   engine.pushPhonePcm("phone0009", loud);
   assert.equal(engine.channelRows[1].signal, true);
   assert.equal(engine.publicChannels()[1].signal, true);
+  assert.ok(levels().at(-1).peak > 0.2);
   assert.equal(events.some((event) => event.type === "phones" && event.channels[1] && event.channels[1].signal), true);
+  await new Promise((resolve) => setTimeout(resolve, 1600));
+  assert.equal(engine.channelRows[1].signal, false);
+  assert.equal(levels().at(-1).peak, 0);
   engine.markPhoneAway("phone0009");
   assert.equal(engine.channelRows[1].signal, false);
+  assert.equal(levels().at(-1).peak, 0);
 });
 
 test("pcm from a phone mic is 24 kHz int16", () => {
