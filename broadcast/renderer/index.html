@@ -106,11 +106,6 @@
           <select id="preacher"></select>
           <label for="preacherName">이름</label>
           <input id="preacherName" type="text" maxlength="80">
-          <label class="check" for="showPreacherName">
-            <input id="showPreacherName" type="checkbox" checked>
-            강연자 이름을 자막에 표시
-          </label>
-          <p class="hint">켜 두면 이 컴퓨터로 들은 말과 번역 자막 앞에 강연자 이름이 붙습니다. 끄면 그 이름만 빠지고, 휴대폰으로 들어온 사람 이름은 그대로 남습니다.</p>
           <label for="traits">말투</label>
           <textarea id="traits"></textarea>
           <label for="corrections">교정</label>
@@ -119,6 +114,10 @@
           <textarea id="terms"></textarea>
           <label for="learned">방송에서 쌓인 내용 (자동, 보기만)</label>
           <pre id="learned" class="hint extract"></pre>
+          <label class="check" for="showPreacherName">
+            <input id="showPreacherName" type="checkbox" checked>
+            강연자 이름을 자막에 표시
+          </label>
           <div class="row" style="margin-top:8px;">
             <button type="button" id="addPreacher">새 강연자</button>
             <button type="button" class="ghost" id="savePreacher">프로필 저장</button>
@@ -138,24 +137,6 @@
 
         <div class="card">
           <h2>입력 소스와 채널</h2>
-          <div class="row">
-            <select id="device" class="grow"></select>
-            <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
-          </div>
-          <div id="channels" class="channels"></div>
-          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 채널 1은 기본 요금에 포함됩니다. 다른 채널을 켜면 채널당 10,000원이 한 번 빠지고, 30분 추가 요금에는 다시 포함되지 않습니다.</p>
-        </div>
-
-        <div class="card" id="phoneJoinCard">
-          <h2>휴대폰</h2>
-          <p class="hint">송출 컴퓨터에서 휴대폰 수를 고릅니다. 칸마다 QR이 나옵니다. 휴대폰 앱이 그 QR을 스캔한 뒤 이름과 말하는 언어를 입력합니다. 비밀번호는 치지 않습니다. 들어온 뒤에는 그 카드에서 자막에 보일 이름을 바꾸거나, 그 휴대폰 이름만 자막에서 뺄 수 있습니다. 처음 이름은 휴대폰에 적은 이름입니다.</p>
-          <label for="phoneCount">휴대폰 수</label>
-          <input id="phoneCount" type="number" min="0" max="8" step="1" value="0">
-          <div id="phoneDesks"></div>
-          <p class="hint" id="phoneCountMsg">0이면 휴대폰 없이 시작합니다. 8대까지 고를 수 있습니다.</p>
-        </div>
-
-        <div class="card">
           <h2>오늘 번역할 언어</h2>
           <div class="row">
             <button type="button" class="ghost" id="pickDefault">추천만</button>
@@ -164,6 +145,21 @@
           </div>
           <div id="langs" class="langs" style="margin-top:10px;"></div>
           <p class="hint" id="langCount"></p>
+          <div class="row">
+            <select id="device" class="grow"></select>
+            <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
+          </div>
+          <div id="channels" class="channels"></div>
+          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 각 칸의 말하는 언어는 그 칸에 있습니다. 채널 1은 기본 요금에 포함됩니다. 다른 채널을 켜면 채널당 10,000원이 한 번 빠지고, 30분 추가 요금에는 다시 포함되지 않습니다.</p>
+        </div>
+
+        <div class="card" id="phoneJoinCard">
+          <h2>휴대폰</h2>
+          <p class="hint">송출 컴퓨터에서 휴대폰 수를 고릅니다. 칸마다 QR이 나옵니다. 휴대폰 앱이 그 QR을 스캔한 뒤 이름과 말하는 언어를 입력합니다. 비밀번호는 치지 않습니다. 각 칸 맨 위에 말하는 언어, 자막에 보일 이름, 이 이름을 자막에 표시가 있습니다.</p>
+          <label for="phoneCount">휴대폰 수</label>
+          <input id="phoneCount" type="number" min="0" max="8" step="1" value="0">
+          <div id="phoneDesks"></div>
+          <p class="hint" id="phoneCountMsg">0이면 휴대폰 없이 시작합니다. 8대까지 고를 수 있습니다.</p>
         </div>
 
         <div class="card">

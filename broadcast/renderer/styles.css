@@ -156,10 +156,10 @@ input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d12
 .channels { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 
 .channel {
-  display: grid;
-  grid-template-columns: minmax(88px, 1.4fr) 1fr minmax(128px, 190px);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
+  align-items: stretch;
   text-align: left;
   background: #121a24;
   border: 1px solid var(--line);
@@ -168,8 +168,15 @@ input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d12
   padding: 8px;
 }
 
+.channel-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px;
+  gap: 8px;
+  align-items: center;
+}
+
 .channel select { width: 100%; margin: 0; }
-.channel > button {
+.channel-head > button {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--line);
@@ -177,9 +184,29 @@ input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d12
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+label.check {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-top: 10px;
+  font-weight: 800;
+}
+
+label.check input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.spoken-label { margin-top: 8px; }
+.phone-desk .spoken-label,
+.channel .spoken-label { margin-top: 0; }
+.phone-display-name { margin-bottom: 8px; }
 .qr { display: block; width: 180px; height: 180px; margin-top: 10px; background: white; padding: 8px; border-radius: 12px; }
 .join-url { font-weight: 800; word-break: break-all; }
-.channel.on > button { background: var(--accent); color: white; border-color: transparent; }
+.channel.on .channel-head > button { background: var(--accent); color: white; border-color: transparent; }
 
 .channel.on { border-color: var(--accent); background: rgba(31, 143, 106, 0.2); }
 
