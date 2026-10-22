@@ -64,16 +64,10 @@
     return String(number).padStart(4, "0");
   }
 
-  function claimConnection(holderPeerId, peerId) {
-    if (holderPeerId && holderPeerId !== peerId) {
-      return {
-        ok: false,
-        holderPeerId,
-        reason: "이 QR은 이미 다른 기기에서 연결되어 있습니다. 먼저 연결을 끊은 뒤에 다시 들어오세요.",
-      };
-    }
-    return { ok: true, holderPeerId: peerId, reason: "" };
-  }
+function claimConnection(holderPeerId, peerId) {
+  const previous = holderPeerId && holderPeerId !== peerId ? String(holderPeerId) : "";
+  return { ok: true, holderPeerId: peerId, replaced: previous, reason: "" };
+}
 
   function releaseConnection(holderPeerId, peerId) {
     return holderPeerId === peerId ? "" : holderPeerId || "";

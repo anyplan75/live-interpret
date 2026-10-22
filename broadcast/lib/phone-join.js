@@ -302,13 +302,15 @@ class PhoneJoin {
       return;
     }
     const seat = orgServices.claimConnection(desk.holderPeerId, peerId);
-    if (!seat.ok) {
-      this._refuse(peerId, seat.reason, desk);
-      return;
-    }
+    if (seat.replaced) this._retirePeer(seat.replaced);
     desk.holderPeerId = seat.holderPeerId;
     const requested = cleanPhoneId(message.phoneId) || crypto.randomBytes(16).toString("hex");
     row.phoneId = requested;
+    desk.name = name;
+    desk.spoken = spoken;
+    desk.phoneId = requested;
+    desk.loginError = "";
+    this._notify();
     let joined;
     try {
       joined = this.onHello({ id: requested, name, spoken, connectionId }) || {};
@@ -318,6 +320,7 @@ class PhoneJoin {
       this._refuse(peerId, err.message || "연결하지 못했습니다.", desk);
       return;
     }
+    this._flushEarlyPcm(peerId);
     if (joined && typeof joined.then === "function") {
       joined.then((value) => this._completeHello(peerId, desk, row, requested, name, spoken, value))
         .catch((err) => {
@@ -331,6 +334,32 @@ class PhoneJoin {
       return;
     }
     this._completeHello(peerId, desk, row, requested, name, spoken, joined);
+  }
+
+  /** 같은 칸으로 다시 들어온 휴대폰이 자리를 이어받습니다. 끊김으로 처리하지 않습니다. */
+  _retirePeer(peerId) {
+    if (!peerId) return;
+    this.peers.delete(peerId);
+    if (this.earlyPcm) this.earlyPcm.delete(peerId);
+    this._toLink({ type: "close", peerId });
+  }
+
+  _queueEarlyPcm(peerId, pcm) {
+    if (!this.earlyPcm) this.earlyPcm = new Map();
+    const queued = this.earlyPcm.get(peerId) || [];
+    queued.push(Buffer.from(pcm));
+    let total = 0;
+    queued.forEach((chunk) => { total += chunk.length; });
+    const cap = 24000 * 2 * 8;
+    while (total > cap && queued.length) total -= queued.shift().length;
+    this.earlyPcm.set(peerId, queued);
+  }
+
+  _flushEarlyPcm(peerId) {
+    const queued = this.earlyPcm && this.earlyPcm.get(peerId);
+    if (!queued || !queued.length) return;
+    this.earlyPcm.delete(peerId);
+    queued.forEach((chunk) => this.ingestPcm(peerId, chunk, "server"));
   }
 
   _completeHello(peerId, desk, row, requested, name, spoken, joined) {
@@ -603,9 +632,13 @@ class PhoneJoin {
       return;
     }
     if (message && message.type === "pcm") {
-      const row = this.peers.get(peerId);
-      if (!row || !row.phoneId) return;
       const pcm = pcmFromSignal(message.pcm);
+      const row = this.peers.get(peerId);
+      if (!row || !row.phoneId) {
+        if (pcm && pcm.length >= 2) this._queueEarlyPcm(peerId, pcm);
+        this.seenIce.add(key);
+        return;
+      }
       if (!this.ingestPcm(peerId, pcm, "server")) {
         this.seenIce.add(key);
         return;

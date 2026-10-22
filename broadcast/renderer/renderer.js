@@ -92,7 +92,11 @@ function heardLanguageLabel() {
 }
 
 function activeChannelRows() {
-  return (state.channels || []).map((row, index) => ({ ...row, index })).filter((row) => row.on);
+  return (state.channels || []).map((row, index) => ({ ...row, index })).filter((row) => {
+    if (!row.on) return false;
+    if (row.source === "phone" && row.connected === false) return false;
+    return true;
+  });
 }
 
 function channelTitle(row) {
@@ -682,14 +686,17 @@ function renderChannels(count) {
 
 function deskChannelIndex(desk) {
   const rows = state.channels || [];
-  if (desk && desk.connectionId) {
-    const found = rows.findIndex((row) => row && row.source === "phone" && row.connectionId === desk.connectionId);
-    if (found >= 0) return found;
-  }
-  if (desk && desk.phoneId) {
-    const byPhone = rows.findIndex((row) => row && row.source === "phone" && row.phoneId === desk.phoneId);
-    if (byPhone >= 0) return byPhone;
-  }
+  const hits = [];
+  rows.forEach((row, index) => {
+    if (!row || row.source !== "phone" || !desk) return;
+    const sameSlot = !!(desk.connectionId && row.connectionId === desk.connectionId);
+    const samePhone = !!(desk.phoneId && row.phoneId === desk.phoneId);
+    const sameName = !!(desk.name && row.name === desk.name);
+    if (sameSlot || samePhone || sameName) hits.push(index);
+  });
+  const live = hits.find((index) => rows[index].connected !== false);
+  if (live != null) return live;
+  if (hits.length) return hits[hits.length - 1];
   if (desk && Number.isInteger(desk.channelIndex) && desk.channelIndex >= 0) return desk.channelIndex;
   return -1;
 }

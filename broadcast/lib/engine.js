@@ -104,8 +104,53 @@ function normalizeChannelRows(list, count, fallbackSpoken) {
     const phone = phoneRow(row);
     if (phone) rows.push(phone);
   });
-  if (!rows.some((row) => row.on)) rows[0].on = true;
-  return rows;
+  const collapsed = collapsePhoneRows(rows);
+  if (!collapsed.some((row) => row.on)) collapsed[0].on = true;
+  return collapsed;
+}
+
+/** 같은 휴대폰이 다시 들어오면 칸을 하나 더 만들지 않습니다. 이름이나 칸 번호가 같으면 먼저 있던 칸을 갱신합니다. */
+function collapsePhoneRows(list) {
+  const source = Array.isArray(list) ? list : [];
+  const kept = [];
+  const byName = new Map();
+  const byConn = new Map();
+  const byId = new Map();
+  source.forEach((row) => {
+    if (!row || row.source !== "phone") {
+      kept.push(row);
+      return;
+    }
+    const name = cleanDisplayName(row.name);
+    const connectionId = cleanConnectionId(row.connectionId);
+    const phoneId = cleanPhoneId(row.phoneId);
+    let slot = -1;
+    if (connectionId && byConn.has(connectionId)) slot = byConn.get(connectionId);
+    else if (name && byName.has(name)) slot = byName.get(name);
+    else if (phoneId && byId.has(phoneId)) slot = byId.get(phoneId);
+    if (slot < 0) {
+      kept.push({ ...row, name, connectionId, phoneId });
+      slot = kept.length - 1;
+    } else {
+      const prev = kept[slot];
+      kept[slot] = {
+        ...prev,
+        name: name || prev.name,
+        phoneId: phoneId || prev.phoneId,
+        connectionId: connectionId || prev.connectionId,
+        spoken: row.spoken || prev.spoken,
+        connected: row.connected !== false || prev.connected !== false,
+        on: !!(prev.on || row.on),
+        showName: row.showName !== false,
+        source: "phone",
+      };
+    }
+    const now = kept[slot];
+    if (now.phoneId) byId.set(now.phoneId, slot);
+    if (now.connectionId) byConn.set(now.connectionId, slot);
+    if (now.name) byName.set(now.name, slot);
+  });
+  return kept;
 }
 
 class Engine {
@@ -974,6 +1019,99 @@ class Engine {
     try { this.phoneLink(row.phoneId, !!listening); } catch (_) { /* 휴대폰 상태 전달 실패는 다음 연결에서 다시 보냅니다 */ }
   }
 
+  rememberPhoneAlias(previousId, nextId) {
+    const from = cleanPhoneId(previousId);
+    const to = cleanPhoneId(nextId);
+    if (!from || !to || from === to) return;
+    if (!this.phoneAliases) this.phoneAliases = new Map();
+    for (const [key, value] of this.phoneAliases) {
+      if (value === from) this.phoneAliases.set(key, to);
+    }
+    this.phoneAliases.set(from, to);
+    if (this.phonePcmWait && this.phonePcmWait.has(from)) {
+      const queued = this.phonePcmWait.get(from);
+      this.phonePcmWait.delete(from);
+      queued.forEach((chunk) => this.queuePhonePcm(to, chunk));
+    }
+    if (this.phoneSignalTimers && this.phoneSignalTimers.has(from)) {
+      const timer = this.phoneSignalTimers.get(from);
+      this.phoneSignalTimers.delete(from);
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  resolvePhoneId(phoneId) {
+    const cleaned = cleanPhoneId(phoneId);
+    let id = cleaned || String(phoneId || "");
+    if (!this.phoneAliases) return id;
+    const seen = new Set();
+    while (this.phoneAliases.has(id) && !seen.has(id)) {
+      seen.add(id);
+      id = this.phoneAliases.get(id);
+    }
+    return id;
+  }
+
+  shiftIndexMap(map, removed) {
+    if (!map) return map;
+    const next = new Map();
+    for (const [key, value] of map) {
+      if (key === removed) continue;
+      const moved = key > removed ? key - 1 : key;
+      if (value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "index")) value.index = moved;
+      next.set(moved, value);
+    }
+    return next;
+  }
+
+  shiftIndexSet(set, removed) {
+    const next = new Set();
+    if (!set) return next;
+    for (const key of set) {
+      if (key === removed) continue;
+      next.add(key > removed ? key - 1 : key);
+    }
+    return next;
+  }
+
+  removeChannelAt(index) {
+    const session = this.channelSessions && this.channelSessions.get(index);
+    if (this.channelSessions) this.channelSessions.delete(index);
+    if (session) {
+      if (session.speech && session.speech.stop) session.speech.stop().catch(() => {});
+      if (session.pipeline && session.pipeline.stop) session.pipeline.stop().catch(() => {});
+      if (this.speech === session.speech) {
+        const following = this.channelSessions.values().next().value || null;
+        this.speech = following ? following.speech : null;
+        this.pipeline = following ? following.pipeline : null;
+      }
+    }
+    this.channelRows.splice(index, 1);
+    this.channelSessions = this.shiftIndexMap(this.channelSessions, index);
+    this.paidChannels = this.shiftIndexSet(this.paidChannels, index);
+    if (this.phoneOpenTasks) this.phoneOpenTasks = this.shiftIndexMap(this.phoneOpenTasks, index);
+  }
+
+  /** 같은 이름이나 같은 칸으로 이미 있는 휴대폰은 지워서, 요금과 듣는 목록에 한 번만 남깁니다. */
+  foldDuplicatePhones(keep) {
+    const row = this.channelRows && this.channelRows[keep];
+    if (!row || row.source !== "phone") return keep;
+    const drop = [];
+    this.channelRows.forEach((other, index) => {
+      if (index === keep || !other || other.source !== "phone") return;
+      const sameName = !!(other.name && row.name && other.name === row.name);
+      const sameConn = !!(row.connectionId && other.connectionId === row.connectionId);
+      const sameId = !!(row.phoneId && other.phoneId === row.phoneId);
+      if (sameName || sameConn || sameId) drop.push(index);
+    });
+    drop.sort((a, b) => b - a).forEach((index) => {
+      const other = this.channelRows[index];
+      if (other && other.phoneId && other.phoneId !== row.phoneId) this.rememberPhoneAlias(other.phoneId, row.phoneId);
+      this.removeChannelAt(index);
+    });
+    return this.channelRows.findIndex((item) => item === row);
+  }
+
   addPhone(phone) {
     const name = cleanDisplayName(phone && phone.name);
     const phoneId = cleanPhoneId(phone && phone.id);
@@ -983,11 +1121,18 @@ class Engine {
     if (!langByCode[spoken]) throw new Error("말하는 언어를 선택해 주세요.");
     if (!this.channelRows) this.channelRows = [];
     this.ensureDeviceSlots();
-    let index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
-    if (index < 0 && connectionId) {
+    let index = -1;
+    if (connectionId) {
       index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.connectionId === connectionId);
     }
+    if (index < 0 && name) {
+      index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.name === name);
+    }
+    if (index < 0 && phoneId) {
+      index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    }
     const samePerson = index >= 0 && this.channelRows[index].phoneId === phoneId;
+    const previousId = index >= 0 ? this.channelRows[index].phoneId : "";
     if (index < 0) {
       const phoneCount = this.channelRows.filter((row) => row && row.source === "phone").length;
       if (phoneCount >= 8) throw new Error("휴대폰 입력은 8개까지입니다.");
@@ -1008,6 +1153,7 @@ class Engine {
       this.channelRows[index].phoneId = phoneId;
       this.channelRows[index].connectionId = connectionId || this.channelRows[index].connectionId || "";
       this.channelRows[index].connected = true;
+      if (previousId && previousId !== phoneId) this.rememberPhoneAlias(previousId, phoneId);
       if (!samePerson) {
         this.channelRows[index].spoken = spoken;
         const switching = this.channelSessions && this.channelSessions.get(index);
@@ -1019,13 +1165,15 @@ class Engine {
         if (session.pipeline) session.pipeline.speaker = name;
       }
     }
+    const kept = this.foldDuplicatePhones(index);
+    if (kept >= 0) index = kept;
     const row = this.channelRows[index];
     const listening = !!(this.running && row.on && this.channelSessions && this.channelSessions.has(index));
     this.notifyPhone(index, listening);
     this.emitPhones();
     const langName = langByCode[row.spoken] ? langByCode[row.spoken].name : row.spoken;
     this.emit({ type: "log", level: "info", text: `${name} 휴대폰이 ${langName}로 연결되었습니다.` });
-    return { index, name, phoneId, spoken: row.spoken, on: !!row.on, listening };
+    return { index, name, phoneId: row.phoneId, spoken: row.spoken, on: !!row.on, listening };
   }
 
   /** 연결 표시만 하지 않고, 방송 중이면 휴대폰 마이크를 통역 입력으로 연다. */
@@ -1058,8 +1206,11 @@ class Engine {
   }
 
   markPhoneAway(phoneId) {
-    const index = (this.channelRows || []).findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    const cleaned = cleanPhoneId(phoneId) || String(phoneId || "");
+    if (this.resolvePhoneId(cleaned) !== cleaned) return;
+    const index = (this.channelRows || []).findIndex((row) => row && row.source === "phone" && row.phoneId === cleaned);
     if (index < 0) return;
+    this.channelRows[index].on = false;
     this.channelRows[index].connected = false;
     this.channelRows[index].signal = false;
     if (this.phonePcmWait) this.phonePcmWait.delete(phoneId);
@@ -1119,8 +1270,19 @@ class Engine {
 
   pushPhonePcm(phoneId, pcm) {
     if (!pcm || !this.channelRows) return;
-    const index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    const resolved = this.resolvePhoneId(phoneId);
+    let index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === resolved);
+    if (index < 0) {
+      const phones = [];
+      this.channelRows.forEach((row, rowIndex) => {
+        if (row && row.source === "phone" && row.phoneId && row.connected !== false) phones.push(rowIndex);
+      });
+      if (phones.length === 1) index = phones[0];
+    }
     if (index < 0) return;
+    const row = this.channelRows[index];
+    if (resolved !== row.phoneId) this.rememberPhoneAlias(phoneId, row.phoneId);
+    const feedId = row.phoneId;
     let peak = 0;
     for (let i = 0; i + 1 < pcm.length; i += 2) {
       const value = Math.abs(pcm.readInt16LE(i));
@@ -1129,13 +1291,13 @@ class Engine {
     const level = peak / 32768;
     this.notePhoneSignal(index, level);
     const session = this.channelSessions && this.channelSessions.get(index);
-    if (!session || session.source !== "phone" || !session.speech) {
-      this.queuePhonePcm(phoneId, pcm);
+    if (!session || session.source !== "phone" || !session.speech || typeof session.speech.push !== "function") {
+      this.queuePhonePcm(feedId, pcm);
       this.emit({ type: "level", channel: index, peak: level });
       this.wakePhoneRecognizer(index);
       return;
     }
-    this.flushPhonePcm(phoneId);
+    this.flushPhonePcm(feedId);
     session.speech.push(pcm);
     const now = Date.now();
     if (session.lastLevelAt && now - session.lastLevelAt < 80) return;
@@ -1312,7 +1474,11 @@ class Engine {
     const keptPhones = (this.channelRows || []).filter((row) => row && row.source === "phone" && row.connected !== false && row.name && row.phoneId);
     this.channelRows = normalizeChannelRows(opts.channels, channelCount, opts.spoken);
     keptPhones.forEach((phone) => {
-      const found = this.channelRows.find((row) => row && row.source === "phone" && (row.phoneId === phone.phoneId || (phone.connectionId && row.connectionId === phone.connectionId)));
+      const found = this.channelRows.find((row) => row && row.source === "phone" && (
+        row.phoneId === phone.phoneId
+        || (phone.connectionId && row.connectionId === phone.connectionId)
+        || (phone.name && row.name === phone.name)
+      ));
       if (!found) {
         this.channelRows.push({ ...phone, on: true });
         return;
@@ -1323,6 +1489,7 @@ class Engine {
       found.connectionId = phone.connectionId || found.connectionId;
       found.connected = phone.connected !== false;
     });
+    this.channelRows = collapsePhoneRows(this.channelRows);
     this.channelRows.forEach((row) => {
       if (row && row.source === "phone" && row.connected !== false && row.name) row.on = true;
     });
@@ -1647,4 +1814,4 @@ class Engine {
   }
 }
 
-module.exports = { Engine, cleanTargets, normalizeChannelRows, targetsForChannel, channelRecognition };
+module.exports = { Engine, cleanTargets, normalizeChannelRows, collapsePhoneRows, targetsForChannel, channelRecognition };
