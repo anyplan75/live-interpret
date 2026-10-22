@@ -92,12 +92,23 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.ok(phoneCard.indexOf('id="phoneGlance"') < phoneCard.indexOf("<details"));
   assert.doesNotMatch(phoneCard, /<details class="card fold"/);
   const desks = renderer.slice(renderer.indexOf("function renderPhoneDesks"), renderer.indexOf("function showPhoneJoin"));
-  const mount = desks.slice(desks.indexOf("wrap.append(title)"));
-  assert.ok(mount.indexOf("appendPhoneLive(wrap") < mount.indexOf("wrap.append(spokenLabel, nameBox, qr, qrHint)"));
-  assert.ok(mount.indexOf("wrap.append(spokenLabel, nameBox, qr, qrHint)") < mount.indexOf('appendSpeechStyle(wrap, { ...view, source: "phone" }'));
-  assert.match(desks, /appendPhoneNameEditor\(nameBox/);
+  const mountOrder = [
+    "appendPhoneLive(wrap",
+    "appendSpokenControl(wrap",
+    "appendPhoneNameSwitch(wrap",
+    "wrap.append(qr, qrHint)",
+    "appendPhoneNameEditor(wrap",
+    'appendSpeechStyle(wrap, { ...view, source: "phone" }',
+  ];
+  let cursor = -1;
+  mountOrder.forEach((piece) => {
+    const found = desks.indexOf(piece, cursor + 1);
+    assert.ok(found > cursor, piece);
+    cursor = found;
+  });
+  assert.match(desks, /appendPhoneNameEditor\(wrap/);
   assert.match(desks, /phone-qr/);
-  assert.match(desks, /말하는 언어/);
+  assert.match(desks, /말하는 언어|appendSpokenControl/);
   assert.match(desks, /spoken-full/);
   const channels = renderer.slice(renderer.indexOf("function renderChannels"), renderer.indexOf("function deskChannelIndex"));
   assert.match(channels, /if \(row && row\.source === "phone"\) return/);
@@ -107,7 +118,13 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(channels, /appendSpeechStyle/);
   assert.match(channels, /spoken-full/);
   assert.match(channels, /말하는 언어/);
-  assert.match(read("broadcast/renderer/styles.css"), /select\.spoken-full \{\s*display: block;\s*width: 100%;/);
+  const css = read("broadcast/renderer/styles.css");
+  assert.match(css, /select\.spoken-full \{\s*display: block;\s*width: 100%;/);
+  assert.match(css, /\.spoken-face \{[^}]*width: 100%;/);
+  assert.match(css, /details\.fold\.card:not\(\[open\]\) > :not\(summary\)/);
+  assert.match(renderer, /spoken-face/);
+  assert.match(renderer, /function paintSpokenFace/);
+  assert.match(renderer.slice(renderer.indexOf("function appendSpokenControl"), renderer.indexOf("function appendCaptionNameSwitch")), /spokenTitle/);
   assert.doesNotMatch(renderer.slice(renderer.indexOf("function appendPhoneNameEditor"), renderer.indexOf("function applyPhoneDisplay")), /if \(!phoneJoined\(view\)\) return/);
   const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
   assert.match(header, /class="header-status"[\s\S]*id="prepaidTime"[\s\S]*id="status"/);

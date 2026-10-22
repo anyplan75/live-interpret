@@ -20,6 +20,7 @@ const preacherLib = require("./preacher");
 const { listInputDevices, InputCapture } = require("./audio");
 const { channelPeaks, resampleInt16, extractChannel } = require("./audio-util");
 const { SpeechSession } = require("./stt");
+const { METER_PEAK } = require("./vad");
 const { Pipeline } = require("./pipeline");
 const { UsageMeter } = require("./usage");
 const cost = require("./cost");
@@ -1089,7 +1090,7 @@ class Engine {
   notePhoneSignal(index, peak) {
     const row = this.channelRows && this.channelRows[index];
     if (!row || row.source !== "phone") return;
-    if (!(peak >= 0.02)) return;
+    if (!(peak >= METER_PEAK)) return;
     const phoneId = row.phoneId || String(index);
     if (!this.phoneSignalTimers) this.phoneSignalTimers = new Map();
     const previous = this.phoneSignalTimers.get(phoneId);
@@ -1145,12 +1146,21 @@ class Engine {
     if (!this.running || !this.channelRows) return;
     const row = this.channelRows[index];
     if (!row || row.source !== "phone" || !row.phoneId) return;
-    if (this.channelSessions && this.channelSessions.has(index)) return;
+    const session = this.channelSessions && this.channelSessions.get(index);
+    if (session && session.source === "phone" && session.speech && typeof session.speech.push === "function") {
+      this.flushPhonePcm(row.phoneId);
+      return;
+    }
+    if (session && this.channelSessions) this.channelSessions.delete(index);
     if (!this.phoneOpenTasks) this.phoneOpenTasks = new Map();
-    if (this.phoneOpenTasks.has(index)) return;
+    const flushLater = () => { if (row.phoneId) this.flushPhonePcm(row.phoneId); };
+    if (this.phoneOpenTasks.has(index)) {
+      Promise.resolve(this.phoneOpenTasks.get(index)).then(flushLater).catch(() => {});
+      return;
+    }
     const churchId = this.church && this.church.id ? this.church.id : "";
     const task = this.setChannelOn(churchId, index, true)
-      .then(() => { if (row.phoneId) this.flushPhonePcm(row.phoneId); })
+      .then(flushLater)
       .catch(() => {})
       .finally(() => {
         if (this.phoneOpenTasks && this.phoneOpenTasks.get(index) === task) this.phoneOpenTasks.delete(index);

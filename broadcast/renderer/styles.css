@@ -182,6 +182,53 @@ select.spoken-full {
   max-width: 100%;
   box-sizing: border-box;
 }
+.spoken-kicker {
+  display: block;
+  font-weight: 800;
+}
+.spoken-slot {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 6px;
+}
+.spoken-face {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 12px 40px 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0d1218;
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.spoken-face::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -6px;
+  border-right: 2px solid var(--text);
+  border-bottom: 2px solid var(--text);
+  transform: rotate(45deg);
+}
+.spoken-slot select.spoken-full {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0.02;
+  cursor: pointer;
+}
 select.spoken-full {
   min-height: 48px;
   margin-top: 6px;
@@ -246,6 +293,8 @@ details.fold-inner > summary {
 }
 details.fold.card > summary::-webkit-details-marker,
 details.fold-inner > summary::-webkit-details-marker { display: none; }
+details.fold.card:not([open]) > :not(summary),
+details.fold-inner:not([open]) > :not(summary) { display: none; }
 details.fold.card > summary { color: var(--gold); font-weight: 800; }
 .fold-title { flex: 0 0 auto; font-weight: 800; }
 .fold-value { flex: 1; color: var(--text); font-weight: 650; text-align: right; }
@@ -286,8 +335,8 @@ details.fold-inner[open] > summary { margin-bottom: 8px; }
 .phone-live .meter { height: 18px; }
 
 .phone-qr {
-  width: 220px;
-  height: 220px;
+  width: 168px;
+  height: 168px;
   margin: 8px 0;
   padding: 8px;
   background: #fff;

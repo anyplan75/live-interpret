@@ -537,6 +537,31 @@ test("a phone that looks connected also feeds the translator", async () => {
   assert.equal(heard.length, 1);
   assert.equal(heard[0].readInt16LE(0), 4);
 
+  const stuck = new Engine(() => {});
+  stuck.running = true;
+  stuck.church = { id: "grace-ab", accountUid: "user" };
+  stuck.channelRows = [
+    { spoken: "ko", on: true, source: "device" },
+    { spoken: "ko", on: true, source: "phone", name: "홍길동", phoneId: "phone0001", connectionId: "AB234K", connected: true, showName: true },
+  ];
+  stuck.channelSessions = new Map([[1, { source: "phone", speech: null }]]);
+  stuck.sessionCharge = { charged: 15000, balance: 40000 };
+  stuck.outputs = ["en"];
+  stuck.paidChannels = new Set([1]);
+  stuck.syncSettings = async () => {};
+  const rescued = [];
+  stuck.openChannel = async (index) => {
+    stuck.channelSessions.set(index, {
+      source: "phone",
+      name: "홍길동",
+      speech: { push(buf) { rescued.push(Buffer.from(buf)); } },
+    });
+  };
+  stuck.pushPhonePcm("phone0001", Buffer.from([6, 0, 7, 0]));
+  for (let i = 0; i < 8 && !rescued.length; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rescued.length, 1);
+  assert.equal(rescued[0].readInt16LE(0), 6);
+
   const mac = new Engine(() => {});
   const macFed = [];
   mac.channelSessions = new Map([

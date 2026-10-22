@@ -1,5 +1,8 @@
 const { rmsInt16, peakInt16 } = require("./audio-util");
 
+/** 소리 막대가 움직이기 시작하는 봉우리. 평균이 낮아도 이 높이면 말로 봅니다. */
+const METER_PEAK = 0.02;
+
 function concat(chunks) {
   if (!chunks.length) return Buffer.alloc(0);
   if (chunks.length === 1) return Buffer.from(chunks[0]);
@@ -42,7 +45,7 @@ class UtteranceVad {
     const buffer = Buffer.from(pcm);
     const samples = buffer.length >> 1;
     if (!samples) return { speaking: this.collecting, append: null, finished: false, utterance: null };
-    const loud = rmsInt16(buffer) >= this.threshold || peakInt16(buffer) >= Math.min(0.2, this.threshold * 3);
+    const loud = rmsInt16(buffer) >= this.threshold || peakInt16(buffer) >= METER_PEAK;
 
     if (!this.collecting) {
       if (!loud) {
@@ -110,4 +113,4 @@ class UtteranceVad {
   }
 }
 
-module.exports = { UtteranceVad };
+module.exports = { UtteranceVad, METER_PEAK };

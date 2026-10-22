@@ -152,6 +152,7 @@ function renderSpoken(code) {
     spokenEl.append(option);
   });
   spokenEl.value = state.spoken;
+  paintSpokenFace(spokenEl);
   renderHeardTitle();
 }
 
@@ -332,6 +333,23 @@ function fillSpokenSelect(select, code) {
     select.append(option);
   });
   select.value = knownSpoken(code);
+  paintSpokenFace(select);
+}
+
+function paintSpokenFace(select) {
+  if (!select || !select.closest) return;
+  const slot = select.closest(".spoken-slot");
+  const face = slot && slot.querySelector(".spoken-face");
+  if (face) face.textContent = spokenTitle(select.value || "ko");
+}
+
+function placePhoneCardBeforeInput() {
+  const phone = document.getElementById("phoneJoinCard");
+  const input = document.getElementById("inputCard");
+  if (!phone || !input || !phone.parentNode) return;
+  if (phone.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_PRECEDING) {
+    phone.parentNode.insertBefore(phone, input);
+  }
 }
 
 function deviceChannelCount() {
@@ -458,8 +476,18 @@ function phoneGlanceText() {
 function appendSpokenControl(parent, select) {
   const label = document.createElement("label");
   label.className = "spoken-label";
+  const kicker = document.createElement("span");
+  kicker.className = "spoken-kicker";
+  kicker.textContent = "말하는 언어";
+  const slot = document.createElement("span");
+  slot.className = "spoken-slot";
+  const face = document.createElement("span");
+  face.className = "spoken-face";
+  face.textContent = spokenTitle(select.value || "ko");
   select.classList.add("spoken-full");
-  label.append(document.createTextNode("말하는 언어"), select);
+  select.addEventListener("change", () => paintSpokenFace(select));
+  slot.append(face, select);
+  label.append(kicker, slot);
   parent.append(label);
 }
 
@@ -684,6 +712,7 @@ function renderPhoneLevels() {
 }
 
 function renderPhoneDesks() {
+  placePhoneCardBeforeInput();
   const root = document.getElementById("phoneDesks");
   renderPhoneLevels();
   if (!root) return;
@@ -745,14 +774,12 @@ function renderPhoneDesks() {
       desk.spoken = chosen;
       paintGlances();
     });
-    const spokenLabel = document.createElement("label");
-    spokenLabel.className = "spoken-label";
-    spokenLabel.append(document.createTextNode("말하는 언어"), select);
-    const nameBox = document.createElement("div");
-    appendPhoneNameEditor(nameBox, index + 1, view);
     wrap.append(title);
     appendPhoneLive(wrap, index + 1, view);
-    wrap.append(spokenLabel, nameBox, qr, qrHint);
+    appendSpokenControl(wrap, select);
+    appendPhoneNameSwitch(wrap, index + 1, view);
+    wrap.append(qr, qrHint);
+    appendPhoneNameEditor(wrap, index + 1, view);
     appendSpeechStyle(wrap, { ...view, source: "phone" }, index);
     root.append(wrap);
   });
@@ -1341,6 +1368,7 @@ async function loadChurch() {
 }
 
 async function boot() {
+  placePhoneCardBeforeInput();
   state.catalog = await window.broadcast.catalog();
   state.settings = await window.broadcast.getSettings();
   sensitivityEl.value = state.settings.sensitivity || "normal";
@@ -1610,6 +1638,30 @@ function channelPrefix(index, text, name) {
   return speakerCaption(`채널 ${index + 1}`, value);
 }
 
+function appendPhoneNameSwitch(parent, slot, view) {
+  const joined = phoneJoined(view);
+  const draft = !joined && view.connectionId ? pendingPhoneDisplay.get(view.connectionId) : null;
+  const checkLabel = document.createElement("label");
+  checkLabel.className = "check name-switch";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.dataset.phoneEdit = "show";
+  box.dataset.connectionId = view.connectionId || "";
+  box.checked = draft && draft.showName != null ? draft.showName !== false : view.showName !== false;
+  box.setAttribute("aria-label", `휴대폰 ${slot} 이름을 자막에 표시`);
+  box.addEventListener("change", () => {
+    if (!view.connectionId) return;
+    if (!phoneJoined(view)) {
+      const prev = pendingPhoneDisplay.get(view.connectionId) || {};
+      pendingPhoneDisplay.set(view.connectionId, { ...prev, showName: box.checked });
+      return;
+    }
+    applyPhoneDisplay(view.connectionId, { showName: box.checked });
+  });
+  checkLabel.append(box, document.createTextNode(" 이 이름을 자막에 표시"));
+  parent.append(checkLabel);
+}
+
 function appendPhoneNameEditor(parent, slot, view) {
   const joined = phoneJoined(view);
   const draft = !joined && view.connectionId ? pendingPhoneDisplay.get(view.connectionId) : null;
@@ -1632,24 +1684,7 @@ function appendPhoneNameEditor(parent, slot, view) {
     }
     applyPhoneDisplay(view.connectionId, { name: input.value });
   });
-  const checkLabel = document.createElement("label");
-  checkLabel.className = "check name-switch";
-  const box = document.createElement("input");
-  box.type = "checkbox";
-  box.dataset.phoneEdit = "show";
-  box.dataset.connectionId = view.connectionId || "";
-  box.checked = draft && draft.showName != null ? draft.showName !== false : view.showName !== false;
-  box.addEventListener("change", () => {
-    if (!view.connectionId) return;
-    if (!phoneJoined(view)) {
-      const prev = pendingPhoneDisplay.get(view.connectionId) || {};
-      pendingPhoneDisplay.set(view.connectionId, { ...prev, showName: box.checked });
-      return;
-    }
-    applyPhoneDisplay(view.connectionId, { showName: box.checked });
-  });
-  checkLabel.append(box, document.createTextNode(" 이 이름을 자막에 표시"));
-  parent.append(nameLabel, input, checkLabel);
+  parent.append(nameLabel, input);
 }
 
 async function applyPhoneDisplay(connectionId, patch) {
