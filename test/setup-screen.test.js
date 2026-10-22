@@ -32,6 +32,14 @@ test("incomplete setup lists every missing choice at once", () => {
     targets: [],
     deviceKey: "core:0",
   }), ["저장 폴더", "내용", "번역할 언어"]);
+  assert.deepEqual(missingSetup({
+    folder: "/tmp/talks",
+    folderReady: false,
+    preacherId: "kim",
+    sessionKind: "강의",
+    targets: ["en"],
+    deviceKey: "core:0",
+  }), ["저장 폴더"]);
 });
 
 test("the top of the app is settings, start, and stop, and start opens settings until setup is done", () => {
@@ -75,7 +83,25 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(gapBranch, /openSettings/);
   assert.match(gapBranch, /return/);
   assert.doesNotMatch(gapBranch, /시작 실패/);
+  assert.match(html, /id="closeSettings"/);
+  assert.match(renderer, /준비완료/);
+  assert.match(renderer, /folderReady/);
+  assert.match(renderer, /setupClosed/);
+  const closeFn = renderer.slice(renderer.indexOf("function closeSettings"), renderer.indexOf("function paintFolderHint"));
+  assert.match(closeFn, /missingSetup/);
+  assert.match(closeFn, /return/);
+  assert.match(closeFn, /setupClosed:\s*true/);
+  const bootFn = renderer.slice(renderer.indexOf("async function boot"), renderer.indexOf("window.broadcast.onEvent"));
+  assert.match(bootFn, /!\(state\.settings && state\.settings\.setupClosed\)\) openSettings\(\)/);
+  const main = read("broadcast/main.js");
+  assert.match(main, /securityScopedBookmarks:\s*true/);
+  assert.match(main, /startAccessingSecurityScopedResource/);
+  assert.match(main, /delete copy\.folderBookmark/);
+  const startMain = main.slice(main.indexOf('ipcMain.handle("broadcast:start"'), main.indexOf('ipcMain.handle("broadcast:stop"'));
+  assert.ok(startMain.indexOf("openSavedFolder") < startMain.indexOf("engine.start"));
+  assert.match(startMain, /고른 폴더에 기록을 만들 수 없습니다/);
   const settingsBlock = html.slice(settingsAt, html.indexOf('id="heardTitle"'));
+  assert.doesNotMatch(settingsBlock, /id="start"|id="stop"/);
   assert.match(settingsBlock, /id="sensitivity"/);
   assert.match(settingsBlock, /id="channels"/);
   assert.match(settingsBlock, /id="pickBulletin"/);

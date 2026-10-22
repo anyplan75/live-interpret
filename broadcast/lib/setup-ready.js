@@ -12,7 +12,9 @@
   function missingSetup(input) {
     const source = input && typeof input === "object" ? input : {};
     const gaps = [];
-    if (!String(source.folder || "").trim()) gaps.push("저장 폴더");
+    const folder = String(source.folder || "").trim();
+    const folderChecked = Object.prototype.hasOwnProperty.call(source, "folderReady");
+    if (!folder || (folderChecked && source.folderReady !== true)) gaps.push("저장 폴더");
     if (!String(source.preacherId || "").trim()) gaps.push("강연자");
     if (!SESSION_KINDS.includes(String(source.sessionKind || ""))) gaps.push("내용");
     const targets = Array.isArray(source.targets) ? source.targets.filter(Boolean) : [];

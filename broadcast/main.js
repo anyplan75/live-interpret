@@ -11,6 +11,7 @@ const bulletinLib = require("./lib/bulletin");
 const consent = require("./lib/consent");
 const updater = require("./lib/updater");
 const { PhoneJoin } = require("./lib/phone-join");
+const { useFolder, releaseFolder } = require("./lib/folder-access");
 
 app.setName("live-interpret");
 app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
@@ -134,13 +135,39 @@ function readSettings() {
   }
 }
 
-function writeSettings(next) {
-  const merged = { ...readSettings(), ...(next || {}) };
+function writeSettings(next, options) {
+  const internal = !!(options && options.internal);
+  const patch = { ...(next || {}) };
+  delete patch.apiKey;
+  delete patch.model;
+  delete patch.folderReady;
+  if (!internal) delete patch.folderBookmark;
+  const merged = { ...readSettings(), ...patch };
   delete merged.apiKey;
   delete merged.model;
   fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
   fs.writeFileSync(settingsFile(), JSON.stringify(merged, null, 2));
   return merged;
+}
+
+function openSavedFolder(saved) {
+  return useFolder({
+    folder: saved && saved.folder,
+    bookmark: saved && saved.folderBookmark,
+    mas: process.mas === true,
+    startAccess(bookmark) {
+      return app.startAccessingSecurityScopedResource(bookmark);
+    },
+  });
+}
+
+function presentSettings(saved) {
+  const source = saved && typeof saved === "object" ? saved : {};
+  const copy = { ...source };
+  delete copy.folderBookmark;
+  delete copy.apiKey;
+  copy.folderReady = openSavedFolder(source);
+  return copy;
 }
 
 function readLocalPrepaid(churchId) {
@@ -229,9 +256,9 @@ function registerIpc() {
     }
     if (!saved.sensitivity) saved.sensitivity = "normal";
     saved.spoken = catalog.spokenLanguage(saved.spoken);
-    return saved;
+    return presentSettings(saved);
   });
-  ipcMain.handle("settings:set", (_event, patch) => writeSettings(patch || {}));
+  ipcMain.handle("settings:set", (_event, patch) => presentSettings(writeSettings(patch || {})));
   ipcMain.handle("catalog", () => ({
     languages: catalog.languages.map((lang) => ({
       code: lang.code,
@@ -471,9 +498,18 @@ function registerIpc() {
     const result = await dialog.showOpenDialog(win, {
       title: "텍스트를 저장할 폴더",
       properties: ["openDirectory", "createDirectory"],
+      securityScopedBookmarks: true,
     });
     if (result.canceled || !result.filePaths[0]) return "";
-    return result.filePaths[0];
+    const folder = result.filePaths[0];
+    const bookmark = Array.isArray(result.bookmarks) ? String(result.bookmarks[0] || "") : "";
+    if (process.mas === true && !bookmark) return "";
+    writeSettings({ folder, folderBookmark: bookmark }, { internal: true });
+    if (!openSavedFolder(readSettings())) {
+      writeSettings({ folder: "", folderBookmark: "" }, { internal: true });
+      return "";
+    }
+    return folder;
   });
   ipcMain.handle("audio:monitor", (_event, deviceKey, channel) => engine.monitor(deviceKey, channel));
   ipcMain.handle("audio:channel", (_event, index) => engine.setChannel(index));
@@ -504,10 +540,15 @@ function registerIpc() {
   });
   ipcMain.handle("broadcast:start", async (_event, opts) => {
     const church = await requireChurch();
+    const saved = readSettings();
+    if (!openSavedFolder(saved)) {
+      throw new Error("저장 폴더를 다시 선택해 주세요. 고른 폴더에 기록을 만들 수 없습니다.");
+    }
     const staged = stageSummary(church.id);
     const requested = opts && opts.preacherId;
     const started = await engine.start({
       ...(opts || {}),
+      folder: saved.folder,
       apiKey: await cachePlatformKey(),
       churchId: church.id,
       preacherId: requested,
@@ -660,16 +701,21 @@ if (!gotLock) {
 
   app.on("before-quit", (event) => {
     closePhones();
-    if (quitting || !engine) return;
+    if (quitting || !engine) {
+      releaseFolder();
+      return;
+    }
     if (engine.running) {
       event.preventDefault();
       engine.stop().finally(() => {
         engine.capture.stop();
+        releaseFolder();
         quitting = true;
         app.quit();
       });
       return;
     }
     engine.capture.stop();
+    releaseFolder();
   });
 }

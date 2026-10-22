@@ -962,7 +962,15 @@ class Engine {
     let selected = preachers.find((item) => item.id === opts.preacherId) || null;
     if (!selected) throw new Error("이 교회에 등록된 강연자를 선택해 주세요.");
 
-    this.writer = createSessionWriter(opts.folder, church.name, opts.now || new Date());
+    try {
+      this.writer = createSessionWriter(opts.folder, church.name, opts.now || new Date());
+    } catch (err) {
+      const code = err && err.code;
+      if (code === "EPERM" || code === "EACCES") {
+        throw new Error("저장 폴더에 기록을 만들지 못했습니다. 설정에서 폴더를 다시 선택해 주세요.");
+      }
+      throw err;
+    }
     this.sessionDir = this.writer.dir;
     this.folderName = this.writer.folderName;
     this.church = church;

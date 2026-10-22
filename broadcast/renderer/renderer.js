@@ -146,6 +146,7 @@ function sessionKindValue() {
 function currentSetup() {
   return {
     folder: (state.settings && state.settings.folder) || "",
+    folderReady: !!(state.settings && state.settings.folderReady),
     preacherId: selectedPreacherId(),
     sessionKind: sessionKindValue(),
     targets: selectedTargets(),
@@ -160,14 +161,26 @@ function openSettings() {
 }
 
 function closeSettings() {
+  if (missingSetup(currentSetup()).length) return;
   const panel = document.getElementById("settingsPanel");
   if (panel) panel.hidden = true;
+  persist({ setupClosed: true }).catch((err) => log(err.message || String(err), "error"));
+}
+
+function paintFolderHint() {
+  if (!folderHint || !state.settings) return;
+  if (state.settings.folder && state.settings.folderReady !== true) {
+    folderHint.textContent = "고른 폴더에 기록을 만들 수 없습니다. 폴더 선택을 다시 눌러 주세요.";
+    return;
+  }
+  if (state.settings.folder) folderHint.textContent = state.settings.folder;
 }
 
 function paintSetupGaps() {
   const gaps = missingSetup(currentSetup());
   const list = document.getElementById("setupGaps");
   const summary = document.getElementById("setupSummary");
+  const closeBtn = document.getElementById("closeSettings");
   if (list) {
     list.innerHTML = "";
     gaps.forEach((gap) => {
@@ -180,7 +193,12 @@ function paintSetupGaps() {
   if (summary) {
     summary.textContent = gaps.length
       ? `시작 전에 맞춰 주세요: ${gaps.join(", ")}`
-      : "필요한 설정을 마쳤습니다. 시작할 수 있습니다.";
+      : "저장 폴더에 기록을 만들 수 있습니다. 시작할 수 있습니다.";
+  }
+  if (closeBtn) closeBtn.textContent = gaps.length ? "닫기" : "준비완료";
+  if (gaps.length) {
+    const panel = document.getElementById("settingsPanel");
+    if (panel) panel.hidden = false;
   }
 }
 
@@ -882,7 +900,7 @@ async function boot() {
   sensitivityEl.value = state.settings.sensitivity || "normal";
   const kind = document.getElementById("sessionKind");
   if (kind && state.settings.sessionKind) kind.value = state.settings.sessionKind;
-  if (state.settings.folder) folderHint.textContent = state.settings.folder;
+  paintFolderHint();
   renderSpoken(state.settings.spoken);
   await renderLangs(state.settings.targets || state.catalog.defaultTargets);
   const auth = await window.broadcast.authStatus();
@@ -901,6 +919,7 @@ async function boot() {
     catch (err) { log(err.message || String(err), "error"); }
   }
   paintSetupGaps();
+  if (!(state.settings && state.settings.setupClosed)) openSettings();
   window.broadcast.onEvent((event) => {
     if (event.type === "levels") applyLevels(event.peaks || []);
     if (event.type === "level") paintLevel(event.channel, event.peak || 0);
@@ -1115,9 +1134,9 @@ document.getElementById("pickAll").addEventListener("click", () => {
 document.getElementById("pickNone").addEventListener("click", () => renderLangs([]));
 document.getElementById("pickFolder").addEventListener("click", async () => {
   const folder = await window.broadcast.pickFolder();
-  if (!folder) return;
-  folderHint.textContent = folder;
-  await persist({ folder });
+  state.settings = await window.broadcast.getSettings();
+  if (folder && state.settings) state.settings.folder = folder;
+  paintFolderHint();
   paintSetupGaps();
 });
 async function beginBroadcast() {
@@ -1165,6 +1184,9 @@ document.getElementById("start").addEventListener("click", async () => {
     paintConfirm(preview);
     document.getElementById("startConfirm").hidden = false;
   } catch (err) {
+    try { state.settings = await window.broadcast.getSettings(); } catch (_) { /* 설정 갱신 실패는 시작 오류 아래에 둡니다 */ }
+    paintFolderHint();
+    paintSetupGaps();
     log(err.message || String(err), "error");
     setStatus("시작 실패", "err");
   }
@@ -1186,6 +1208,9 @@ document.getElementById("confirmStart").addEventListener("click", async () => {
     document.getElementById("startConfirm").hidden = true;
     await beginBroadcast();
   } catch (err) {
+    try { state.settings = await window.broadcast.getSettings(); } catch (_) { /* 설정 갱신 실패는 시작 오류 아래에 둡니다 */ }
+    paintFolderHint();
+    paintSetupGaps();
     log(err.message || String(err), "error");
     setStatus("시작 실패", "err");
   }
