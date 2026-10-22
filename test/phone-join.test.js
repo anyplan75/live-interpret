@@ -146,7 +146,14 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(pageVC, /lectureSlot/);
   const scanner = read("ios/LiveInterpret/QrScannerViewController.swift");
   assert.match(scanner, /isBeingDismissed/);
-  assert.match(scanner, /videoRecording/);
+  assert.match(scanner, /AVCaptureMetadataOutput/);
+  assert.match(scanner, /keepsCurrentAudio/);
+  assert.match(pageVC, /keepsCurrentAudio = true/);
+  assert.doesNotMatch(scanner, /videoRecording/);
+  assert.doesNotMatch(scanner, /allowBluetoothHFP/);
+  assert.doesNotMatch(scanner, /VNDetectBarcodesRequest/);
+  assert.doesNotMatch(scanner, /videoRotationAngle/);
+  assert.doesNotMatch(scanner, /videoOrientation/);
   assert.ok(scanner.indexOf("commitConfiguration()") < scanner.indexOf("startRunning()"));
   assert.match(lecture, /function readSlot/);
   assert.match(lecture, /showSlot\(parsed\);\s*return true;/);

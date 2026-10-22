@@ -314,6 +314,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         guard presentedViewController == nil else { return }
         let scanner = QrScannerViewController()
         if page == .lecture {
+            scanner.keepsCurrentAudio = true
             scanner.hintText = "송출 컴퓨터에 나온 QR을 비추세요."
             scanner.accept = { FaceLink.lectureSlotURL(from: $0) }
         } else {

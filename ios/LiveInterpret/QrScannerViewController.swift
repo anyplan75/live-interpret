@@ -1,18 +1,24 @@
 import AVFoundation
 import UIKit
-import Vision
 
 /// 송출 컴퓨터나 상대 휴대폰에 나온 QR을 읽는다.
 /// 카메라는 QR을 읽거나 사람이 닫기를 누를 때까지 켜 둔다.
-final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
+/// 앱 자체는 닫지 않는다. 읽은 뒤에는 이 화면만 닫고 아래 화면으로 돌아간다.
+final class QrScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var onLink: ((URL, @escaping (Bool) -> Void) -> Void)?
     var hintText = "QR을 비추세요."
     var accept: (String) -> URL? = { FaceLink.joinURL(from: $0) }
+    /// 강연·회의는 이미 마이크용 소리 설정을 쓰고 있다. 여기서 다시 바꾸면 앱이 꺼진다.
+    var keepsCurrentAudio = false
 
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "liveinterpret.qr.session")
+    private let scanQueue = DispatchQueue(label: "liveinterpret.qr.scan")
     private let preview = AVCaptureVideoPreviewLayer()
+    private let stateLock = NSLock()
+    private var metadataOutput: AVCaptureMetadataOutput?
     private var configured = false
+    private var unavailable = false
     private var didFinish = false
     private var waitingForPage = false
 
@@ -64,7 +70,9 @@ final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputS
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        prepareCameraAudio()
+        if !keepsCurrentAudio {
+            prepareCameraAudio()
+        }
         askForCamera()
     }
 
@@ -72,22 +80,22 @@ final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputS
         super.viewWillDisappear(animated)
         // 권한 창이 잠깐 덮는 동안에는 카메라를 끄지 않는다. 이 화면이 닫힐 때만 끈다.
         guard isBeingDismissed || isMovingFromParent else { return }
-        sessionQueue.async { [session] in
-            if session.isRunning { session.stopRunning() }
+        sessionQueue.async { [weak self] in
+            self?.stopSession()
         }
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
     @objc private func close() {
-        dismiss(animated: true)
+        finishAndClose()
     }
 
-    /// 통화용 소리 설정이 켜져 있으면 카메라가 바로 멈춘다. 스캔 동안만 영상용으로 바꾼다.
+    /// 대면 통역만, 통화 모드 때문에 카메라가 바로 멈추지 않게 기본 녹음으로 되돌린다.
+    /// 영상 녹화 모드와 블루투스 통화 옵션은 쓰지 않는다. 그 조합은 앱을 꺼뜨린다.
     private func prepareCameraAudio() {
         let audio = AVAudioSession.sharedInstance()
-        try? audio.setCategory(.playAndRecord, mode: .videoRecording, options: [.defaultToSpeaker, .allowBluetoothHFP])
-        try? audio.setActive(true)
+        try? audio.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
     }
 
     private func askForCamera() {
@@ -133,6 +141,7 @@ final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputS
     }
 
     private func configureSession() {
+        if unavailable { return }
         if !configured {
             session.beginConfiguration()
             if session.canSetSessionPreset(.high) {
@@ -140,82 +149,115 @@ final class QrScannerViewController: UIViewController, AVCaptureVideoDataOutputS
             }
             let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
             let input = device.flatMap { try? AVCaptureDeviceInput(device: $0) }
+            let output = AVCaptureMetadataOutput()
             var ready = false
-            if let input, session.canAddInput(input) {
+            if let input, session.canAddInput(input), session.canAddOutput(output) {
                 session.addInput(input)
-                let output = AVCaptureVideoDataOutput()
-                output.alwaysDiscardsLateVideoFrames = true
-                output.setSampleBufferDelegate(self, queue: sessionQueue)
-                if session.canAddOutput(output) {
-                    session.addOutput(output)
-                    orient(output.connection(with: .video))
+                session.addOutput(output)
+                output.setMetadataObjectsDelegate(self, queue: scanQueue)
+                metadataOutput = output
+                if output.availableMetadataObjectTypes.contains(.qr) {
+                    output.metadataObjectTypes = [.qr]
                     ready = true
                 }
             }
             session.commitConfiguration()
+            if !ready, let output = metadataOutput, output.availableMetadataObjectTypes.contains(.qr) {
+                session.beginConfiguration()
+                output.metadataObjectTypes = [.qr]
+                session.commitConfiguration()
+                ready = true
+            }
             guard ready else {
+                unavailable = true
                 DispatchQueue.main.async { [weak self] in self?.showCameraProblem() }
                 return
             }
             configured = true
+        }
+        guard !session.isRunning else { return }
+        // 카메라 켜기와 화면 붙이기를 겹치지 않는다. 겹치면 앱이 꺼진다.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.preview.session = self.session
+            self.sessionQueue.async { [weak self] in
+                guard let self else { return }
+                if !self.session.isRunning {
+                    self.session.startRunning()
+                }
+            }
+        }
+    }
+
+    private func claimCode() -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        if didFinish || waitingForPage { return false }
+        waitingForPage = true
+        return true
+    }
+
+    private func releaseCode() {
+        stateLock.lock()
+        waitingForPage = false
+        stateLock.unlock()
+    }
+
+    private func markFinished() {
+        stateLock.lock()
+        didFinish = true
+        waitingForPage = true
+        stateLock.unlock()
+    }
+
+    /// 카메라를 끈 뒤에 이 화면만 닫는다. 앱은 아래 화면에 그대로 남는다.
+    private func finishAndClose() {
+        markFinished()
+        sessionQueue.async { [weak self] in
+            guard let self else { return }
+            self.stopSession()
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.preview.session = self.session
-                self.orient(self.preview.connection)
+                self.preview.session = nil
+                self.dismiss(animated: true)
             }
-        }
-        // 설정을 끝낸 뒤에 켠다. 설정 도중에 켜면 카메라가 바로 닫힌다.
-        guard !session.isRunning else { return }
-        session.startRunning()
-    }
-
-    /// 미리보기를 세로로 맞춘다. QR 인식 자체는 방향이 달라도 된다.
-    private func orient(_ connection: AVCaptureConnection?) {
-        guard let connection else { return }
-        if #available(iOS 17.0, *) {
-            let angle: CGFloat = 90
-            if connection.isVideoRotationAngleSupported(angle) {
-                connection.videoRotationAngle = angle
-            }
-        } else if connection.isVideoOrientationSupported {
-            connection.videoOrientation = .portrait
         }
     }
 
-    func captureOutput(
-        _ output: AVCaptureOutput,
-        didOutput sampleBuffer: CMSampleBuffer,
+    private func stopSession() {
+        metadataOutput?.setMetadataObjectsDelegate(nil, queue: nil)
+        if session.isRunning {
+            session.stopRunning()
+        }
+    }
+
+    func metadataOutput(
+        _ output: AVCaptureMetadataOutput,
+        didOutput metadataObjects: [AVMetadataObject],
         from connection: AVCaptureConnection
     ) {
-        guard !didFinish, !waitingForPage, let pixel = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let request = VNDetectBarcodesRequest()
-        request.symbologies = [.qr]
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixel, orientation: .right, options: [:])
-        try? handler.perform([request])
-        guard let codes = request.results else { return }
-        for code in codes {
-            guard let raw = code.payloadStringValue, let url = accept(raw) else { continue }
-            waitingForPage = true
-            DispatchQueue.main.async { [weak self] in
+        guard claimCode() else { return }
+        let raw = metadataObjects.compactMap { $0 as? AVMetadataMachineReadableCodeObject }
+            .first { $0.type == .qr }?
+            .stringValue
+        guard let raw, let url = accept(raw) else {
+            releaseCode()
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard let onLink = self.onLink else {
+                self.releaseCode()
+                return
+            }
+            onLink(url) { [weak self] accepted in
                 guard let self else { return }
-                guard let onLink = self.onLink else {
-                    self.waitingForPage = false
+                if accepted {
+                    self.finishAndClose()
                     return
                 }
-                onLink(url) { [weak self] accepted in
-                    guard let self else { return }
-                    if accepted {
-                        self.didFinish = true
-                        self.sessionQueue.async { [session] in
-                            if session.isRunning { session.stopRunning() }
-                        }
-                        self.dismiss(animated: true)
-                        return
-                    }
-                    self.waitingForPage = false
-                }
+                self.releaseCode()
             }
-            return
         }
     }
 }
