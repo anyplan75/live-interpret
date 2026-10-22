@@ -455,23 +455,36 @@ function phoneGlanceText() {
   return [`휴대폰 수 ${desks.length}`, ...parts].join(" · ");
 }
 
-function appendSpokenBlock(parent, summaryText, select) {
-  const details = document.createElement("details");
-  details.className = "fold-inner";
-  const summary = document.createElement("summary");
-  const title = document.createElement("span");
-  title.className = "fold-title";
-  title.textContent = "말하는 언어";
-  const value = document.createElement("span");
-  value.className = "fold-value";
-  value.textContent = summaryText;
-  summary.append(title, value);
+function appendSpokenControl(parent, select) {
   const label = document.createElement("label");
   label.className = "spoken-label";
   select.classList.add("spoken-full");
   label.append(document.createTextNode("말하는 언어"), select);
-  details.append(summary, label);
-  parent.append(details);
+  parent.append(label);
+}
+
+function appendCaptionNameSwitch(parent) {
+  const label = document.createElement("label");
+  label.className = "check name-switch";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.className = "channel-name-switch";
+  box.checked = preacherNameShown();
+  box.addEventListener("change", () => { setPreacherNameShown(box.checked); });
+  label.append(box, document.createTextNode(" 이 이름을 자막에 표시"));
+  parent.append(label);
+}
+
+async function setPreacherNameShown(on) {
+  const shown = on !== false;
+  const box = document.getElementById("showPreacherName");
+  if (box) box.checked = shown;
+  document.querySelectorAll(".channel-name-switch").forEach((el) => { el.checked = shown; });
+  paintGlances();
+  await persist({ showPreacherName: shown });
+  if (!state.running) return;
+  try { await window.broadcast.setShowPreacherName(shown); }
+  catch (err) { log(err.message || String(err), "error"); }
 }
 
 function appendSpeechStyle(parent, row, index) {
@@ -564,7 +577,8 @@ function renderChannels(count) {
     head.className = "channel-head";
     head.append(button, meter);
     wrap.append(head);
-    appendSpokenBlock(wrap, `${spokenTitle(row.spoken)} · ${nameShownText(preacherNameShown())}`, select);
+    appendSpokenControl(wrap, select);
+    appendCaptionNameSwitch(wrap);
     appendSpeechStyle(wrap, row, i);
     channelsEl.append(wrap);
   });
@@ -714,7 +728,7 @@ function renderPhoneDesks() {
     const view = deskView(desk);
     const channelIndex = deskChannelIndex(view);
     const select = document.createElement("select");
-    select.className = "channel-spoken";
+    select.className = "channel-spoken spoken-full";
     select.setAttribute("aria-label", `휴대폰 ${index + 1} 말하는 언어`);
     const pendingSpoken = desk.connectionId ? pendingPhoneSpoken.get(desk.connectionId) : "";
     const spokenCode = channelIndex >= 0 && state.channels[channelIndex]
@@ -723,34 +737,22 @@ function renderPhoneDesks() {
     fillSpokenSelect(select, spokenCode || "ko");
     select.addEventListener("change", () => {
       const chosen = knownSpoken(select.value);
-      spokenValue.textContent = `${spokenTitle(chosen)} · ${nameShownText(view.showName !== false)}`;
       if (channelIndex >= 0) {
         onChannelSpoken(channelIndex, chosen);
         return;
       }
       if (desk.connectionId) pendingPhoneSpoken.set(desk.connectionId, chosen);
       desk.spoken = chosen;
+      paintGlances();
     });
-    select.classList.add("spoken-full");
-    const spokenDetails = document.createElement("details");
-    spokenDetails.className = "fold-inner";
-    const spokenSummary = document.createElement("summary");
-    const spokenTitleEl = document.createElement("span");
-    spokenTitleEl.className = "fold-title";
-    spokenTitleEl.textContent = "말하는 언어";
-    const spokenValue = document.createElement("span");
-    spokenValue.className = "fold-value";
-    spokenValue.textContent = `${spokenTitle(spokenCode || "ko")} · ${nameShownText(view.showName !== false)}`;
-    spokenSummary.append(spokenTitleEl, spokenValue);
     const spokenLabel = document.createElement("label");
     spokenLabel.className = "spoken-label";
     spokenLabel.append(document.createTextNode("말하는 언어"), select);
     const nameBox = document.createElement("div");
     appendPhoneNameEditor(nameBox, index + 1, view);
-    spokenDetails.append(spokenSummary, spokenLabel, nameBox, qr, qrHint);
     wrap.append(title);
     appendPhoneLive(wrap, index + 1, view);
-    wrap.append(spokenDetails);
+    wrap.append(spokenLabel, nameBox, qr, qrHint);
     appendSpeechStyle(wrap, { ...view, source: "phone" }, index);
     root.append(wrap);
   });
@@ -1621,7 +1623,7 @@ function appendPhoneNameEditor(parent, slot, view) {
     applyPhoneDisplay(view.connectionId, { name: input.value });
   });
   const checkLabel = document.createElement("label");
-  checkLabel.className = "check";
+  checkLabel.className = "check name-switch";
   const box = document.createElement("input");
   box.type = "checkbox";
   box.dataset.phoneEdit = "show";
@@ -1661,13 +1663,8 @@ async function applyPhoneDisplay(connectionId, patch) {
   }
 }
 
-document.getElementById("showPreacherName").addEventListener("change", async () => {
-  const showPreacherName = document.getElementById("showPreacherName").checked;
-  paintGlances();
-  await persist({ showPreacherName });
-  if (!state.running) return;
-  try { await window.broadcast.setShowPreacherName(showPreacherName); }
-  catch (err) { log(err.message || String(err), "error"); }
+document.getElementById("showPreacherName").addEventListener("change", () => {
+  setPreacherNameShown(document.getElementById("showPreacherName").checked);
 });
 document.getElementById("openSettings").addEventListener("click", () => openSettings());
 document.getElementById("closeSettings").addEventListener("click", () => closeSettings());

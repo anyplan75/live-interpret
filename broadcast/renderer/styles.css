@@ -175,14 +175,19 @@ input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d12
   align-items: center;
 }
 
-.channel select,
-.phone-desk select.spoken-full,
 .spoken-label,
-.spoken-label select {
+select.spoken-full {
   display: block;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+}
+select.spoken-full {
+  min-height: 48px;
+  margin-top: 6px;
+  padding: 12px 36px 12px 14px;
+  font-size: 1.05rem;
+  font-weight: 800;
 }
 .spoken-label { margin-top: 8px; }
 .channel-head > button {
@@ -207,6 +212,23 @@ label.check input {
   height: 18px;
   margin-top: 2px;
   flex: 0 0 auto;
+}
+
+label.check.name-switch {
+  align-items: center;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0d1218;
+  box-sizing: border-box;
+}
+
+label.check.name-switch input {
+  width: 22px;
+  height: 22px;
+  margin-top: 0;
 }
 
 .phone-desk .spoken-label,
