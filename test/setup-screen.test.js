@@ -95,9 +95,9 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   const mountOrder = [
     "appendPhoneLive(wrap",
     "appendSpokenControl(wrap",
+    "appendPhoneNameEditor(wrap",
     "appendPhoneNameSwitch(wrap",
     "wrap.append(qr, qrHint)",
-    "appendPhoneNameEditor(wrap",
     'appendSpeechStyle(wrap, { ...view, source: "phone" }',
   ];
   let cursor = -1;
@@ -113,6 +113,8 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   const channels = renderer.slice(renderer.indexOf("function renderChannels"), renderer.indexOf("function deskChannelIndex"));
   assert.match(channels, /if \(row && row\.source === "phone"\) return/);
   assert.match(channels, /appendSpokenControl/);
+  assert.match(channels, /appendCaptionNameField/);
+  assert.ok(channels.indexOf("appendCaptionNameField") < channels.indexOf("appendCaptionNameSwitch"));
   assert.match(channels, /appendCaptionNameSwitch/);
   assert.match(renderer.slice(renderer.indexOf("function appendCaptionNameSwitch"), renderer.indexOf("function renderChannels")), /이 이름을 자막에 표시/);
   assert.match(channels, /appendSpeechStyle/);

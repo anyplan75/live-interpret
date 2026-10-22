@@ -328,6 +328,24 @@ test("a Mac rename replaces one phone name and hiding drops only that phone", ()
   assert.equal(devicePipe.speaker, "");
   assert.equal(secondPipe.speaker, "민수");
   assert.equal(firstPipe.speaker, "");
+  const phoneRows = engine.channelRows;
+  const captionRows = normalizeChannelRows([
+    { spoken: "ko", on: true, name: "", showName: true },
+    { spoken: "en", on: true, name: "통역", showName: true },
+    { spoken: "ja", on: true, name: "사회자", showName: true },
+  ], 3, "ko");
+  engine.channelRows = captionRows;
+  const third = { speaker: "" };
+  engine.channelSessions.set(2, { name: "", pipeline: third });
+  assert.equal(engine.setChannelCaption(2, { name: "사회자" }).speaker, "사회자");
+  assert.equal(third.speaker, "사회자");
+  engine.showPreacherName = true;
+  assert.equal(engine.deviceSpeaker(engine.channelRows[0], 0), "이종찬");
+  engine.setChannelCaption(2, { showName: false });
+  assert.equal(third.speaker, "");
+  assert.equal(engine.channelRows[2].name, "사회자");
+  assert.equal(devicePipe.speaker, "");
+  engine.channelRows = phoneRows;
   assert.equal(channelRecognition({ source: "phone", spoken: "ko", name: "김집사", showName: false }, ["en"]).speaker, "");
   assert.equal(channelRecognition({ source: "phone", spoken: "ko", name: "김집사" }, ["en"]).speaker, "김집사");
   assert.throws(() => engine.setPhoneDisplay("AB234K", { name: "   " }), /이름을 입력해 주세요/);

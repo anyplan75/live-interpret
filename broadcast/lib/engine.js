@@ -57,7 +57,15 @@ function channelRecognition(row, outputs, deviceName) {
 function deviceRow(row, index, fallbackSpoken) {
   const spoken = spokenLanguage(row && row.spoken ? row.spoken : (index === 0 ? fallbackSpoken : "ko"));
   const on = row && row.on != null ? !!row.on : index === 0;
-  return { spoken, on, source: "device", name: "", phoneId: "", connected: true };
+  return {
+    spoken,
+    on,
+    source: "device",
+    name: cleanDisplayName(row && row.name),
+    showName: !(row && row.showName === false),
+    phoneId: "",
+    connected: true,
+  };
 }
 
 function cleanConnectionId(value) {
@@ -941,12 +949,12 @@ class Engine {
       spoken: row.spoken || "ko",
       on: !!row.on,
       source: row.source === "phone" ? "phone" : "device",
-      name: row.source === "phone" ? (row.name || "") : "",
+      name: row.name || "",
       phoneId: row.source === "phone" ? (row.phoneId || "") : "",
       connectionId: row.source === "phone" ? (row.connectionId || "") : "",
       connected: row.source === "phone" ? row.connected !== false : true,
       signal: row.source === "phone" ? !!row.signal : false,
-      showName: row.source === "phone" ? row.showName !== false : true,
+      showName: row.showName !== false,
     }));
   }
 
@@ -1201,8 +1209,31 @@ class Engine {
 
   deviceSpeaker(row, index) {
     if (row && row.source === "phone") return "";
+    if (row && row.showName === false) return "";
+    const typed = cleanDisplayName(row && row.name);
+    if (typed) return typed;
     if (index === 0 && this.showPreacherName !== false) return this.preacherName || "";
     return "";
+  }
+
+  /** 채널 칸에 적은 이름을 그 채널 자막 앞에 붙이거나 뺍니다. */
+  setChannelCaption(index, patch) {
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0 || !this.channelRows || !this.channelRows[i]) {
+      throw new Error("채널을 찾지 못했습니다.");
+    }
+    const row = this.channelRows[i];
+    if (row.source === "phone") throw new Error("휴대폰 이름은 휴대폰 칸에서 바꿉니다.");
+    const next = patch || {};
+    if (Object.prototype.hasOwnProperty.call(next, "name")) row.name = cleanDisplayName(next.name);
+    if (Object.prototype.hasOwnProperty.call(next, "showName")) row.showName = next.showName !== false;
+    const speaker = this.deviceSpeaker(row, i);
+    const session = this.channelSessions && this.channelSessions.get(i);
+    if (session) {
+      session.name = speaker;
+      if (session.pipeline) session.pipeline.speaker = speaker;
+    }
+    return { index: i, name: row.name || "", showName: row.showName !== false, speaker };
   }
 
   setShowPreacherName(on) {

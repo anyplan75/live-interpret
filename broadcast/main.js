@@ -403,7 +403,7 @@ function registerIpc() {
     const session = await operatorGate();
     if (!catalog.isChurchId(accountId)) throw new Error("계정을 골라 주세요.");
     const amount = Math.round(Number(amountKrw) || 0);
-    if (amount <= 0) throw new Error("더할 금액을 입력해 주세요.");
+    if (amount <= 0) throw new Error("충전할 금액을 적으세요");
     const index = await firebase.get("churchIndex");
     if (!index || typeof index !== "object" || !index[accountId]) throw new Error("계정을 찾지 못했습니다.");
     const billing = (await firebase.get(`churches/${accountId}/billing`)) || {};
@@ -613,6 +613,7 @@ function registerIpc() {
   });
   ipcMain.handle("preacher:show-name", (_event, on) => engine.setShowPreacherName(on));
   ipcMain.handle("source-style:set", (_event, key, style) => engine.applySourceStyle(key, style));
+  ipcMain.handle("channel:caption", (_event, index, patch) => engine.setChannelCaption(index, patch || {}));
   ipcMain.handle("phone:display", (_event, connectionId, patch) => {
     const shown = engine.setPhoneDisplay(connectionId, patch || {});
     if (phoneJoin) phoneJoin.setDisplay(connectionId, shown);

@@ -237,6 +237,20 @@ select.spoken-full {
   font-weight: 800;
 }
 .spoken-label { margin-top: 8px; }
+label.caption-name {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  font-weight: 800;
+}
+label.caption-name input,
+.caption-name-input,
+.phone-display-name {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
 .channel-head > button {
   background: transparent;
   color: var(--text);

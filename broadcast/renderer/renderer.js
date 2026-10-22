@@ -42,10 +42,15 @@ function setStatus(text, kind) {
 
 const hearing = window.Hearing.createHearing(document, liveEl, koStackEl);
 
+function visibleError(value) {
+  const text = typeof UserText !== "undefined" && UserText.userText ? UserText.userText(value) : String(value && value.message ? value.message : value || "");
+  return text.replace(/sk-[A-Za-z0-9_-]{4,}/g, "[redacted]");
+}
+
 function log(text, level) {
   const line = document.createElement("div");
   if (level === "error") line.className = "err";
-  line.textContent = String(text || "").replace(/sk-[A-Za-z0-9_-]{4,}/g, "[redacted]");
+  line.textContent = visibleError(text);
   logEl.prepend(line);
   while (logEl.childNodes.length > 80) logEl.removeChild(logEl.lastChild);
 }
@@ -132,7 +137,15 @@ function ensureChannels(count) {
     const fallback = i === 0 && state.settings ? state.settings.spoken : "ko";
     const spoken = knownSpoken(prev.spoken || fallback);
     const on = prev.on != null ? !!prev.on : i === 0;
-    rows.push({ spoken, on, source: "device", name: "", phoneId: "", connected: true });
+    rows.push({
+      spoken,
+      on,
+      source: "device",
+      name: String(prev.name || "").trim(),
+      showName: prev.showName !== false,
+      phoneId: "",
+      connected: true,
+    });
   }
   state.channels = rows.concat(phones);
   if (rows[0]) state.spoken = rows[0].spoken;
@@ -186,7 +199,7 @@ function closeSettings() {
   if (missingSetup(currentSetup()).length) return;
   const panel = document.getElementById("settingsPanel");
   if (panel) panel.hidden = true;
-  persist({ setupClosed: true }).catch((err) => log(err.message || String(err), "error"));
+  persist({ setupClosed: true }).catch((err) => log(visibleError(err), "error"));
 }
 
 function paintFolderHint() {
@@ -282,7 +295,7 @@ async function onTargetsChanged(sync = true) {
       const applied = await window.broadcast.setTargets(state.targets, state.spoken);
       if (Array.isArray(applied)) state.targets = applied;
     } catch (err) {
-      log(err.message || String(err), "error");
+      log(visibleError(err), "error");
       state.targets = previous;
       restoreLangChecks(previous);
       langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${heardLanguageLabel()}`;
@@ -411,9 +424,9 @@ function rememberStyle(key, style) {
   if (!key) return;
   const next = cleanStyle(style);
   const all = { ...((state.settings && state.settings.sourceStyles) || {}), [key]: next };
-  persist({ sourceStyles: all, sensitivity: sensitivityEl ? sensitivityEl.value : next.sensitivity }).catch((err) => log(err.message || String(err), "error"));
+  persist({ sourceStyles: all, sensitivity: sensitivityEl ? sensitivityEl.value : next.sensitivity }).catch((err) => log(visibleError(err), "error"));
   if (state.running && window.broadcast.setSourceStyle) {
-    window.broadcast.setSourceStyle(key, next).catch((err) => log(err.message || String(err), "error"));
+    window.broadcast.setSourceStyle(key, next).catch((err) => log(visibleError(err), "error"));
   }
 }
 
@@ -491,28 +504,80 @@ function appendSpokenControl(parent, select) {
   parent.append(label);
 }
 
-function appendCaptionNameSwitch(parent) {
+function captionChecked(row, index) {
+  if (row && row.showName === false) return false;
+  if (index === 0 && !String(row && row.name || "").trim()) return preacherNameShown();
+  return !row || row.showName !== false;
+}
+
+function appendCaptionNameField(parent, index, row) {
+  const label = document.createElement("label");
+  label.className = "caption-name";
+  label.textContent = "이름";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.maxLength = 40;
+  input.className = "caption-name-input";
+  const typed = String(row && row.name || "").trim();
+  input.value = typed || (index === 0 ? preacherDisplayName() : "");
+  input.setAttribute("aria-label", `채널 ${index + 1} 이름`);
+  input.addEventListener("change", () => {
+    let next = input.value.trim();
+    if (index === 0 && next === preacherDisplayName()) next = "";
+    applyChannelCaption(index, { name: next });
+  });
+  label.append(input);
+  parent.append(label);
+}
+
+function appendCaptionNameSwitch(parent, index, row) {
   const label = document.createElement("label");
   label.className = "check name-switch";
   const box = document.createElement("input");
   box.type = "checkbox";
   box.className = "channel-name-switch";
-  box.checked = preacherNameShown();
-  box.addEventListener("change", () => { setPreacherNameShown(box.checked); });
+  box.checked = captionChecked(row, index);
+  box.setAttribute("aria-label", `채널 ${index + 1} 이름을 자막에 표시`);
+  box.addEventListener("change", () => {
+    const shown = box.checked;
+    if (index === 0 && !String(row && row.name || "").trim()) {
+      if (state.channels[index]) state.channels[index].showName = shown;
+      setPreacherNameShown(shown);
+      persist({ channels: state.channels }).catch((err) => log(visibleError(err), "error"));
+      return;
+    }
+    applyChannelCaption(index, { showName: shown });
+  });
   label.append(box, document.createTextNode(" 이 이름을 자막에 표시"));
   parent.append(label);
+}
+
+async function applyChannelCaption(index, patch) {
+  const row = state.channels[index];
+  if (!row || row.source === "phone") return;
+  if (Object.prototype.hasOwnProperty.call(patch, "name")) row.name = String(patch.name || "").trim().slice(0, 40);
+  if (Object.prototype.hasOwnProperty.call(patch, "showName")) row.showName = patch.showName !== false;
+  paintGlances();
+  await persist({ channels: state.channels });
+  renderChannels(deviceChannelCount());
+  if (!state.running) return;
+  try {
+    await window.broadcast.setChannelCaption(index, { name: row.name || "", showName: row.showName !== false });
+  } catch (err) {
+    log(visibleError(err), "error");
+  }
 }
 
 async function setPreacherNameShown(on) {
   const shown = on !== false;
   const box = document.getElementById("showPreacherName");
   if (box) box.checked = shown;
-  document.querySelectorAll(".channel-name-switch").forEach((el) => { el.checked = shown; });
   paintGlances();
   await persist({ showPreacherName: shown });
+  renderChannels(deviceChannelCount());
   if (!state.running) return;
   try { await window.broadcast.setShowPreacherName(shown); }
-  catch (err) { log(err.message || String(err), "error"); }
+  catch (err) { log(visibleError(err), "error"); }
 }
 
 function appendSpeechStyle(parent, row, index) {
@@ -606,7 +671,8 @@ function renderChannels(count) {
     head.append(button, meter);
     wrap.append(head);
     appendSpokenControl(wrap, select);
-    appendCaptionNameSwitch(wrap);
+    appendCaptionNameField(wrap, i, row);
+    appendCaptionNameSwitch(wrap, i, row);
     appendSpeechStyle(wrap, row, i);
     channelsEl.append(wrap);
   });
@@ -777,9 +843,9 @@ function renderPhoneDesks() {
     wrap.append(title);
     appendPhoneLive(wrap, index + 1, view);
     appendSpokenControl(wrap, select);
+    appendPhoneNameEditor(wrap, index + 1, view);
     appendPhoneNameSwitch(wrap, index + 1, view);
     wrap.append(qr, qrHint);
-    appendPhoneNameEditor(wrap, index + 1, view);
     appendSpeechStyle(wrap, { ...view, source: "phone" }, index);
     root.append(wrap);
   });
@@ -819,12 +885,12 @@ function mapChannel(row) {
     spoken: knownSpoken(row && row.spoken),
     on: !!(row && row.on),
     source: row && row.source === "phone" ? "phone" : "device",
-    name: row && row.source === "phone" ? (row.name || "") : "",
+    name: row && row.name ? String(row.name) : "",
     phoneId: row && row.source === "phone" ? (row.phoneId || "") : "",
     connectionId: row && row.source === "phone" ? (row.connectionId || "") : "",
     connected: !(row && row.source === "phone") || row.connected !== false,
     signal: !!(row && row.source === "phone" && row.signal),
-    showName: !(row && row.source === "phone" && row.showName === false),
+    showName: !(row && row.showName === false),
   };
 }
 
@@ -868,7 +934,7 @@ async function toggleChannel(index) {
     renderChannels(deviceChannelCount());
     if (result && result.blocked) log(result.message, "error");
   } catch (err) {
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
     renderChannels(deviceChannelCount());
   }
 }
@@ -888,7 +954,7 @@ async function onChannelSpoken(index, code) {
     if (index === 0) state.spoken = previous;
     renderHeardTitle();
     await persist({ channels: state.channels, spoken: state.spoken });
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
     renderChannels(deviceChannelCount());
     renderPhoneDesks();
   }
@@ -929,7 +995,7 @@ async function renderLinks() {
   try {
     links = await window.broadcast.links(state.targets, state.spoken);
   } catch (err) {
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
     return;
   }
   links.items.forEach((item) => {
@@ -1255,7 +1321,7 @@ async function chooseDevice() {
     if (!state.running) setStatus("장치 듣는 중", "");
     paintSetupGaps();
   } catch (err) {
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
     setStatus("장치 오류", "err");
   }
 }
@@ -1322,7 +1388,7 @@ async function loadOperator() {
     const result = await window.broadcast.operatorList();
     paintOperator(result && result.accounts ? result.accounts : []);
   } catch (err) {
-    if (msg) msg.textContent = err.message || String(err);
+    if (msg) msg.textContent = visibleError(err);
   }
 }
 
@@ -1339,7 +1405,7 @@ async function refreshKeyHint() {
       : "관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.";
   } catch (err) {
     hint.textContent = "키 상태를 확인하지 못했습니다.";
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
   }
 }
 
@@ -1357,12 +1423,12 @@ async function loadChurch() {
       showBalance(preview.balanceKrw);
       showPrepaid({ remainingSeconds: preview.remainingSeconds, running: false });
     } catch (err) {
-      log(err.message || String(err), "error");
+      log(visibleError(err), "error");
     }
   }
   if (state.church) {
     try { await window.broadcast.setTargets(state.targets, state.spoken); }
-    catch (err) { log(err.message || String(err), "error"); }
+    catch (err) { log(visibleError(err), "error"); }
   }
   await renderLinks();
 }
@@ -1392,11 +1458,11 @@ async function boot() {
   }
   await reloadDevices();
   try { showPhoneJoin(await window.broadcast.phoneJoin()); }
-  catch (err) { log(err.message || String(err), "error"); }
+  catch (err) { log(visibleError(err), "error"); }
   const savedCount = Number(state.settings.phoneCount);
   if (Number.isInteger(savedCount) && savedCount > 0) {
     try { showPhoneJoin(await window.broadcast.setPhoneCount(savedCount)); }
-    catch (err) { log(err.message || String(err), "error"); }
+    catch (err) { log(visibleError(err), "error"); }
   }
   paintSetupGaps();
   if (!(state.settings && state.settings.setupClosed)) openSettings();
@@ -1409,7 +1475,7 @@ async function boot() {
     if (event.type === "heard") hearing.heard(heardKey(event.channel, event.id), channelPrefix(event.channel, event.text, event.name));
     if (event.type === "line" && event.lang) {
       const lineRow = Number.isInteger(event.channel) ? state.channels[event.channel] : null;
-      const lineName = lineRow && lineRow.source === "phone" && lineRow.showName === false ? "" : event.name;
+      const lineName = lineRow && lineRow.showName === false ? "" : (event.name || (lineRow && lineRow.name) || "");
       const caption = speakerCaption(lineName, event.text);
       if (!state.captions) state.captions = {};
       if (!state.captions[event.lang]) state.captions[event.lang] = new Map();
@@ -1483,7 +1549,7 @@ document.getElementById("churchSignIn").addEventListener("click", async () => {
     await loadChurch();
     log("이 계정으로 로그인했습니다.");
   } catch (err) {
-    msg.textContent = err.message || String(err);
+    msg.textContent = visibleError(err);
   }
 });
 
@@ -1498,7 +1564,7 @@ document.getElementById("signOut").addEventListener("click", async () => {
   try {
     await signOut();
   } catch (err) {
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
   }
 });
 
@@ -1507,7 +1573,7 @@ document.getElementById("operatorSignOut").addEventListener("click", async () =>
   try {
     await signOut();
   } catch (err) {
-    if (msg) msg.textContent = err.message || String(err);
+    if (msg) msg.textContent = visibleError(err);
   }
 });
 
@@ -1516,13 +1582,17 @@ document.getElementById("operatorCredit").addEventListener("click", async () => 
   msg.textContent = "";
   const accountId = document.getElementById("operatorAccount").value;
   const amount = Math.round(Number(document.getElementById("operatorAmount").value) || 0);
+  if (!(amount > 0)) {
+    msg.textContent = "충전할 금액을 적으세요";
+    return;
+  }
   try {
     const result = await window.broadcast.operatorCredit(accountId, amount);
     document.getElementById("operatorAmount").value = "";
     msg.textContent = `${amount.toLocaleString("ko-KR")}원을 더했습니다. 남은 잔액은 ${result.balanceLabel}입니다.`;
     await loadOperator();
   } catch (err) {
-    msg.textContent = err.message || String(err);
+    msg.textContent = visibleError(err);
   }
 });
 
@@ -1532,7 +1602,7 @@ document.getElementById("saveStyle").addEventListener("click", async () => {
     fillStyle(state.style);
     document.getElementById("styleMsg").textContent = "자막 위치와 글자를 저장했습니다.";
   } catch (err) {
-    document.getElementById("styleMsg").textContent = err.message || String(err);
+    document.getElementById("styleMsg").textContent = visibleError(err);
   }
 });
 
@@ -1551,7 +1621,7 @@ document.getElementById("pickBulletin").addEventListener("click", async () => {
     }
     log(bulletin.error || "진행자료를 저장했습니다.");
   } catch (err) {
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
   }
 });
 
@@ -1582,7 +1652,7 @@ document.getElementById("addPreacher").addEventListener("click", async () => {
     await persist({ preacherId: saved.id });
     msg.textContent = "강연자를 등록했습니다.";
   } catch (err) {
-    msg.textContent = err.message || String(err);
+    msg.textContent = visibleError(err);
   }
 });
 
@@ -1607,7 +1677,7 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
     fillPreacherForm(saved);
     msg.textContent = "강연자 프로필을 저장했습니다.";
   } catch (err) {
-    msg.textContent = err.message || String(err);
+    msg.textContent = visibleError(err);
   }
 });
 
@@ -1630,9 +1700,9 @@ function channelPrefix(index, text, name) {
   const value = String(text || "");
   if (!value) return value;
   const row = Number.isInteger(index) ? state.channels[index] : null;
-  if (row && row.source === "phone" && row.showName === false) return value;
+  if (row && row.showName === false) return value;
   let who = String(name || (row && row.name) || "").trim();
-  if (!who && (!row || row.source !== "phone") && preacherNameShown()) who = preacherDisplayName();
+  if (!who && index === 0 && (!row || row.source !== "phone") && preacherNameShown()) who = preacherDisplayName();
   if (who) return speakerCaption(who, value);
   if (!Number.isInteger(index) || activeChannelRows().length < 2) return value;
   return speakerCaption(`채널 ${index + 1}`, value);
@@ -1666,7 +1736,8 @@ function appendPhoneNameEditor(parent, slot, view) {
   const joined = phoneJoined(view);
   const draft = !joined && view.connectionId ? pendingPhoneDisplay.get(view.connectionId) : null;
   const nameLabel = document.createElement("label");
-  nameLabel.textContent = "자막에 보일 이름";
+  nameLabel.className = "caption-name";
+  nameLabel.textContent = "이름";
   const input = document.createElement("input");
   input.type = "text";
   input.maxLength = 40;
@@ -1703,7 +1774,7 @@ async function applyPhoneDisplay(connectionId, patch) {
     }
     renderPhoneDesks();
   } catch (err) {
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
     renderPhoneDesks();
   }
 }
@@ -1727,14 +1798,14 @@ document.getElementById("phoneCount").addEventListener("change", async () => {
     await persist({ phoneCount: count });
     if (msg) msg.textContent = count === 0 ? "휴대폰 없이 시작합니다." : "각 휴대폰 앱에서 그 칸의 QR을 스캔하세요.";
   } catch (err) {
-    if (msg) msg.textContent = err.message || String(err);
-    log(err.message || String(err), "error");
+    if (msg) msg.textContent = visibleError(err);
+    log(visibleError(err), "error");
   }
 });
 document.getElementById("reloadDevices").addEventListener("click", reloadDevices);
 deviceEl.addEventListener("change", chooseDevice);
 sensitivityEl.addEventListener("change", () => {
-  persist({ sensitivity: sensitivityEl.value }).catch((err) => log(err.message || String(err), "error"));
+  persist({ sensitivity: sensitivityEl.value }).catch((err) => log(visibleError(err), "error"));
   rememberStyle("device:0", lecturerStyle());
   paintGlances();
 });
@@ -1833,7 +1904,7 @@ document.getElementById("start").addEventListener("click", async () => {
     try { state.settings = await window.broadcast.getSettings(); } catch (_) { /* 설정 갱신 실패는 시작 오류 아래에 둡니다 */ }
     paintFolderHint();
     paintSetupGaps();
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
     setStatus("시작 실패", "err");
   }
 });
@@ -1854,7 +1925,7 @@ document.getElementById("confirmStart").addEventListener("click", async () => {
     document.getElementById("startConfirm").hidden = true;
     await beginBroadcast();
   } catch (err) {
-    const message = err && err.message ? err.message : String(err);
+    const message = visibleError(err);
     if (message.includes("이미 방송 중입니다")) {
       setRunning(true);
       return;
@@ -1873,12 +1944,12 @@ document.getElementById("stop").addEventListener("click", async () => {
     state.preachers = current.preachers || state.preachers;
     renderPreachers();
   } catch (err) {
-    log(err.message || String(err), "error");
+    log(visibleError(err), "error");
   }
 });
 document.getElementById("showSession").addEventListener("click", () => window.broadcast.showSession());
 
 boot().catch((err) => {
-  log(err.message || String(err), "error");
+  log(visibleError(err), "error");
   setStatus("오류", "err");
 });

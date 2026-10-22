@@ -98,5 +98,14 @@ test("server rules let only the operator read every account and add credit", () 
   assert.match(listHandler, /operatorGate/);
   const creditHandler = main.slice(main.indexOf('ipcMain.handle("operator:credit"'), main.indexOf('ipcMain.handle("church:current"'));
   assert.match(creditHandler, /operatorGate/);
+  assert.match(creditHandler, /충전할 금액을 적으세요/);
   assert.match(main, /isOperatorAccount/);
+  const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
+  const creditClick = renderer.slice(renderer.indexOf('getElementById("operatorCredit")'), renderer.indexOf('getElementById("pickBulletin").addEventListener'));
+  assert.match(creditClick, /충전할 금액을 적으세요/);
+  assert.match(renderer, /visibleError/);
+  const { userText } = require("../broadcast/lib/user-text");
+  assert.equal(userText("Error invoking remote method 'operator:credit': Error: 충전할 금액을 적으세요"), "충전할 금액을 적으세요");
+  assert.equal(userText("Error: 계정을 골라 주세요.\n    at processTicksAndRejections (node:internal/process:1:1)"), "계정을 골라 주세요.");
+  assert.equal(userText(""), "다시 시도해 주세요.");
 });
