@@ -201,7 +201,8 @@ input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d12
   padding: 8px 10px;
 }
 
-.phone-level-name {
+.phone-level-name,
+.phone-joined {
   font-weight: 800;
   white-space: nowrap;
 }

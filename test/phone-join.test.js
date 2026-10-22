@@ -163,7 +163,13 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.ok(packaged.includes("docs/js/cost.js"));
   assert.ok(packaged.includes("docs/js/speaker-lines.js"));
   const screen = read("broadcast/renderer/renderer.js");
-  assert.match(screen, /휴대폰\$\{slot\} 켜짐/);
+  assert.match(screen, /휴대폰\$\{slot\} \$\{who\} 켜짐/);
+  assert.match(screen, /function phoneJoined/);
+  assert.match(screen, /started\.already/);
+  assert.match(screen, /이미 방송 중입니다/);
+  assert.match(read("broadcast/main.js"), /started\.already/);
+  assert.match(read("broadcast/lib/engine.js"), /broadcastLive/);
+  assert.doesNotMatch(screen, /휴대폰\$\{slot\} 켜짐/);
   assert.match(screen, /data-phone-level/);
   assert.match(read("broadcast/renderer/index.html"), /id="phoneLevels"/);
   assert.doesNotMatch(screen, /음성 신호가 들어오고 있습니다/);
@@ -208,6 +214,27 @@ test("the packaged app includes every file the main process requires", () => {
   assert.ok(seen.has(path.join("docs/js", "speaker-lines.js")));
   assert.ok(seen.has(path.join("docs/js", "languages.js")));
   assert.ok(seen.has(path.join("docs/js", "cost.js")));
+});
+
+test("a live broadcast is kept and a stuck flag is cleared", async () => {
+  const live = new Engine(() => {});
+  live.running = true;
+  live.channelSessions = new Map([[0, { speech: {}, pipeline: {} }]]);
+  live.church = { id: "grace-ab", name: "계정" };
+  live.folderName = "2026";
+  live.sessionDir = "/tmp/live";
+  live.targets = ["en"];
+  live.channelRows = [{ spoken: "ko", on: true, source: "device" }];
+  const again = await live.start({});
+  assert.equal(again.already, true);
+  assert.equal(live.running, true);
+  assert.equal(again.channels[0].spoken, "ko");
+
+  const stuck = new Engine(() => {});
+  stuck.running = true;
+  stuck.channelSessions = new Map();
+  await assert.rejects(() => stuck.start({}), /OpenAI 키/);
+  assert.equal(stuck.running, false);
 });
 
 test("a connected phone shows a signal only after audio arrives", async () => {

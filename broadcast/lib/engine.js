@@ -1045,8 +1045,50 @@ class Engine {
     this.emit({ type: "level", channel: index, peak: level });
   }
 
+  broadcastLive() {
+    if (!this.running || !this.channelSessions || !this.channelSessions.size) return false;
+    for (const session of this.channelSessions.values()) {
+      if (session && session.speech) return true;
+    }
+    return false;
+  }
+
+  currentSession(extra) {
+    return {
+      already: !!(extra && extra.already),
+      church: this.church,
+      folderName: this.folderName,
+      dir: this.sessionDir,
+      targets: this.targets || [],
+      channels: this.publicChannels(),
+    };
+  }
+
   async start(opts) {
-    if (this.running) throw new Error("이미 방송 중입니다.");
+    if (this.startTask) {
+      try { await this.startTask; } catch (_) { /* 먼저 시작한 쪽의 오류는 그 호출이 보여 줍니다 */ }
+      if (this.broadcastLive()) return this.currentSession({ already: true });
+    }
+    if (this.running) {
+      if (this.broadcastLive()) return this.currentSession({ already: true });
+      if (!this.channelSessions) this.channelSessions = new Map();
+      try { await this.stop(); } catch (_) { this.running = false; }
+    }
+    const task = this._beginStart(opts);
+    this.startTask = task;
+    try {
+      return await task;
+    } finally {
+      if (this.startTask === task) this.startTask = null;
+    }
+  }
+
+  async _beginStart(opts) {
+    if (this.running) {
+      if (this.broadcastLive()) return this.currentSession({ already: true });
+      if (!this.channelSessions) this.channelSessions = new Map();
+      try { await this.stop(); } catch (_) { this.running = false; }
+    }
     const apiKey = opts.apiKey || "";
     if (!apiKey) {
       throw new Error("관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.");

@@ -344,7 +344,7 @@ function renderChannels(count) {
     const button = document.createElement("button");
     button.type = "button";
     if (row.source === "phone") {
-      button.textContent = phoneSlotLabel(phoneSlotForRow(row));
+      button.textContent = phoneRowText(phoneSlotForRow(row), row);
     } else {
       button.textContent = `채널 ${i + 1}${row.on ? " 켜짐" : " 꺼짐"}`;
     }
@@ -373,15 +373,35 @@ function deskChannelIndex(desk) {
     const found = rows.findIndex((row) => row && row.source === "phone" && row.connectionId === desk.connectionId);
     if (found >= 0) return found;
   }
-  if (desk && Number.isInteger(desk.channelIndex) && desk.channelIndex >= 0) {
-    const row = rows[desk.channelIndex];
-    if (row && row.source === "phone") return desk.channelIndex;
+  if (desk && desk.phoneId) {
+    const byPhone = rows.findIndex((row) => row && row.source === "phone" && row.phoneId === desk.phoneId);
+    if (byPhone >= 0) return byPhone;
   }
+  if (desk && Number.isInteger(desk.channelIndex) && desk.channelIndex >= 0) return desk.channelIndex;
   return -1;
 }
 
-function phoneSlotLabel(slot) {
-  return `휴대폰${slot} 켜짐`;
+function phoneJoined(info) {
+  return !!(info && info.connected !== false && String(info.name || "").trim() && (info.connected === true || info.phoneId || info.source === "phone"));
+}
+
+function phoneRowText(slot, info) {
+  const who = String(info && info.name || "").trim();
+  if (!phoneJoined(info)) return `휴대폰${slot}`;
+  return `휴대폰${slot} ${who} 켜짐`;
+}
+
+function deskView(desk) {
+  const view = { ...(desk || {}) };
+  const index = deskChannelIndex(desk);
+  const row = index >= 0 ? state.channels[index] : null;
+  if (!row || row.source !== "phone") return view;
+  if (!view.name) view.name = row.name || "";
+  if (!view.phoneId) view.phoneId = row.phoneId || "";
+  if (row.connected === false) view.connected = false;
+  else if (row.name) view.connected = true;
+  if (!(Number.isInteger(view.channelIndex) && view.channelIndex >= 0)) view.channelIndex = index;
+  return view;
 }
 
 function phoneSlotForRow(row) {
@@ -406,19 +426,20 @@ function renderPhoneLevels() {
   root.innerHTML = "";
   root.hidden = desks.length === 0;
   desks.forEach((desk, index) => {
+    const view = deskView(desk);
     const row = document.createElement("div");
     row.className = "phone-level";
     const name = document.createElement("span");
     name.className = "phone-level-name";
-    name.textContent = phoneSlotLabel(index + 1);
+    name.textContent = phoneRowText(index + 1, view);
     const meter = document.createElement("div");
     meter.className = "meter";
     meter.setAttribute("aria-label", `휴대폰${index + 1} 소리 크기`);
     const bar = document.createElement("span");
-    const channelIndex = deskChannelIndex(desk);
+    const channelIndex = phoneJoined(view) ? deskChannelIndex(view) : -1;
     if (channelIndex >= 0) {
       bar.dataset.phoneLevel = String(channelIndex);
-      const saved = kept.get(String(channelIndex));
+      const saved = kept.get(String(channelIndex)) || levelWidths.get(String(channelIndex));
       if (saved) bar.style.width = saved;
     }
     meter.append(bar);
@@ -457,7 +478,8 @@ function renderPhoneDesks() {
     idInput.autocomplete = "off";
     idInput.value = desk.connectionId || "";
     idInput.setAttribute("aria-label", `휴대폰 ${index + 1} 암호`);
-    const channelIndex = deskChannelIndex(desk);
+    const view = deskView(desk);
+    const channelIndex = deskChannelIndex(view);
     const select = document.createElement("select");
     select.className = "channel-spoken";
     select.setAttribute("aria-label", `휴대폰 ${index + 1} 말하는 언어`);
@@ -468,7 +490,14 @@ function renderPhoneDesks() {
       select.value = knownSpoken(state.channels[channelIndex].spoken);
       select.addEventListener("change", () => onChannelSpoken(channelIndex, select.value));
     }
-    wrap.append(title, idLabel, idInput, select);
+    wrap.append(title, idLabel, idInput);
+    if (phoneJoined(view)) {
+      const who = document.createElement("p");
+      who.className = "phone-joined";
+      who.textContent = phoneRowText(index + 1, view);
+      wrap.append(who);
+    }
+    wrap.append(select);
     root.append(wrap);
   });
 }
@@ -557,8 +586,11 @@ async function onChannelSpoken(index, code) {
   }
 }
 
+const levelWidths = new Map();
+
 function paintLevel(index, peak) {
   const width = `${Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * 140)))}%`;
+  levelWidths.set(String(index), width);
   document.querySelectorAll(`[data-channel="${index}"], [data-phone-level="${index}"]`).forEach((bar) => {
     bar.style.width = width;
   });
@@ -1300,7 +1332,30 @@ document.getElementById("pickFolder").addEventListener("click", async () => {
   paintFolderHint();
   paintSetupGaps();
 });
+let startTask = null;
+
+function adoptBroadcast(started) {
+  if (started && Array.isArray(started.channels) && started.channels.length) {
+    state.channels = started.channels.map(mapChannel);
+    if (state.channels[0]) state.spoken = state.channels[0].spoken;
+    const deviceCount = state.channels.filter((row) => row.source !== "phone").length;
+    renderChannels(deviceCount);
+    renderPhoneDesks();
+  }
+  setRunning(true);
+}
+
 async function beginBroadcast() {
+  if (state.running) {
+    setRunning(true);
+    return;
+  }
+  if (startTask) return startTask;
+  startTask = runBroadcastStart().finally(() => { startTask = null; });
+  return startTask;
+}
+
+async function runBroadcastStart() {
   if (state.channels[0]) state.spoken = state.channels[0].spoken;
   renderHeardTitle();
   await persist({
@@ -1325,12 +1380,8 @@ async function beginBroadcast() {
     deviceKey: deviceEl.value,
     channel: state.audio ? state.audio.deviceChannel : 0,
   });
-  if (started && Array.isArray(started.channels) && started.channels.length) {
-    state.channels = started.channels.map(mapChannel);
-    if (state.channels[0]) state.spoken = state.channels[0].spoken;
-    const deviceCount = state.channels.filter((row) => row.source !== "phone").length;
-    renderChannels(deviceCount);
-  }
+  adoptBroadcast(started);
+  if (started && started.already) return;
   log("방송을 시작했습니다. 언어별 텍스트만 저장합니다.");
 }
 
@@ -1369,11 +1420,16 @@ document.getElementById("confirmStart").addEventListener("click", async () => {
     document.getElementById("startConfirm").hidden = true;
     await beginBroadcast();
   } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    if (message.includes("이미 방송 중입니다")) {
+      setRunning(true);
+      return;
+    }
     try { state.settings = await window.broadcast.getSettings(); } catch (_) { /* 설정 갱신 실패는 시작 오류 아래에 둡니다 */ }
     paintFolderHint();
     paintSetupGaps();
-    log(err.message || String(err), "error");
-    setStatus("시작 실패", "err");
+    log(message, "error");
+    if (!state.running) setStatus("시작 실패", "err");
   }
 });
 document.getElementById("stop").addEventListener("click", async () => {

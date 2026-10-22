@@ -636,6 +636,16 @@ function registerIpc() {
       bulletinPath: staged ? staged.path : "",
       bulletinExtracted: staged ? staged.extracted : null,
     });
+    if (started && started.already) {
+      if (phoneJoin) send({ type: "phone-join", info: phoneJoin.info() });
+      return {
+        already: true,
+        folderName: started.folderName,
+        dir: started.dir,
+        targets: started.targets,
+        channels: started.channels || [],
+      };
+    }
     if (phoneJoin) {
       let opened = [];
       try {
