@@ -75,6 +75,8 @@ class PhoneJoin {
     this.pending = [];
     this.peers = new Map();
     this.seenOffers = new Set();
+    this.offerTries = new Map();
+    this.answeredPeers = new Set();
     this.seenIce = new Set();
     this.onChange = extra.onChange || (() => {});
     this.token = "";
@@ -398,7 +400,15 @@ class PhoneJoin {
 
   async publishAnswer(peerId, sdp) {
     if (!PEER_RE.test(peerId || "") || typeof sdp !== "string" || !sdp || sdp.length > 12000) return;
+    this.answeredPeers.add(peerId);
     await this._put(`peers/${peerId}/answer.json`, { type: "answer", sdp });
+  }
+
+  /** 답변 창이 한 번 실패해도 같은 제안은 몇 번만 다시 읽습니다. */
+  forgetOffer(peerId) {
+    if (!PEER_RE.test(peerId || "")) return;
+    if ((this.offerTries.get(peerId) || 0) >= 3) return;
+    this.seenOffers.delete(peerId);
   }
 
   async publishMacIce(msg) {
@@ -486,7 +496,10 @@ class PhoneJoin {
 
   async _pollOnce() {
     if (!this.databaseURL || !this.token) return;
-    const res = await netFetch(this._signalUrl("peers.json"));
+    const res = await netFetch(this._signalUrl("peers.json"), {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
     const text = await res.text();
     if (!res.ok) throw new Error(`휴대폰 연결 신호 ${res.status}: ${text.slice(0, 160)}`);
     if (!text || text === "null") return;
@@ -527,7 +540,15 @@ class PhoneJoin {
     if (!PEER_RE.test(peerId) || this.seenOffers.has(peerId)) return;
     if (typeof sdp !== "string" || !sdp || sdp.length > 12000) return;
     this.seenOffers.add(peerId);
+    const attempt = (this.offerTries.get(peerId) || 0) + 1;
+    this.offerTries.set(peerId, attempt);
     this._toLink({ type: "offer", peerId, sdp });
+    const retry = setTimeout(() => {
+      if (this.stopped || this.answeredPeers.has(peerId)) return;
+      if ((this.offerTries.get(peerId) || 0) >= 3) return;
+      this.seenOffers.delete(peerId);
+    }, 2500);
+    if (retry.unref) retry.unref();
   }
 
   _onPhoneIce(peerId, iceId, value) {

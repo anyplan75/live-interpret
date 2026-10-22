@@ -181,6 +181,32 @@
       processor.connect(sink);
     }
 
+    // 마이크 자체는 스피커로 보내지 않는다. 아주 작은 반복 소리만 출력해,
+    // 화면이 꺼져도 아이폰이 이 마이크 처리를 멈추지 않게 한다.
+    let keepAlive = null;
+    function startKeepAlive() {
+      if (closed || keepAlive || !audioContext) return;
+      const rate = audioContext.sampleRate || 48000;
+      const buffer = audioContext.createBuffer(1, rate, rate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i += 1) data[i] = i % 2 === 0 ? 0.01 : -0.01;
+      const quiet = audioContext.createBufferSource();
+      quiet.buffer = buffer;
+      quiet.loop = true;
+      const gain = audioContext.createGain();
+      gain.gain.value = 0.00001;
+      quiet.connect(gain);
+      gain.connect(audioContext.destination);
+      quiet.start();
+      keepAlive = quiet;
+    }
+    async function hold() {
+      if (closed || !audioContext) return;
+      try { await audioContext.resume(); } catch (_) { /* 화면이 꺼진 뒤에도 다음 유지에서 다시 엽니다 */ }
+      startKeepAlive();
+    }
+    await hold();
+
     function startLink() {
       if (closed || active) return;
       const peerId = randomHex(16);
@@ -282,15 +308,21 @@
     startLink();
     return {
       setPaused(next) { sending = !next; },
+      hold,
       stop() {
         closed = true;
         clearTimeout(reconnectTimer);
+        if (keepAlive) {
+          try { keepAlive.stop(); } catch (_) { /* 이미 멈춘 유지 소리는 무시합니다 */ }
+          keepAlive = null;
+        }
         if (active) {
           active.stopWatch();
           try { active.pc.close(); } catch (_) { /* 이미 닫힌 연결은 무시합니다 */ }
         }
         active = null;
         if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop());
+        if (typeof options.onStop === "function") options.onStop();
       },
     };
   }
@@ -346,6 +378,11 @@
       return { connectionId: id, token: signal };
     }
 
+    function notifyMic(state) {
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lectureMic;
+      if (bridge) bridge.postMessage(state);
+    }
+
     window.LIJoin = {
       applyScan(payload) {
         const parsed = readSlot(payload && payload.connectionId, payload && payload.token);
@@ -356,7 +393,14 @@
         showSlot(parsed);
         return true;
       },
+      holdMic() {
+        if (link && typeof link.hold === "function") link.hold();
+      },
     };
+
+    document.addEventListener("visibilitychange", () => {
+      if (window.LIJoin && window.LIJoin.holdMic) window.LIJoin.holdMic();
+    });
 
     try { fillSpoken(); } catch (_) { /* 언어 목록이 늦게 와도 스캔 단추는 동작합니다 */ }
     try {
@@ -397,6 +441,7 @@
           spoken,
           connectionId: slot.connectionId,
           role: "lecture",
+          onStop() { notifyMic("stop"); },
           onStatus: say,
           onLevel(width) { levelEl.style.width = `${width}%`; },
           onJson(message) {
@@ -408,6 +453,7 @@
           },
         });
         link = current;
+        notifyMic("open");
         say("마이크를 열었습니다. 송출 컴퓨터에 연결하는 중입니다.");
       } catch (err) {
         openMic.disabled = false;

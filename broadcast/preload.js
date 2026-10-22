@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const engineQueue = [];
+let engineListener = null;
+ipcRenderer.on("engine", (_event, payload) => {
+  if (engineListener) engineListener(payload);
+  else engineQueue.push(payload);
+});
+
 contextBridge.exposeInMainWorld("broadcast", {
   getSettings: () => ipcRenderer.invoke("settings:get"),
   saveSettings: (settings) => ipcRenderer.invoke("settings:set", settings),
@@ -35,8 +42,10 @@ contextBridge.exposeInMainWorld("broadcast", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   showSession: () => ipcRenderer.invoke("show-session"),
   onEvent: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on("engine", listener);
-    return () => ipcRenderer.removeListener("engine", listener);
+    engineListener = (payload) => callback(payload);
+    while (engineQueue.length) callback(engineQueue.shift());
+    return () => {
+      if (engineListener) engineListener = null;
+    };
   },
 });

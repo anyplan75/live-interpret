@@ -109,7 +109,11 @@ window.phoneLink.onSignal(async (msg) => {
       pendingIce.delete(msg.peerId);
     }
   } catch (err) {
-    window.phoneLink.send({ type: "error", message: err && err.message ? err.message : String(err) });
+    window.phoneLink.send({
+      type: "error",
+      peerId: msg && msg.peerId,
+      message: err && err.message ? err.message : String(err),
+    });
   }
 });
 

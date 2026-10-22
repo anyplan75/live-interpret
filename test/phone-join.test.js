@@ -746,6 +746,43 @@ function closeBrowser(chrome, profile) {
   });
 }
 
+test("qr join reaches the mac card immediately and the lecture mic stays up with the screen off", () => {
+  const main = read("broadcast/main.js");
+  const join = read("broadcast/lib/phone-join.js");
+  const lecture = read("docs/lecture/index.html");
+  const page = read("ios/LiveInterpret/PageViewController.swift");
+  assert.match(main, /disable-renderer-backgrounding/);
+  assert.match(main, /WebRtcHideLocalIpsWithMdns,CalculateNativeWinOcclusion/);
+  assert.match(main, /showInactive\(\)/);
+  assert.match(main, /setOpacity\(0\)/);
+  assert.match(main, /forgetOffer\(msg\.peerId\)/);
+  assert.match(read("broadcast/preload.js"), /engineQueue/);
+  assert.match(join, /cache:\s*"no-store"/);
+  assert.match(join, /forgetOffer\(peerId\)/);
+  const server = new PhoneJoin();
+  server.seenOffers.add("peer0001aa");
+  server.offerTries.set("peer0001aa", 1);
+  server.forgetOffer("peer0001aa");
+  assert.equal(server.seenOffers.has("peer0001aa"), false);
+  server.seenOffers.add("peer0001aa");
+  server.offerTries.set("peer0001aa", 3);
+  server.forgetOffer("peer0001aa");
+  assert.equal(server.seenOffers.has("peer0001aa"), true);
+  assert.match(lecture, /holdMic/);
+  assert.match(lecture, /lectureMic/);
+  assert.match(lecture, /createBufferSource/);
+  assert.match(lecture, /0\.00001/);
+  assert.match(lecture, /visibilitychange/);
+  assert.doesNotMatch(lecture, /visibilitychange[\s\S]{0,240}setPaused\(true\)/);
+  assert.doesNotMatch(lecture, /source\.connect\(audioContext\.destination\)/);
+  assert.match(page, /lectureMic/);
+  assert.match(page, /didEnterBackgroundNotification/);
+  assert.match(page, /holdMic/);
+  assert.match(page, /mode: \.default/);
+  assert.match(page, /isMovingFromParent/);
+  assert.doesNotMatch(page, /isIdleTimerDisabled\s*=\s*true/);
+});
+
 test("plain http hides the microphone and https exposes it", { timeout: 60000 }, async (t) => {
   const bin = chromeBin();
   if (!bin) {

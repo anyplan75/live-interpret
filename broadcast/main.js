@@ -15,7 +15,8 @@ const { useFolder, releaseFolder } = require("./lib/folder-access");
 const operator = require("./lib/operator");
 
 app.setName("live-interpret");
-app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns");
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-features", "WebRtcHideLocalIpsWithMdns,CalculateNativeWinOcclusion");
 
 let win = null;
 let phoneWin = null;
@@ -247,6 +248,7 @@ function flushPhone() {
 function createPhoneWindow() {
   phoneWin = new BrowserWindow({
     show: false,
+    skipTaskbar: true,
     width: 320,
     height: 240,
     webPreferences: {
@@ -254,9 +256,13 @@ function createPhoneWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      backgroundThrottling: false,
     },
   });
   phoneWin.webContents.setBackgroundThrottling(false);
+  phoneWin.setOpacity(0);
+  phoneWin.setIgnoreMouseEvents(true);
+  phoneWin.showInactive();
   phoneWin.loadFile(path.join(__dirname, "phone", "answer.html"));
 }
 
@@ -567,6 +573,7 @@ function registerIpc() {
     else if (msg.type === "pcm") phoneJoin.ingestPcm(msg.peerId, pcmFromSignal(msg.pcm));
     else if (msg.type === "leave") phoneJoin.peerLeft(msg.peerId);
     else if (msg.type === "error" && msg.message) {
+      if (msg.peerId) phoneJoin.forgetOffer(msg.peerId);
       send({ type: "log", level: "error", text: String(msg.message) });
     }
   });

@@ -6,6 +6,15 @@ import WebKit
 final class LectureScanBridge: NSObject, WKScriptMessageHandler {
     weak var owner: PageViewController?
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "lectureMic" {
+            let body = message.body as? String ?? ""
+            if body == "open" {
+                owner?.lectureMicOpened()
+            } else if body == "stop" {
+                owner?.lectureMicStopped()
+            }
+            return
+        }
         owner?.scanQr()
     }
 }
@@ -17,6 +26,8 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
     private let spinner = UIActivityIndicatorView(style: .large)
     private let errorLabel = UILabel()
     private var lectureSlot: FaceLink.LectureSlot?
+    private var lectureMicOpen = false
+    private var micObservers: [NSObjectProtocol] = []
 
     init(page: PhonePage) {
         self.page = page
@@ -39,6 +50,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
                 forMainFrameOnly: true
             ))
             configuration.userContentController.add(lectureBridge, name: "scanLecture")
+            configuration.userContentController.add(lectureBridge, name: "lectureMic")
         }
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init(nibName: nil, bundle: nil)
@@ -92,10 +104,42 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
             errorLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
         if page == .lecture {
+            watchLectureMic()
             loadBundledLecture()
         } else {
             loadPage(page.startURL)
         }
+    }
+
+    deinit {
+        let center = NotificationCenter.default
+        micObservers.forEach { center.removeObserver($0) }
+    }
+
+    /// 본인이 연 강연·회의 마이크만, 화면이 꺼져도 세션을 다시 살린다.
+    private func watchLectureMic() {
+        let center = NotificationCenter.default
+        micObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.resumeLectureMic()
+        })
+        micObservers.append(center.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.resumeLectureMic()
+        })
+        micObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            self?.handleAudioInterruption(note)
+        })
     }
 
     /// 강연·회의는 앱에 넣은 입장 화면을 연다. 공개 웹의 옛 접속 번호 화면은 열지 않는다.
@@ -114,18 +158,66 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        if presentedViewController == nil {
+        if presentedViewController != nil { return }
+        if page == .lecture {
+            prepareLectureSession(active: lectureMicOpen)
+        } else {
             prepareMicrophone()
+        }
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if page == .lecture && isMovingFromParent {
+            lectureMicOpen = false
         }
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
-    /// 페이지의 마이크 요청이 시스템에 닿기 전에 재생·녹음 세션을 연다.
+    /// 대면 통역 페이지의 마이크 요청이 시스템에 닿기 전에 재생·녹음 세션을 연다.
     private func prepareMicrophone() {
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try? session.setActive(true)
+    }
+
+    /// 강연·회의는 음성 통화 모드를 쓰지 않는다. 그 모드는 화면이 꺼지면 마이크를 멈춘다.
+    private func prepareLectureSession(active: Bool) {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(
+            .playAndRecord,
+            mode: .default,
+            options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
+        )
+        if active {
+            try? session.setActive(true)
+        }
+    }
+
+    func lectureMicOpened() {
+        lectureMicOpen = true
+        prepareLectureSession(active: true)
+    }
+
+    func lectureMicStopped() {
+        lectureMicOpen = false
+    }
+
+    private func resumeLectureMic() {
+        guard lectureMicOpen else { return }
+        prepareLectureSession(active: true)
+        webView.evaluateJavaScript("window.LIJoin&&window.LIJoin.holdMic&&window.LIJoin.holdMic()")
+    }
+
+    private func handleAudioInterruption(_ note: Notification) {
+        guard lectureMicOpen else { return }
+        guard
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+            let kind = AVAudioSession.InterruptionType(rawValue: raw),
+            kind == .ended
+        else { return }
+        resumeLectureMic()
     }
 
     private func loadPage(_ url: URL) {
