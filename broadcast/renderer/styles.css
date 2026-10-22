@@ -42,9 +42,15 @@ header {
 }
 
 .title-block { min-width: 0; }
+.header-status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+}
 header .cost-figure.time {
   margin: 0;
-  flex: 0 0 auto;
   white-space: nowrap;
 }
 

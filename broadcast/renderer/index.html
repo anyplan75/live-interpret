@@ -13,8 +13,10 @@
       <h1>실시간 통역시스템</h1>
       <p id="churchLine">교회 계정으로 로그인하면 그 교회만 열립니다.</p>
     </div>
-    <div id="prepaidTime" class="cost-figure time" aria-live="polite">남은 시간 없음</div>
-    <div id="status" class="pill">대기</div>
+    <div class="header-status">
+      <div id="prepaidTime" class="cost-figure time" aria-live="polite">남은 시간 없음</div>
+      <div id="status" class="pill">대기</div>
+    </div>
   </header>
   <main>
     <section>
@@ -60,7 +62,7 @@
           <p id="confirmBalance"></p>
           <p id="confirmShort" class="hint" hidden></p>
           <div class="row" style="margin-top:10px;">
-            <button type="button" id="confirmStart">시작</button>
+            <button type="button" id="confirmStart">시작확인</button>
             <button type="button" class="ghost" id="confirmCancel">취소</button>
           </div>
         </div>

@@ -48,6 +48,8 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   const actions = html.slice(html.indexOf('id="broadcastActions"'), html.indexOf('id="costCard"'));
   assert.match(actions, /id="openSettings">설정</);
   assert.match(actions, /id="start">시작</);
+  assert.match(html, /id="confirmStart">시작확인</);
+  assert.doesNotMatch(actions, /id="start">시작확인</);
   assert.match(actions, /id="stop"[^>]*>종료</);
   assert.doesNotMatch(actions, /방송 시작|방송 종료|폴더 선택|설교자|입력 장치/);
   assert.match(html, /id="settingsPanel"/);
@@ -70,8 +72,8 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   const langsAt = html.indexOf('id="langs"');
   assert.ok(settingsAt < folderAt && settingsAt < preacherAt && settingsAt < deviceAt && settingsAt < langsAt);
   const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
-  assert.match(header, /id="prepaidTime"/);
-  assert.match(header, /class="cost-figure time"/);
+  assert.match(header, /class="header-status"[\s\S]*id="prepaidTime"[\s\S]*id="status"/);
+  assert.doesNotMatch(header.slice(header.indexOf('class="title-block"'), header.indexOf('class="header-status"')), /id="prepaidTime"/);
   const costCard = html.slice(html.indexOf('id="costCard"'), html.indexOf('id="startConfirm"'));
   assert.doesNotMatch(costCard, /id="prepaidTime"|<h2>남은 시간<\/h2>/);
   assert.match(html, /id="prepaidTime"/);
