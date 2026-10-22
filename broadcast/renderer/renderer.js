@@ -66,6 +66,23 @@ function spokenName(code) {
   return found ? found.name : "한국어";
 }
 
+function spokenTitle(code) {
+  if (code === "zh-CN") return "중국어";
+  if (code === "zh-TW") return "중국어(번체)";
+  return spokenName(code);
+}
+
+function heardLanguageLabel() {
+  const on = activeChannelRows();
+  const codes = on.length ? on.map((row) => row.spoken) : [state.spoken];
+  const names = [];
+  codes.forEach((code) => {
+    const label = spokenTitle(code);
+    if (label && !names.includes(label)) names.push(label);
+  });
+  return names.join(" · ") || "한국어";
+}
+
 function activeChannelRows() {
   return (state.channels || []).map((row, index) => ({ ...row, index })).filter((row) => row.on);
 }
@@ -79,15 +96,15 @@ function renderHeardTitle() {
   if (!heardTitleEl) return;
   const on = activeChannelRows();
   if (on.length === 1 && on[0].name) {
-    heardTitleEl.textContent = `지금 듣는 ${on[0].name} · ${spokenName(on[0].spoken)}`;
+    heardTitleEl.textContent = `지금 듣는 ${on[0].name} · ${spokenTitle(on[0].spoken)}`;
     return;
   }
   if (on.length <= 1) {
     const code = on.length ? on[0].spoken : state.spoken;
-    heardTitleEl.textContent = `지금 듣는 ${spokenName(code)}`;
+    heardTitleEl.textContent = `지금 듣는 ${spokenTitle(code)}`;
     return;
   }
-  heardTitleEl.textContent = `지금 듣는 ${on.map((row) => `${channelTitle(row)} ${spokenName(row.spoken)}`).join(" · ")}`;
+  heardTitleEl.textContent = `지금 듣는 ${on.map((row) => `${channelTitle(row)} ${spokenTitle(row.spoken)}`).join(" · ")}`;
 }
 
 function billingSpoken() {
@@ -250,7 +267,7 @@ function restoreLangChecks(selected) {
 async function onTargetsChanged(sync = true) {
   const previous = state.targets.slice();
   state.targets = selectedTargets();
-  langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
+  langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${heardLanguageLabel()}`;
   langsEl.querySelectorAll(".lang").forEach((label) => {
     label.classList.toggle("on", label.querySelector("input").checked);
   });
@@ -263,7 +280,7 @@ async function onTargetsChanged(sync = true) {
       log(err.message || String(err), "error");
       state.targets = previous;
       restoreLangChecks(previous);
-      langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${spokenName(state.spoken)}`;
+      langCount.textContent = `번역 ${state.targets.length}개 · 지금 듣는 ${heardLanguageLabel()}`;
       await persist({ targets: state.targets, spoken: state.spoken });
     }
   }
@@ -515,7 +532,13 @@ function speakerCaption(name, text) {
   const who = String(name || "").trim();
   if (!body) return "";
   if (!who) return body;
+  if (body.startsWith(`${who}:`) || body.startsWith(`${who}：`)) return body;
   return `${who}: ${body}`;
+}
+
+function heardKey(channel, id) {
+  if (id == null || id === "") return "";
+  return `${Number.isInteger(channel) ? channel : 0}:${id}`;
 }
 
 async function renderLinks() {
@@ -989,7 +1012,7 @@ async function boot() {
     if (event.type === "phone-join") showPhoneJoin(event.info);
     if (event.type === "phones") applyPhoneRoster(event.channels);
     if (event.type === "live") hearing.live(channelPrefix(event.channel, event.text, event.name));
-    if (event.type === "heard") hearing.heard(event.id, channelPrefix(event.channel, event.text, event.name));
+    if (event.type === "heard") hearing.heard(heardKey(event.channel, event.id), channelPrefix(event.channel, event.text, event.name));
     if (event.type === "line" && event.lang) {
       const caption = speakerCaption(event.name, event.text);
       if (!state.captions) state.captions = {};
@@ -1004,7 +1027,7 @@ async function boot() {
       const row = Number.isInteger(event.channel) ? state.channels[event.channel] : null;
       const source = row ? row.spoken : state.spoken;
       if (event.lang === source && event.isFinal && event.text && event.text !== event.raw) {
-        hearing.corrected(event.heardId, event.raw, event.text);
+        hearing.corrected(heardKey(event.channel, event.heardId), event.raw, event.text);
       }
     }
     if (event.type === "log") log(event.text, event.level);
@@ -1197,9 +1220,9 @@ function channelPrefix(index, text, name) {
   if (!value) return value;
   const row = Number.isInteger(index) ? state.channels[index] : null;
   const who = String(name || (row && row.name) || "").trim();
-  if (who) return `${who}: ${value}`;
+  if (who) return speakerCaption(who, value);
   if (!Number.isInteger(index) || activeChannelRows().length < 2) return value;
-  return `채널 ${index + 1} ${value}`;
+  return speakerCaption(`채널 ${index + 1}`, value);
 }
 
 document.getElementById("openSettings").addEventListener("click", () => openSettings());

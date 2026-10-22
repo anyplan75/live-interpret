@@ -230,7 +230,8 @@ test("the broadcast window loads the hearing stack and wires heard events", () =
   const engine = fs.readFileSync(path.join(root, "broadcast/lib/engine.js"), "utf8");
   assert.ok(html.indexOf('src="hearing.js"') >= 0 && html.indexOf('src="hearing.js"') < html.indexOf('src="renderer.js"'));
   assert.match(renderer, /event\.type === "heard"/);
-  assert.match(renderer, /hearing\.corrected\(event\.heardId/);
+  assert.match(renderer, /hearing\.heard\(heardKey\(event\.channel, event\.id\)/);
+  assert.match(renderer, /hearing\.corrected\(heardKey\(event\.channel, event\.heardId\)/);
   assert.match(engine, /onHeard:.*type: "heard"/);
 });
 

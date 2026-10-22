@@ -3,6 +3,23 @@ const assert = require("node:assert/strict");
 const sentence = require("../broadcast/lib/sentence");
 const { timing } = require("../broadcast/lib/catalog");
 
+test("cuts a finished sentence in Korean, Chinese, and English", () => {
+  const match = sentence.findCutMatch("오늘 하나님은 우리를 사랑하십니다.");
+  assert.ok(match);
+  assert.match("오늘 하나님은 우리를 사랑하십니다.".slice(0, match.index + match[0].length), /하십니다/);
+  const chinese = "神爱我们。";
+  const chineseCut = sentence.findCutMatch(chinese);
+  assert.ok(chineseCut);
+  assert.equal(chinese.slice(0, chineseCut.index + chineseCut[0].length).trim(), "神爱我们。");
+  const english = sentence.findCutMatch("God loves us.");
+  assert.ok(english);
+  assert.equal("God loves us.".slice(0, english.index + english[0].length).trim(), "God loves us.");
+  assert.equal(sentence.isNoise("네네네"), true);
+  assert.equal(sentence.isNoise("아"), true);
+  assert.equal(sentence.isHangingTail("주님께서"), true);
+  assert.equal(sentence.findCutMatch("神爱我们"), null);
+});
+
 test("cuts a finished sermon sentence and ignores noise", () => {
   const match = sentence.findCutMatch("오늘 하나님은 우리를 사랑하십니다.");
   assert.ok(match);

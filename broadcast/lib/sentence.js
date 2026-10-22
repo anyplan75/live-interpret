@@ -1,6 +1,6 @@
 /**
- * 한국어 설교 문장 절단.
- * cheil 송출기와 같은 종결어미·조사 꼬리·침묵 flush 기준을 유지합니다.
+ * 문장 절단.
+ * 한국어는 종결어미와 조사 꼬리를 그대로 쓰고, 다른 말하는 언어도 마침표에서 같이 끊습니다.
  */
 const ENDINGS =
   "축원합니다|축원하옵나이다|하옵나이다|하겠습니다|하셨습니다|하십니다|바랍니다|할지어다|하시옵소서|하여\\s*주옵소서|주옵소서|하옵소서|주시옵소서|나이다|이옵니다|아닙니까|습니까|합니까|인가요|은가요|는가요|잖아요|아닙니다|것입니다|겁니다|입니다|습니다|합니다|합시다|하십시다|십시오|세요|시죠|아멘|네요|어요|아요|예요|대요|지요|군요|죠|느냐|도다|입니까";
@@ -80,8 +80,29 @@ function findClauseCut(text) {
   return best;
 }
 
+/** 중국어·영어처럼 한국어 어미가 없는 말도 문장 부호에서 끊습니다. */
+function punctuationCut(text, preferLast) {
+  const re = /[.?!。！？]+[…"'”’)\]]*/g;
+  let first = null;
+  let last = null;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index < 1) continue;
+    if (match[0][0] === "." && /\d$/.test(text.slice(0, match.index))) {
+      const after = text.slice(match.index + match[0].length);
+      if (/^\d/.test(after)) continue;
+    }
+    const piece = text.slice(0, match.index + match[0].length).trim();
+    if (piece.length < 2 || isNoise(piece) || isHangingTail(piece)) continue;
+    if (!first) first = match;
+    last = match;
+  }
+  return preferLast ? last : first;
+}
+
 function findCutMatch(text) {
-  if (!text || text.length < 12) return null;
+  if (!text || text.length < 2) return null;
+  if (text.length < 12) return punctuationCut(text, false);
   const minIdx = 10;
   if (text.length < 100) {
     ENDING.lastIndex = 0;
@@ -104,6 +125,9 @@ function findCutMatch(text) {
       }
     }
   }
+
+  const punct = punctuationCut(text, text.length >= 100);
+  if (punct) return punct;
 
   if (text.length >= 120) {
     const clause = findClauseCut(text);

@@ -13,6 +13,7 @@
     const who = String(name || "").trim();
     if (!body) return "";
     if (!who) return body;
+    if (body.startsWith(`${who}:`) || body.startsWith(`${who}：`)) return body;
     return `${who}: ${body}`;
   }
 

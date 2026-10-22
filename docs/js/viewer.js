@@ -70,9 +70,13 @@ LI.viewer = (() => {
   }
 
   function lineHtml(line) {
-    const body = escapeHtml(line.text || "");
-    if (!line.name) return body;
-    return `<span class="speaker">${escapeHtml(line.name)}:</span> ${body}`;
+    const raw = String(line.text || "");
+    const body = escapeHtml(raw);
+    const who = String(line.name || "").trim();
+    if (!who) return body;
+    const trimmed = raw.trim();
+    if (trimmed.startsWith(`${who}:`) || trimmed.startsWith(`${who}：`)) return body;
+    return `<span class="speaker">${escapeHtml(who)}:</span> ${body}`;
   }
 
   function captionEntries(row) {

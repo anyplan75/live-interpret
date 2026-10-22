@@ -1,6 +1,11 @@
 const sentence = require("./sentence");
 const { translate } = require("./translator");
 const { timing, langByCode, isGuidanceEcho, stripGuidance, spokenLanguage } = require("./catalog");
+const { speakerCaption } = require("../../docs/js/speaker-lines");
+
+function outputTargets(targets, sourceLang) {
+  return (targets || []).filter((lang) => lang && lang !== sourceLang && langByCode[lang]);
+}
 
 function joinSpace(left, right) {
   return `${left || ""} ${right || ""}`.replace(/\s+/g, " ").trim();
@@ -44,7 +49,7 @@ class Pipeline {
     this.apiKey = opts.apiKey;
     this.model = opts.model;
     this.sourceLang = spokenLanguage(opts.sourceLang);
-    this.targets = (opts.targets || []).filter((code) => code !== "ko" && code !== this.sourceLang && langByCode[code]);
+    this.targets = outputTargets(opts.targets, this.sourceLang);
     this.glossary = opts.glossary || "";
     this.sessionContext = opts.sessionContext || "";
     this.lessons = [];
@@ -119,7 +124,7 @@ class Pipeline {
     }
     this.spoken = value.slice(0, consumed);
     this.interim = tail.trim();
-    this.onLive(this.interim);
+    this.onLive(speakerCaption(this.speaker, this.interim));
     this.pushLive(false);
   }
 
@@ -171,7 +176,7 @@ class Pipeline {
 
   addHeard(text) {
     this.heardSeq += 1;
-    this.onHeard({ id: this.heardSeq, text });
+    this.onHeard({ id: this.heardSeq, text: speakerCaption(this.speaker, text) });
     return this.heardSeq;
   }
 
@@ -296,7 +301,7 @@ class Pipeline {
   setSourceLang(code, targets) {
     this.sourceLang = spokenLanguage(code);
     if (Array.isArray(targets)) {
-      this.targets = targets.filter((lang) => lang !== "ko" && lang !== this.sourceLang && langByCode[lang]);
+      this.targets = outputTargets(targets, this.sourceLang);
     }
     this.interim = "";
     this.unprocessed = "";
@@ -366,9 +371,10 @@ class Pipeline {
       if (!result[lang]) continue;
       const out = String(result[lang]).trim();
       if (!out) continue;
+      const shown = speakerCaption(this.speaker, out);
       const commit = () => {
         if (!this.sessionTexts[lang]) this.sessionTexts[lang] = [];
-        this.sessionTexts[lang].push(out);
+        this.sessionTexts[lang].push(shown);
         return this.sessionTexts[lang].join("\n");
       };
       let full;
@@ -385,13 +391,21 @@ class Pipeline {
         this.onLog(`${lang}.txt 저장 실패: ${err.message || err}`);
       }
       try {
-        if (this.cloud && this.cloud.appendSentence) await this.cloud.appendSentence(lang, id, out);
+        if (this.cloud && this.cloud.appendSentence) await this.cloud.appendSentence(lang, id, shown);
       } catch (err) {
         this.onLog(`클라우드 ${lang} 문장 추가 실패: ${err.message || err}`);
       }
-      payload[lang] = { text: out, id, isFinal: true };
-      if (lang === this.sourceLang) this.onLine({ lang, text: out, raw: result._raw, isFinal: true, id, heardId });
-      else this.onLine({ lang, text: out, raw: "", isFinal: true, id });
+      payload[lang] = { text: shown, id, isFinal: true };
+      if (lang === this.sourceLang) {
+        this.onLine({
+          lang,
+          text: shown,
+          raw: speakerCaption(this.speaker, result._raw),
+          isFinal: true,
+          id,
+          heardId,
+        });
+      } else this.onLine({ lang, text: shown, raw: "", isFinal: true, id });
     }
     if (Object.keys(payload).some((key) => key !== "_timestamp") && this.cloud) {
       try {
@@ -415,16 +429,17 @@ class Pipeline {
     this.lastLivePush = now;
     this.cloud.updateSubtitles(this.decoratePayload({
       _timestamp: now,
-      [this.sourceLang]: { text, id: this.sentenceId, isFinal: false },
+      [this.sourceLang]: { text: speakerCaption(this.speaker, text), id: this.sentenceId, isFinal: false },
     })).catch(() => {});
   }
 
   pushKorean(text, id, isFinal) {
     if (!this.cloud) return;
     this.lastLivePush = Date.now();
+    const shown = speakerCaption(this.speaker, text);
     this.cloud.updateSubtitles(this.decoratePayload({
       _timestamp: this.lastLivePush,
-      [this.sourceLang]: { text, id, isFinal: !!isFinal },
+      [this.sourceLang]: { text: shown, id, isFinal: !!isFinal },
     })).catch(() => {});
   }
 

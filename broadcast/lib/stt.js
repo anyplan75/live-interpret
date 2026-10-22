@@ -12,7 +12,7 @@ function sensitivityThreshold(level) {
 }
 
 /**
- * 선택한 채널의 24kHz PCM만 받아 한국어 텍스트로 바꿉니다.
+ * 선택한 채널의 24kHz PCM만 받아 그 채널의 말하는 언어로 바꿉니다.
  * 실시간 세션이 안 되면 발화 단위 파일 인식으로 넘깁니다.
  */
 class SpeechSession {

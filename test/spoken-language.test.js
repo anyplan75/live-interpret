@@ -6,7 +6,7 @@ const catalog = require("../docs/js/catalog");
 const cost = require("../broadcast/lib/cost");
 const { buildPrompt } = require("../broadcast/lib/translator");
 const { SpeechSession } = require("../broadcast/lib/stt");
-const { Engine } = require("../broadcast/lib/engine");
+const { Engine, channelRecognition } = require("../broadcast/lib/engine");
 const { Pipeline } = require("../broadcast/lib/pipeline");
 
 const root = path.join(__dirname, "..");
@@ -75,7 +75,9 @@ test("the broadcast window labels the heard language", () => {
   assert.match(html, /id="heardTitle"/);
   assert.match(renderer, /channel-spoken/);
   assert.match(renderer, /deviceChannels/);
-  assert.match(renderer, /지금 듣는 \$\{spokenName/);
+  assert.match(renderer, /지금 듣는 \$\{spokenTitle/);
+  assert.match(renderer, /return "중국어"/);
+  assert.match(renderer, /function heardKey/);
   assert.match(renderer, /setChannelSpoken/);
   assert.doesNotMatch(renderer, /spokenEl\.disabled = running/);
   assert.match(read("broadcast/lib/stt.js"), /languages: \[this\.language\]/);
@@ -193,11 +195,103 @@ test("switching spoken language during a broadcast does not change the hour pric
   assert.equal(spoken, "ja");
   assert.equal(engine.running, true);
   assert.equal(engine.pipeline.sourceLang, "ja");
-  assert.deepEqual(engine.pipeline.targets, ["en"]);
+  assert.deepEqual(engine.pipeline.targets, ["en", "ko"]);
   assert.deepEqual(usage.languages, ["en", "ja"]);
   assert.equal(engine.sessionCharge.charged, 20000);
   assert.equal(engine.prepaid.amountKrw, 20000);
   assert.deepEqual(engine.prepaid.languages, ["en", "ja"]);
   assert.deepEqual(switched, ["ja"]);
   assert.equal(logs.some((row) => row.text && row.text.includes("일본어")), true);
+});
+
+test("every spoken language is heard on its own channel, including Chinese beside Korean", async () => {
+  const outputs = catalog.languages.map((lang) => lang.code).filter((code) => code !== "ko");
+  catalog.languages.forEach((lang) => {
+    const plan = channelRecognition({ spoken: lang.code, source: "phone", name: "말하는 사람" }, outputs);
+    assert.equal(plan.spoken, lang.code);
+    assert.equal(plan.targets.includes(lang.code), false);
+    assert.equal(plan.speaker, "말하는 사람");
+    if (lang.code === "ko") {
+      assert.equal(plan.transcription, "ko");
+      assert.equal(plan.targets.includes("ko"), false);
+    } else {
+      assert.notEqual(plan.transcription, "ko");
+      assert.equal(plan.targets.includes("ko"), true);
+    }
+  });
+  const chinese = channelRecognition({ spoken: "zh-CN", source: "phone", name: "왕웨이" }, ["en", "ja", "zh-CN"]);
+  assert.equal(chinese.transcription, "zh");
+  assert.deepEqual(chinese.targets, ["en", "ja", "ko"]);
+  const korean = channelRecognition({ spoken: "ko", source: "device" }, ["en", "ja", "zh-CN"], "김목사");
+  assert.equal(korean.speaker, "김목사");
+  assert.deepEqual(korean.targets, ["en", "ja", "zh-CN"]);
+
+  const lines = [];
+  const heard = [];
+  const translated = [];
+  function make(plan) {
+    return new Pipeline({
+      apiKey: "sk-test",
+      model: "gpt-4o-mini",
+      sourceLang: plan.spoken,
+      targets: plan.targets,
+      speaker: plan.speaker,
+      onHeard: (row) => heard.push(row.text),
+      onLine: (line) => lines.push(line),
+      onLive: () => {},
+      translateImpl: async (text, opts) => {
+        translated.push({ text, source: opts.sourceLang, targets: opts.targetCodes.slice() });
+        if (opts.sourceLang === "zh-CN") return { ko: "하나님은 사랑입니다", en: "God is love", ja: "神は愛です" };
+        return { ko: `교정 ${text}`, en: `EN ${text}`, ja: `JA ${text}`, "zh-CN": `中文 ${text}` };
+      },
+    });
+  }
+  const koPlan = channelRecognition({ source: "phone", spoken: "ko", name: "김영희" }, ["en", "ja", "zh-CN"]);
+  const zhPlan = channelRecognition({ source: "phone", spoken: "zh-CN", name: "왕웨이" }, ["en", "ja", "zh-CN"]);
+  const koreanPipe = make(koPlan);
+  const chinesePipe = make(zhPlan);
+  koreanPipe.onFinalChunk("오늘 하나님은 우리를 사랑하십니다.");
+  chinesePipe.onFinalChunk("神爱我们。");
+  await koreanPipe.chain;
+  await chinesePipe.chain;
+  assert.ok(heard.some((text) => text.startsWith("김영희:") && text.includes("사랑하십니다")));
+  assert.ok(heard.some((text) => text.startsWith("왕웨이:") && text.includes("神爱我们")));
+  const zhEn = lines.find((line) => line.lang === "en" && line.text.startsWith("왕웨이:"));
+  const zhKo = lines.find((line) => line.lang === "ko" && line.text.startsWith("왕웨이:"));
+  const koZh = lines.find((line) => line.lang === "zh-CN" && line.text.startsWith("김영희:"));
+  assert.ok(zhEn && zhEn.text.includes("God is love"));
+  assert.ok(zhKo && zhKo.text.includes("하나님은 사랑입니다"));
+  assert.ok(koZh && koZh.text.includes("中文"));
+  assert.equal(zhEn.text.startsWith("왕웨이: 왕웨이:"), false);
+  assert.ok(translated.some((row) => row.source === "zh-CN" && row.targets.includes("ko") && !row.targets.includes("zh-CN")));
+  assert.ok(translated.some((row) => row.source === "ko" && row.targets.includes("zh-CN") && !row.targets.includes("ko")));
+
+  const engine = new Engine(() => {});
+  const koFed = [];
+  const deviceZh = [];
+  const phoneFed = [];
+  engine.channelRows = [
+    { spoken: "ko", on: true, source: "device" },
+    { spoken: "zh-CN", on: true, source: "device" },
+    { spoken: "zh-CN", on: true, source: "phone", name: "왕웨이", phoneId: "phone0009" },
+  ];
+  engine.channelSessions = new Map([
+    [0, { source: "device", spoken: "ko", speech: { push(buf) { koFed.push(buf); } } }],
+    [1, { source: "device", spoken: "zh-CN", speech: { push(buf) { deviceZh.push(buf); } } }],
+    [2, { source: "phone", spoken: "zh-CN", speech: { push(buf) { phoneFed.push(buf); } } }],
+  ]);
+  engine._onPcm(Buffer.alloc(8), {
+    mode: "all",
+    nChannels: 2,
+    sampleRate: 24000,
+    deviceChannels: 2,
+    deviceChannel: 0,
+    selected: 0,
+  });
+  assert.equal(koFed.length, 1);
+  assert.equal(deviceZh.length, 1);
+  assert.equal(phoneFed.length, 0);
+  engine.pushPhonePcm("phone0009", Buffer.alloc(4));
+  assert.equal(phoneFed.length, 1);
+  assert.equal(koFed.length, 1);
 });

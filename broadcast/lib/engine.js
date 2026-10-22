@@ -12,6 +12,7 @@ const {
   styleFromSettings,
   subtitleFontId,
   spokenLanguage,
+  transcriptionLanguage,
   translationTargets,
 } = require("./catalog");
 const bulletin = require("./bulletin");
@@ -29,6 +30,25 @@ const firebase = require("./firebase");
 
 function cleanTargets(targets) {
   return [...new Set((targets || []).filter((code) => code !== "ko" && langByCode[code]))];
+}
+
+/** 그 채널이 말하는 언어는 빼고, 한국어가 아니면 한국어 자막도 만듭니다. 요금 언어에는 한국어를 더하지 않습니다. */
+function targetsForChannel(outputs, spoken) {
+  const code = spokenLanguage(spoken);
+  const targets = translationTargets(outputs, code);
+  if (code !== "ko" && langByCode.ko && !targets.includes("ko")) targets.push("ko");
+  return targets;
+}
+
+function channelRecognition(row, outputs, deviceName) {
+  const spoken = spokenLanguage(row && row.spoken);
+  const phone = !!(row && row.source === "phone");
+  return {
+    spoken,
+    transcription: transcriptionLanguage(spoken),
+    targets: targetsForChannel(outputs, spoken),
+    speaker: phone ? cleanDisplayName(row.name) : cleanDisplayName(deviceName || ""),
+  };
 }
 
 function deviceRow(row, index, fallbackSpoken) {
@@ -544,6 +564,7 @@ class Engine {
     const selected = translationTargets(targets, sources);
     const existing = (await firebase.get(`churches/${churchId}/live/settings`)) || {};
     const active = [...new Set([...sources, ...selected])];
+    if (sources.some((code) => code !== "ko") && !active.includes("ko")) active.unshift("ko");
     const next = {
       _timestamp: Date.now(),
       spoken: sources[0] || "ko",
@@ -589,7 +610,15 @@ class Engine {
     }
     this.outputs = selected;
     this.targets = next;
-    if (this.pipeline) this.pipeline.targets = this.targets;
+    const assignTargets = (pipeline, spoken) => {
+      if (!pipeline) return;
+      pipeline.targets = targetsForChannel(selected, spoken || pipeline.sourceLang);
+    };
+    if (this.channelSessions && this.channelSessions.size) {
+      this.channelSessions.forEach((session) => assignTargets(session.pipeline, session.spoken));
+    } else {
+      assignTargets(this.pipeline, this.spoken);
+    }
     if (this.usage) this.usage.setLanguages(this.targets);
     if (churchId) await this.syncSettings(churchId, selected);
     if (this.running) this.flushUsage(true);
@@ -624,7 +653,7 @@ class Engine {
     const row = this.channelSessions && this.channelSessions.get(i);
     const pipeline = row ? row.pipeline : (i === 0 ? this.pipeline : null);
     const speech = row ? row.speech : (i === 0 ? this.speech : null);
-    const ownTargets = translationTargets(this.outputs || [], code);
+    const ownTargets = targetsForChannel(this.outputs || [], code);
     if (pipeline && pipeline.setSourceLang) pipeline.setSourceLang(code, ownTargets);
     else if (pipeline) {
       pipeline.sourceLang = code;
@@ -722,11 +751,12 @@ class Engine {
     if (!this.sharedTexts) this.sharedTexts = { texts: {}, chain: Promise.resolve() };
     if (this.channelSessions.has(index)) return this.channelSessions.get(index);
     const row = this.channelRows[index] || { spoken: "ko", on: true, source: "device" };
-    const spoken = spokenLanguage(row.spoken);
     const phone = row.source === "phone";
-    const speaker = phone ? cleanDisplayName(row.name) : "";
+    const plan = channelRecognition(row, this.outputs || [], index === 0 ? this.preacherName : "");
+    const spoken = plan.spoken;
+    const speaker = plan.speaker;
     const channelKey = phone ? `p${row.phoneId}` : `d${index}`;
-    const targets = translationTargets(this.outputs || [], spoken);
+    const targets = plan.targets;
     const bits = this.channelBroadcastBits();
     const cloud = this.sessionCloud;
     const pipeline = new Pipeline({
@@ -1033,6 +1063,7 @@ class Engine {
     this.sessionApiKey = apiKey;
     this.sessionModel = model;
     this.preacherId = selected.id;
+    this.preacherName = selected.name || "";
 
     let extracted = null;
     if (opts.bulletinPath) {
@@ -1299,4 +1330,4 @@ class Engine {
   }
 }
 
-module.exports = { Engine, cleanTargets, normalizeChannelRows };
+module.exports = { Engine, cleanTargets, normalizeChannelRows, targetsForChannel, channelRecognition };
