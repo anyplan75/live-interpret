@@ -15,14 +15,16 @@
 <body>
   <main>
     <h1>강연·회의 통역</h1>
-    <p class="hint">진행자가 알려 준 암호와 이름을 입력하면 이 휴대폰이 송출 컴퓨터의 마이크가 됩니다. 이 암호는 계정 비밀번호가 아닙니다.</p>
+    <p class="hint">이름과 이 암호로 로그인하면 연결됩니다. 말하는 언어는 이 휴대폰에서 고릅니다. 이 암호는 계정 비밀번호가 아닙니다.</p>
 
     <section id="booth" class="card">
       <form id="micForm">
         <label for="joinId">암호</label>
         <input id="joinId" name="joinId" maxlength="8" autocapitalize="characters" autocomplete="off" enterkeyhint="next" required>
         <label for="name">이름</label>
-        <input id="name" name="name" maxlength="40" autocomplete="name" enterkeyhint="done" required>
+        <input id="name" name="name" maxlength="40" autocomplete="name" enterkeyhint="next" required>
+        <label for="spoken">말하는 언어</label>
+        <select id="spoken" name="spoken" required></select>
         <button type="submit" id="openMic">마이크 열기</button>
       </form>
       <p id="status"></p>
@@ -41,9 +43,21 @@
     const statusEl = document.getElementById("status");
     const levelEl = document.getElementById("level");
     const openMic = document.getElementById("openMic");
+    const spokenEl = document.getElementById("spoken");
     let link = null;
 
     function say(text) { statusEl.textContent = text; }
+    function fillSpoken() {
+      spokenEl.innerHTML = "";
+      (LI.catalog.languages || []).forEach((lang) => {
+        const option = document.createElement("option");
+        option.value = lang.code;
+        option.textContent = `${lang.flag} ${lang.name}`;
+        spokenEl.append(option);
+      });
+      if (LI.catalog.langByCode.ko) spokenEl.value = "ko";
+    }
+    fillSpoken();
     function securePage() {
       return window.isSecureContext === true && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1");
     }
@@ -73,6 +87,11 @@
         say("이름을 입력해 주세요.");
         return;
       }
+      const spoken = spokenEl.value;
+      if (!spoken || !LI.catalog.langByCode[spoken]) {
+        say("말하는 언어를 선택해 주세요.");
+        return;
+      }
       if (!securePage() || !navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
         say("이 페이지는 보안 연결이 아니라서 마이크를 열 수 없습니다.");
         return;
@@ -86,7 +105,7 @@
           rootPath: LI.catalog.firebase.rootPath,
           token,
           name,
-          spoken: "ko",
+          spoken,
           connectionId,
           role: "lecture",
           onStatus: say,

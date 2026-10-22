@@ -97,6 +97,20 @@ xcodebuild archive \
   CODE_SIGN_IDENTITY="" \
   2>&1 | redact_log
 
+JOIN_HTML="$(find "$ARCHIVE_PATH/Products" -name 'index.html' -print -quit)"
+if [[ -z "$JOIN_HTML" ]]; then
+  echo "강연·회의 입장 화면이 앱 안에 없습니다." >&2
+  exit 1
+fi
+if ! grep -q '말하는 언어' "$JOIN_HTML"; then
+  echo "입장 화면에 말하는 언어가 없습니다." >&2
+  exit 1
+fi
+if grep -q '접속 번호' "$JOIN_HTML"; then
+  echo "옛 접속 번호 화면이 앱 안에 있습니다." >&2
+  exit 1
+fi
+
 echo "== 배포 서명 후 TestFlight 업로드 =="
 rm -rf "$EXPORT_DIR"
 mkdir -p "$EXPORT_DIR"

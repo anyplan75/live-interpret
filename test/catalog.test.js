@@ -255,8 +255,15 @@ test("firebase api key is not committed", () => {
   assert.equal(lecturePage.includes('type="password"'), false);
   assert.match(lecturePage, /id="joinId"/);
   assert.match(lecturePage, /id="name"/);
-  assert.match(lecturePage, /암호/);
-  assert.doesNotMatch(lecturePage, /id="joinPin"|id="spoken"|qrcode/);
+  assert.match(lecturePage, /id="spoken"/);
+  assert.match(lecturePage, /for="joinId">암호</);
+  assert.match(lecturePage, /for="name">이름</);
+  assert.match(lecturePage, /for="spoken">말하는 언어</);
+  assert.ok(lecturePage.indexOf('for="joinId"') < lecturePage.indexOf('for="name"'));
+  assert.ok(lecturePage.indexOf('for="name"') < lecturePage.indexOf('for="spoken"'));
+  assert.match(lecturePage, /lang\.flag/);
+  assert.doesNotMatch(lecturePage, /spoken:\s*["']ko["']/);
+  assert.doesNotMatch(lecturePage, /id="joinPin"|접속\s*번호|4자리|qrcode/);
   assert.equal(lecturePage.indexOf("languages.js") < lecturePage.indexOf("catalog.js"), true);
   assert.deepEqual(hits, []);
 });

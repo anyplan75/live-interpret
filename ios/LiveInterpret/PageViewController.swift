@@ -65,7 +65,25 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
             errorLabel.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -24),
             errorLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
-        loadPage(page.startURL)
+        if page == .lecture {
+            loadBundledLecture()
+        } else {
+            loadPage(page.startURL)
+        }
+    }
+
+    /// 강연·회의는 앱에 넣은 입장 화면을 연다. 공개 웹의 옛 접속 번호 화면은 열지 않는다.
+    private func loadBundledLecture() {
+        guard let file = Bundle.main.url(forResource: "index", withExtension: "html"),
+              var html = try? String(contentsOf: file, encoding: .utf8) else {
+            showLoadError()
+            return
+        }
+        html = html.replacingOccurrences(of: "<script src=\"sw-register.js\"></script>", with: "")
+        errorLabel.isHidden = true
+        webView.isHidden = false
+        spinner.startAnimating()
+        webView.loadHTMLString(html, baseURL: PhonePage.lectureDocumentBaseURL)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -120,8 +138,12 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
             decisionHandler(.cancel)
             return
         }
-        if url.scheme == "about" || FaceLink.isShellPage(url) {
+        if url.scheme == "about" || FaceLink.isShellPage(url) || PhonePage.isBundledLectureBase(url) {
             decisionHandler(.allow)
+            return
+        }
+        if FaceLink.isRemoteLecturePage(url) {
+            decisionHandler(.cancel)
             return
         }
         if navigationAction.targetFrame?.isMainFrame != false {
