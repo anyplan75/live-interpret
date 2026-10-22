@@ -536,12 +536,15 @@ class PhoneJoin {
     }
     const ices = await this._getSignal(`peers/${peerId}/phoneIce.json?shallow=true`);
     if (!ices || typeof ices !== "object") return;
-    const ids = Object.keys(ices).sort();
-    for (const iceId of ids) {
-      const key = `${peerId}/${iceId}`;
-      if (this.seenIce.has(key)) continue;
-      const value = await this._getSignal(`peers/${peerId}/phoneIce/${iceId}.json`);
-      this._onPhoneIce(peerId, iceId, value);
+    const ids = Object.keys(ices).sort().filter((iceId) => !this.seenIce.has(`${peerId}/${iceId}`));
+    const width = 4;
+    for (let i = 0; i < ids.length; i += width) {
+      const batch = ids.slice(i, i + width);
+      const loaded = await Promise.all(batch.map(async (iceId) => ({
+        iceId,
+        value: await this._getSignal(`peers/${peerId}/phoneIce/${iceId}.json`),
+      })));
+      loaded.forEach((item) => this._onPhoneIce(peerId, item.iceId, item.value));
     }
   }
 

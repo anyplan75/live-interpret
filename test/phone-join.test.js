@@ -504,6 +504,46 @@ test("a phone that looks connected also feeds the translator", async () => {
   assert.equal(fed.length, 1);
   engine.pushPhonePcm("phone0001", Buffer.from([2, 0, 2, 0]));
   assert.equal(fed.length, 2);
+
+  const late = new Engine(() => {});
+  late.running = true;
+  late.church = { id: "grace-ab", accountUid: "user" };
+  late.channelRows = [
+    { spoken: "ko", on: true, source: "device" },
+    { spoken: "ko", on: true, source: "phone", name: "홍길동", phoneId: "phone0001", connectionId: "AB234K", connected: true, showName: true },
+  ];
+  late.sessionCharge = { charged: 15000, balance: 40000 };
+  late.outputs = ["en"];
+  late.paidChannels = new Set([1]);
+  late.syncSettings = async () => {};
+  const heard = [];
+  late.openChannel = async (index) => {
+    if (!late.channelSessions) late.channelSessions = new Map();
+    late.channelSessions.set(index, {
+      source: "phone",
+      name: "홍길동",
+      speech: { push(buf) { heard.push(Buffer.from(buf)); } },
+    });
+  };
+  late.pushPhonePcm("phone0001", Buffer.from([4, 0, 5, 0]));
+  for (let i = 0; i < 8 && !heard.length; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(heard.length, 1);
+  assert.equal(heard[0].readInt16LE(0), 4);
+
+  const mac = new Engine(() => {});
+  const macFed = [];
+  mac.channelSessions = new Map([
+    [0, { source: "device", name: "이종찬", speech: { push(buf) { macFed.push(buf); } } }],
+  ]);
+  mac._onPcm(Buffer.alloc(4), {
+    nChannels: 1,
+    sampleRate: 24000,
+    mode: "single",
+    deviceChannels: 2,
+    deviceChannel: 1,
+    selected: 0,
+  });
+  assert.equal(macFed.length, 1);
   assert.equal(engine.sessionCharge.balance, 30000);
   const round = pcmFromSignal(Buffer.from([9, 0, 8, 0]).toString("base64"));
   assert.equal(round.readInt16LE(0), 9);

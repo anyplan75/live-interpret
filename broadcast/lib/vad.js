@@ -1,4 +1,4 @@
-const { rmsInt16 } = require("./audio-util");
+const { rmsInt16, peakInt16 } = require("./audio-util");
 
 function concat(chunks) {
   if (!chunks.length) return Buffer.alloc(0);
@@ -42,7 +42,7 @@ class UtteranceVad {
     const buffer = Buffer.from(pcm);
     const samples = buffer.length >> 1;
     if (!samples) return { speaking: this.collecting, append: null, finished: false, utterance: null };
-    const loud = rmsInt16(buffer) >= this.threshold;
+    const loud = rmsInt16(buffer) >= this.threshold || peakInt16(buffer) >= Math.min(0.2, this.threshold * 3);
 
     if (!this.collecting) {
       if (!loud) {

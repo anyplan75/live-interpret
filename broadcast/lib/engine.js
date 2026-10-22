@@ -548,8 +548,8 @@ class Engine {
         return;
       }
       if (info.mode === "single") {
-        const session = this.channelSessions.get(info.deviceChannel);
-        if (session && session.source !== "phone") session.speech.push(resampleInt16(buffer, rate, 24000));
+        const session = this.deviceSpeechSession(info.deviceChannel) || this.deviceSpeechSession(0);
+        if (session) session.speech.push(resampleInt16(buffer, rate, 24000));
         return;
       }
       this.channelSessions.forEach((session, index) => {
@@ -719,18 +719,42 @@ class Engine {
       if (churchId) await this.syncSettings(churchId, this.outputs || []);
       return { index: i, on: false, charged: 0 };
     }
-    if (this.running && i > 0 && !(this.paidChannels && this.paidChannels.has(i))) {
-      const plan = await this.chargeChannelFees([i]);
-      if (plan.blocked.includes(i)) {
-        this.channelRows[i].on = false;
-        const message = `${this.channelFeeLabel(i)}은 충전금이 부족해 시작하지 못했습니다.`;
-        this.emit({ type: "log", level: "error", text: message });
-        this.emitPhones();
-        return { index: i, on: false, blocked: true, message, balance: plan.balance };
+    let finishGate = null;
+    if (this.running) {
+      if (!this.phoneOpenTasks) this.phoneOpenTasks = new Map();
+      const pending = this.phoneOpenTasks.get(i);
+      if (pending) {
+        try { await pending; } catch (_) { /* 먼저 연 쪽이 결과를 남깁니다 */ }
+        return {
+          index: i,
+          on: !!(this.channelRows[i] && this.channelRows[i].on && this.channelSessions && this.channelSessions.has(i)),
+          charged: 0,
+        };
+      }
+      let resolveGate;
+      const gate = new Promise((resolve) => { resolveGate = resolve; });
+      finishGate = resolveGate;
+      this.phoneOpenTasks.set(i, gate);
+    }
+    try {
+      if (this.running && i > 0 && !(this.paidChannels && this.paidChannels.has(i))) {
+        const plan = await this.chargeChannelFees([i]);
+        if (plan.blocked.includes(i)) {
+          this.channelRows[i].on = false;
+          const message = `${this.channelFeeLabel(i)}은 충전금이 부족해 시작하지 못했습니다.`;
+          this.emit({ type: "log", level: "error", text: message });
+          this.emitPhones();
+          return { index: i, on: false, blocked: true, message, balance: plan.balance };
+        }
+      }
+      this.channelRows[i].on = true;
+      if (this.running) await this.openChannel(i);
+    } finally {
+      if (finishGate) {
+        finishGate();
+        if (this.phoneOpenTasks && this.phoneOpenTasks.get(i)) this.phoneOpenTasks.delete(i);
       }
     }
-    this.channelRows[i].on = true;
-    if (this.running) await this.openChannel(i);
     this.notifyPhone(i, !!(this.running && this.channelSessions && this.channelSessions.has(i)));
     this.emitPhones();
     if (churchId) await this.syncSettings(churchId, this.outputs || []);
@@ -1046,7 +1070,7 @@ class Engine {
     queued.push(Buffer.from(pcm));
     let total = 0;
     queued.forEach((chunk) => { total += chunk.length; });
-    const cap = 24000 * 2 * 2;
+    const cap = 24000 * 2 * 8;
     while (total > cap && queued.length) total -= queued.shift().length;
     this.phonePcmWait.set(phoneId, queued);
   }
@@ -1099,6 +1123,7 @@ class Engine {
     if (!session || session.source !== "phone" || !session.speech) {
       this.queuePhonePcm(phoneId, pcm);
       this.emit({ type: "level", channel: index, peak: level });
+      this.wakePhoneRecognizer(index);
       return;
     }
     this.flushPhonePcm(phoneId);
@@ -1107,6 +1132,30 @@ class Engine {
     if (session.lastLevelAt && now - session.lastLevelAt < 80) return;
     session.lastLevelAt = now;
     this.emit({ type: "level", channel: index, peak: level });
+  }
+
+  deviceSpeechSession(index) {
+    const session = this.channelSessions && this.channelSessions.get(index);
+    if (!session || session.source === "phone" || !session.speech) return null;
+    return session;
+  }
+
+  /** 소리 막대만 움직이고 인식이 비어 있으면, 그 휴대폰 칸의 인식기를 열어 쌓아 둔 표본을 넣습니다. */
+  wakePhoneRecognizer(index) {
+    if (!this.running || !this.channelRows) return;
+    const row = this.channelRows[index];
+    if (!row || row.source !== "phone" || !row.phoneId) return;
+    if (this.channelSessions && this.channelSessions.has(index)) return;
+    if (!this.phoneOpenTasks) this.phoneOpenTasks = new Map();
+    if (this.phoneOpenTasks.has(index)) return;
+    const churchId = this.church && this.church.id ? this.church.id : "";
+    const task = this.setChannelOn(churchId, index, true)
+      .then(() => { if (row.phoneId) this.flushPhonePcm(row.phoneId); })
+      .catch(() => {})
+      .finally(() => {
+        if (this.phoneOpenTasks && this.phoneOpenTasks.get(index) === task) this.phoneOpenTasks.delete(index);
+      });
+    this.phoneOpenTasks.set(index, task);
   }
 
   /** 진행자가 휴대폰 카드에서 자막 이름을 바꾸거나, 그 휴대폰 이름만 빼는 자리입니다. */
@@ -1371,6 +1420,9 @@ class Engine {
         this.channelRows[index].on = true;
         await this.openChannel(index);
       }
+      this.channelRows.forEach((row) => {
+        if (row && row.source === "phone" && row.phoneId) this.flushPhonePcm(row.phoneId);
+      });
       await this.syncSettings(church.id, outputCodes);
     } catch (err) {
       try { await this.closeAllChannels(); } catch (_) { /* 이미 끊긴 인식은 무시합니다 */ }

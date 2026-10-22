@@ -83,6 +83,16 @@ function rmsInt16(buf) {
   return Math.sqrt(sum / n);
 }
 
+function peakInt16(buf) {
+  const n = buf.length >> 1;
+  let peak = 0;
+  for (let i = 0; i < n; i++) {
+    const s = Math.abs(buf.readInt16LE(i * 2)) / 32768;
+    if (s > peak) peak = s;
+  }
+  return peak;
+}
+
 module.exports = {
   extractChannel,
   channelPeaks,
@@ -90,4 +100,5 @@ module.exports = {
   selectedChannelPcm,
   wavFromPcm16,
   rmsInt16,
+  peakInt16,
 };

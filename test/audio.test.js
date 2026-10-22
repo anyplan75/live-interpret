@@ -51,6 +51,14 @@ test("vad returns one utterance after speech and silence", () => {
   quiet.push(frame(30, 0.4));
   const tooShort = quiet.push(frame(80, 0));
   assert.equal(tooShort.finished, false);
+
+  const peaked = new UtteranceVad({ sampleRate: rate, silenceMs: 40, preRollMs: 10, minSpeechMs: 20, threshold: 0.016 });
+  const sparse = Buffer.alloc(200 * 2);
+  sparse.writeInt16LE(4000, 0);
+  const started = peaked.push(sparse);
+  assert.equal(started.speaking, true);
+  const ended = peaked.push(frame(50, 0));
+  assert.equal(ended.finished, true);
 });
 
 test("a missing saved input uses the default mic and hides RtApiCore disconnect text", () => {

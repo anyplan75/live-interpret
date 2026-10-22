@@ -1588,14 +1588,24 @@ function preacherNameShown() {
   return !(box && box.checked === false);
 }
 
+function preacherDisplayName() {
+  const typed = document.getElementById("preacherName") && document.getElementById("preacherName").value.trim();
+  if (typed) return typed;
+  const picked = preacherEl && preacherEl.selectedOptions && preacherEl.selectedOptions[0]
+    ? preacherEl.selectedOptions[0].textContent
+    : "";
+  if (picked && picked.indexOf("없") < 0 && picked !== "강연자 선택") return picked;
+  return "";
+}
+
 function channelPrefix(index, text, name) {
   const value = String(text || "");
   if (!value) return value;
   const row = Number.isInteger(index) ? state.channels[index] : null;
   if (row && row.source === "phone" && row.showName === false) return value;
-  const who = String(name || (row && row.name) || "").trim();
+  let who = String(name || (row && row.name) || "").trim();
+  if (!who && (!row || row.source !== "phone") && preacherNameShown()) who = preacherDisplayName();
   if (who) return speakerCaption(who, value);
-  if (row && row.source !== "phone" && !preacherNameShown()) return value;
   if (!Number.isInteger(index) || activeChannelRows().length < 2) return value;
   return speakerCaption(`채널 ${index + 1}`, value);
 }
