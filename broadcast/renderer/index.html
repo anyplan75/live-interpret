@@ -11,7 +11,7 @@
   <header>
     <div class="title-block">
       <h1>실시간 통역시스템</h1>
-      <p id="churchLine">교회 계정으로 로그인하면 그 교회만 열립니다.</p>
+      <p id="churchLine">계정으로 로그인하면 그 계정만 열립니다.</p>
     </div>
     <div class="header-status">
       <div id="prepaidTime" class="cost-figure time" aria-live="polite">남은 시간 없음</div>
@@ -21,8 +21,8 @@
   <main>
     <section>
       <div class="card" id="signInCard">
-        <h2>교회 로그인</h2>
-        <p class="hint">관리자가 만든 이 교회의 이메일과 비밀번호로 로그인합니다. 다른 교회는 고를 수 없습니다.</p>
+        <h2>계정 로그인</h2>
+        <p class="hint">관리자가 만든 이 계정의 이메일과 비밀번호로 로그인합니다. 다른 계정은 고를 수 없습니다.</p>
         <label for="churchEmail">이메일</label>
         <input id="churchEmail" type="email" autocomplete="username">
         <label for="churchPassword">비밀번호</label>
@@ -35,7 +35,7 @@
 
       <div id="studio" hidden>
         <div class="card" id="broadcastActions">
-          <h2 id="churchName">교회</h2>
+          <h2 id="churchName">계정</h2>
           <p class="hint" id="churchHint"></p>
           <div class="row">
             <button type="button" class="ghost" id="openSettings">설정</button>
@@ -46,7 +46,7 @@
         </div>
 
         <div class="card" id="costCard">
-          <p class="hint" id="prepaidHint">방송을 켜 둔 시간만 줄어듭니다. 끄면 남은 시간이 이 교회에 남습니다. 이 시간이 끝날 때까지 추가 요금은 없습니다.</p>
+          <p class="hint" id="prepaidHint">방송을 켜 둔 시간만 줄어듭니다. 끄면 남은 시간이 이 계정에 남습니다. 이 시간이 끝날 때까지 추가 요금은 없습니다.</p>
           <h2>남은 충전금</h2>
           <p id="balanceCost" class="cost-figure">0원</p>
           <h2>이번 방송 차감</h2>
@@ -127,7 +127,7 @@
             <option value="normal" selected>감도 보통</option>
             <option value="low">감도 낮음</option>
           </select>
-          <p class="hint" id="keyHint">번역 키는 관리 페이지에 있습니다. 교회 계정은 그 키를 읽지 않습니다.</p>
+          <p class="hint" id="keyHint">번역 키는 관리 페이지에 있습니다. 이 계정은 그 키를 읽지 않습니다.</p>
         </div>
 
         <div class="card">
@@ -166,7 +166,7 @@
             <button type="button" class="warn" id="pickFolder">폴더 선택</button>
             <button type="button" class="ghost" id="showSession" disabled>저장 폴더 열기</button>
           </div>
-          <p class="hint" id="folderHint">교회 이름 / 날짜_시각 / 언어.txt 로 저장됩니다.</p>
+          <p class="hint" id="folderHint">계정 이름 / 날짜_시각 / 언어.txt 로 저장됩니다.</p>
         </div>
 
         <div class="card" id="subtitleStyleCard">

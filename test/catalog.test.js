@@ -120,7 +120,9 @@ test("owner and church logins split the controls", () => {
   assert.match(broadcast, /강연자/);
   assert.match(broadcast, /큐시트/);
   assert.match(broadcast, /순서지/);
-  assert.match(broadcast, /다른 교회는 고를 수 없습니다/);
+  assert.match(broadcast, /다른 계정은 고를 수 없습니다/);
+  assert.doesNotMatch(broadcast, /교회/);
+  assert.doesNotMatch(renderer, /교회/);
   assert.doesNotMatch(renderer, /apiKey|listChurches|modelEl/);
   assert.match(renderer, /signIn/);
   assert.match(renderer, /saveStyle/);

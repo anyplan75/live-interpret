@@ -393,12 +393,14 @@ function renderPhoneDesks() {
     idInput.autocomplete = "off";
     idInput.value = desk.connectionId || "";
     idInput.setAttribute("aria-label", `휴대폰 ${index + 1} 암호`);
+    const channelIndex = deskChannelIndex(desk);
     const status = document.createElement("p");
     status.className = "hint";
-    if (desk.connected && desk.name) status.textContent = `${desk.name} 연결됨`;
-    else if (desk.name) status.textContent = `${desk.name} · 끊김`;
+    if (desk.connected && desk.name) {
+      const live = channelIndex >= 0 && state.channels[channelIndex] && state.channels[channelIndex].on;
+      status.textContent = live ? `${desk.name} 마이크가 입력입니다` : `${desk.name} 연결됨`;
+    } else if (desk.name) status.textContent = `${desk.name} · 끊김`;
     else status.textContent = "이름과 이 암호로 로그인하면 연결됩니다.";
-    const channelIndex = deskChannelIndex(desk);
     const select = document.createElement("select");
     select.className = "channel-spoken";
     select.setAttribute("aria-label", `휴대폰 ${index + 1} 말하는 언어`);
@@ -760,7 +762,7 @@ function showPrepaid(info) {
     return;
   }
   node.textContent = "남은 시간 없음";
-  hint.textContent = "방송을 켜 둔 시간만 줄어듭니다. 끄면 남은 시간이 이 교회에 남습니다.";
+  hint.textContent = "방송을 켜 둔 시간만 줄어듭니다. 끄면 남은 시간이 이 계정에 남습니다.";
 }
 
 function languageLabel(code) {
@@ -810,8 +812,8 @@ function showChurch(church) {
   document.getElementById("churchName").textContent = church.name;
   document.getElementById("churchLine").textContent = "이 계정으로 로그인했습니다.";
   document.getElementById("churchHint").textContent = church.active
-    ? "이 교회만 방송합니다. 모델, 용어집, 활성화, 키는 관리 페이지에 있습니다."
-    : "이 교회는 비활성 상태입니다. 관리 페이지에서 활성화하기 전에는 방송을 시작할 수 없습니다.";
+    ? "이 계정만 방송합니다. 모델, 용어집, 활성화, 키는 관리 페이지에 있습니다."
+    : "이 계정은 비활성 상태입니다. 관리 페이지에서 활성화하기 전에는 방송을 시작할 수 없습니다.";
   document.getElementById("start").disabled = !church.active || state.running;
 }
 
@@ -861,7 +863,7 @@ function setSignedIn(auth) {
     if (operatorEl) operatorEl.hidden = true;
     if (heard) heard.hidden = false;
     if (prepaid) prepaid.hidden = false;
-    document.getElementById("churchLine").textContent = "교회 계정으로 로그인하면 그 교회만 열립니다.";
+    document.getElementById("churchLine").textContent = "계정으로 로그인하면 그 계정만 열립니다.";
   } else if (state.operator) {
     document.getElementById("churchLine").textContent = "이 계정으로 로그인했습니다.";
   }
@@ -913,7 +915,7 @@ async function loadOperator() {
 async function refreshKeyHint() {
   const hint = document.getElementById("keyHint");
   if (!state.signedIn || state.operator) {
-    hint.textContent = state.operator ? "" : "번역 키는 관리 페이지에 있습니다. 교회 계정은 그 키를 읽지 않습니다.";
+    hint.textContent = state.operator ? "" : "번역 키는 관리 페이지에 있습니다. 이 계정은 그 키를 읽지 않습니다.";
     return;
   }
   try {

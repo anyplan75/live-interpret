@@ -99,8 +99,8 @@
       video: false,
     });
     const source = audioContext.createMediaStreamSource(mediaStream);
-    const mute = audioContext.createGain();
-    mute.gain.value = 0;
+    // 출력을 0으로 두면 아이폰이 마이크 처리를 멈춰, 연결만 되고 소리가 안 간다.
+    const sink = audioContext.createMediaStreamDestination();
     const sendInput = (input) => {
       let peak = 0;
       for (let i = 0; i < input.length; i += 32) {
@@ -113,21 +113,32 @@
       if (!current || current.readyState !== "open") return;
       const pcm = LI.pcm.downsampleFloatToPcm16(input, audioContext.sampleRate, 24000);
       if (!pcm.length || current.bufferedAmount > 262144) return;
-      current.send(pcm.buffer);
+      const copy = pcm.slice();
+      try { current.send(copy.buffer); } catch (_) { /* 한 조각이 실패해도 다음 소리는 계속 보냅니다 */ }
     };
+    const workletSource = [
+      "class PcmCapture extends AudioWorkletProcessor {",
+      "  process(inputs) {",
+      "    const channel = inputs[0] && inputs[0][0];",
+      "    if (channel && channel.length) this.port.postMessage(channel.slice(0));",
+      "    return true;",
+      "  }",
+      "}",
+      "registerProcessor('pcm-capture', PcmCapture);",
+    ].join("\n");
     try {
-      await audioContext.audioWorklet.addModule(options.workletUrl || "../mic/pcm-worklet.js");
+      const workletUrl = options.workletUrl || URL.createObjectURL(new Blob([workletSource], { type: "application/javascript" }));
+      await audioContext.audioWorklet.addModule(workletUrl);
       const node = new AudioWorkletNode(audioContext, "pcm-capture");
       node.port.onmessage = (audioEvent) => sendInput(audioEvent.data);
       source.connect(node);
-      node.connect(mute);
+      node.connect(sink);
     } catch (_) {
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = (audioEvent) => sendInput(audioEvent.inputBuffer.getChannelData(0));
       source.connect(processor);
-      processor.connect(mute);
+      processor.connect(sink);
     }
-    mute.connect(audioContext.destination);
 
     function startLink() {
       if (closed || active) return;

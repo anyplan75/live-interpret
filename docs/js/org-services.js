@@ -132,7 +132,7 @@
   }
 
   function kindLabel(kind) {
-    return kind === "company" ? "기업" : "교회";
+    return kind === "company" ? "기업" : "계정";
   }
 
   function serviceLabel(service) {

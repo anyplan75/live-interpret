@@ -278,6 +278,61 @@ test("a phone is an extra input and the first input stays included", async () =>
   assert.equal(engine.channelRows.filter((row) => row.source === "phone").length, 2);
 });
 
+test("a phone that looks connected also feeds the translator", async () => {
+  const { pcmFromSignal } = require("../broadcast/lib/phone-join");
+  const engine = new Engine(() => {});
+  engine.device = { inputChannels: 1 };
+  engine.channelRows = [{ spoken: "ko", on: true, source: "device" }];
+  engine.running = true;
+  engine.church = { id: "grace-ab", accountUid: "user" };
+  engine.sessionCharge = { charged: 15000, balance: 40000 };
+  engine.outputs = ["en"];
+  engine.paidChannels = new Set();
+  engine.syncSettings = async () => {};
+  engine.writeBilling = async (_id, balance) => { engine.sessionCharge.balance = balance; };
+  const fed = [];
+  let release = null;
+  engine.openChannel = (index) => new Promise((resolve) => {
+    release = () => {
+      engine.channelSessions.set(index, {
+        source: "phone",
+        speech: { push(buf) { fed.push(Buffer.from(buf)); } },
+      });
+      resolve();
+    };
+  });
+  const pending = engine.acceptPhone({ id: "phone0001", name: "민수", spoken: "ko", connectionId: "AB234K" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(typeof release, "function");
+  assert.equal(engine.channelRows[1].connected, true);
+  assert.equal(engine.channelSessions.has(1), false);
+  engine.pushPhonePcm("phone0001", Buffer.from([1, 0, 1, 0]));
+  assert.equal(fed.length, 0);
+  release();
+  const joined = await pending;
+  assert.equal(joined.listening, true);
+  assert.equal(engine.channelRows[1].on, true);
+  assert.equal(fed.length, 1);
+  engine.pushPhonePcm("phone0001", Buffer.from([2, 0, 2, 0]));
+  assert.equal(fed.length, 2);
+  assert.equal(engine.sessionCharge.balance, 30000);
+  const round = pcmFromSignal(Buffer.from([9, 0, 8, 0]).toString("base64"));
+  assert.equal(round.readInt16LE(0), 9);
+  const answer = read("broadcast/phone/answer.html");
+  const offer = read("docs/js/phone-offer.js");
+  const lecture = read("docs/lecture/index.html");
+  assert.match(answer, /btoa/);
+  assert.match(answer, /arrayBuffer/);
+  assert.doesNotMatch(answer, /pcm: message\.data/);
+  assert.match(offer, /createMediaStreamDestination/);
+  assert.doesNotMatch(offer, /gain\.value = 0/);
+  assert.match(lecture, /createMediaStreamDestination/);
+  assert.doesNotMatch(lecture, /src="\.\.\/js\/phone-offer\.js"/);
+  assert.match(read("broadcast/main.js"), /acceptPhone/);
+  assert.match(read("broadcast/lib/consent.js"), /이 계정과 플랫폼 관리자/);
+  assert.doesNotMatch(read("broadcast/lib/consent.js"), /교회/);
+});
+
 test("named phones join through data-channel messages without a certificate", async () => {
   const joined = [];
   const sent = [];

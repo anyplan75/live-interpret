@@ -33,12 +33,31 @@ function stateFor(peerId) {
       state.outbox.forEach((text) => channel.send(text));
       state.outbox = [];
     };
+    const pcmText = (bytes) => {
+      let binary = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return btoa(binary);
+    };
+    const sendPcm = (data) => {
+      let bytes = null;
+      if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+      else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      if (!bytes || bytes.length < 2) return;
+      window.phoneLink.send({ type: "pcm", peerId, pcm: pcmText(bytes) });
+    };
     channel.onmessage = (message) => {
       if (typeof message.data === "string") {
         window.phoneLink.send({ type: "text", peerId, text: message.data });
         return;
       }
-      window.phoneLink.send({ type: "pcm", peerId, pcm: message.data });
+      if (message.data instanceof Blob) {
+        message.data.arrayBuffer().then(sendPcm).catch(() => {});
+        return;
+      }
+      sendPcm(message.data);
     };
     channel.onclose = () => window.phoneLink.send({ type: "leave", peerId });
   };

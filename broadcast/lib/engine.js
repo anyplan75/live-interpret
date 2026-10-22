@@ -101,6 +101,7 @@ class Engine {
     this.channelSessions = new Map();
     this.paidChannels = new Set();
     this.phoneLink = null;
+    this.phonePcmWait = new Map();
     this.subtitleBoard = null;
     this.sharedTexts = null;
     this.running = false;
@@ -569,7 +570,7 @@ class Engine {
   }
 
   async saveStyle(churchId, style) {
-    if (!isChurchId(churchId)) throw new Error("교회가 올바르지 않습니다.");
+    if (!isChurchId(churchId)) throw new Error("계정이 올바르지 않습니다.");
     const existing = (await firebase.get(`churches/${churchId}/live/settings`)) || {};
     const next = applyStyleToSettings(existing, style);
     await firebase.set(`churches/${churchId}/live/settings`, next);
@@ -902,12 +903,60 @@ class Engine {
     return { index, name, phoneId, spoken: row.spoken, on: !!row.on, listening };
   }
 
+  /** 연결 표시만 하지 않고, 방송 중이면 휴대폰 마이크를 통역 입력으로 연다. */
+  async acceptPhone(phone) {
+    const added = this.addPhone(phone);
+    if (!this.running) return { ...added, listening: false };
+    try {
+      const churchId = this.church && this.church.id ? this.church.id : "";
+      const turned = await this.setChannelOn(churchId, added.index, true);
+      if (!turned || turned.on !== true) {
+        throw new Error((turned && turned.message) || "휴대폰 마이크를 입력으로 열지 못했습니다.");
+      }
+    } catch (err) {
+      if (this.channelRows[added.index]) this.channelRows[added.index].on = false;
+      this.markPhoneAway(added.phoneId);
+      throw err;
+    }
+    this.flushPhonePcm(added.phoneId);
+    return {
+      index: added.index,
+      name: added.name,
+      phoneId: added.phoneId,
+      spoken: added.spoken,
+      on: true,
+      listening: true,
+    };
+  }
+
   markPhoneAway(phoneId) {
     const index = (this.channelRows || []).findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
     if (index < 0) return;
     this.channelRows[index].connected = false;
+    if (this.phonePcmWait) this.phonePcmWait.delete(phoneId);
     this.emitPhones();
     this.emit({ type: "log", level: "info", text: `${this.channelRows[index].name} 휴대폰 연결이 끊겼습니다.` });
+  }
+
+  queuePhonePcm(phoneId, pcm) {
+    if (!this.phonePcmWait) this.phonePcmWait = new Map();
+    const queued = this.phonePcmWait.get(phoneId) || [];
+    queued.push(Buffer.from(pcm));
+    let total = 0;
+    queued.forEach((chunk) => { total += chunk.length; });
+    const cap = 24000 * 2 * 2;
+    while (total > cap && queued.length) total -= queued.shift().length;
+    this.phonePcmWait.set(phoneId, queued);
+  }
+
+  flushPhonePcm(phoneId) {
+    const queued = this.phonePcmWait && this.phonePcmWait.get(phoneId);
+    if (!queued || !queued.length) return;
+    const index = (this.channelRows || []).findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
+    const session = index >= 0 && this.channelSessions ? this.channelSessions.get(index) : null;
+    if (!session || session.source !== "phone" || !session.speech) return;
+    this.phonePcmWait.delete(phoneId);
+    queued.forEach((chunk) => session.speech.push(chunk));
   }
 
   pushPhonePcm(phoneId, pcm) {
@@ -915,7 +964,11 @@ class Engine {
     const index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === phoneId);
     if (index < 0) return;
     const session = this.channelSessions && this.channelSessions.get(index);
-    if (!session || session.source !== "phone" || !session.speech) return;
+    if (!session || session.source !== "phone" || !session.speech) {
+      this.queuePhonePcm(phoneId, pcm);
+      return;
+    }
+    this.flushPhonePcm(phoneId);
     session.speech.push(pcm);
     const now = Date.now();
     if (session.lastLevelAt && now - session.lastLevelAt < 80) return;
@@ -935,7 +988,7 @@ class Engine {
       throw new Error("관리 페이지에서 OpenAI 키를 먼저 저장해 주세요.");
     }
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
-    if (!isChurchId(opts.churchId)) throw new Error("교회를 선택해 주세요.");
+    if (!isChurchId(opts.churchId)) throw new Error("계정을 선택해 주세요.");
     if (!isPreacherId(opts.preacherId)) throw new Error("강연자를 등록하고 선택해 주세요.");
     if (!["설교", "강의", "연설", "행사"].includes(opts.sessionKind)) throw new Error("내용을 선택해 주세요.");
     const outputCodes = cleanTargets(opts.targets);
@@ -952,15 +1005,15 @@ class Engine {
     const spoken = this.channelRows[0].spoken;
     const targets = translationTargets(outputCodes, this.channelRows.filter((row) => row.on).map((row) => row.spoken));
     const church = await firebase.getChurch(opts.churchId);
-    if (!church) throw new Error("교회를 찾지 못했습니다. 관리 페이지에서 교회를 먼저 추가해 주세요.");
-    if (!church.active) throw new Error("이 교회는 비활성 상태입니다. 관리 페이지에서 활성화해 주세요.");
+    if (!church) throw new Error("계정을 찾지 못했습니다. 관리 페이지에서 계정을 먼저 추가해 주세요.");
+    if (!church.active) throw new Error("이 계정은 비활성 상태입니다. 관리 페이지에서 활성화해 주세요.");
     const glossary = church.glossary && church.glossary.trim()
       ? church.glossary
       : defaultGlossary(church.name);
     const model = isModelId(church.model) ? church.model : defaultModel;
     const preachers = await firebase.listPreachers(church.id);
     let selected = preachers.find((item) => item.id === opts.preacherId) || null;
-    if (!selected) throw new Error("이 교회에 등록된 강연자를 선택해 주세요.");
+    if (!selected) throw new Error("이 계정에 등록된 강연자를 선택해 주세요.");
 
     try {
       this.writer = createSessionWriter(opts.folder, church.name, opts.now || new Date());

@@ -58,6 +58,12 @@ function asBuffer(data) {
   return Buffer.from(data);
 }
 
+function pcmFromSignal(data) {
+  if (typeof data === "string") return Buffer.from(data, "base64");
+  if (!data) return Buffer.alloc(0);
+  return asBuffer(data);
+}
+
 class PhoneJoin {
   constructor(hooks) {
     const extra = hooks || {};
@@ -287,19 +293,33 @@ class PhoneJoin {
       this._refuse(peerId, err.message || "연결하지 못했습니다.");
       return;
     }
-    const phoneId = cleanPhoneId(joined.phoneId) || requested;
+    if (joined && typeof joined.then === "function") {
+      joined.then((value) => this._completeHello(peerId, desk, row, requested, name, spoken, value))
+        .catch((err) => {
+          row.phoneId = "";
+          if (desk.holderPeerId === peerId) desk.holderPeerId = "";
+          this._refuse(peerId, err && err.message ? err.message : "연결하지 못했습니다.");
+        });
+      return;
+    }
+    this._completeHello(peerId, desk, row, requested, name, spoken, joined);
+  }
+
+  _completeHello(peerId, desk, row, requested, name, spoken, joined) {
+    const accepted = joined || {};
+    const phoneId = cleanPhoneId(accepted.phoneId) || requested;
     row.phoneId = phoneId;
     desk.phoneId = phoneId;
-    desk.name = joined.name || name;
-    desk.spoken = joined.spoken || spoken;
-    desk.channelIndex = Number.isInteger(joined.index) ? joined.index : -1;
+    desk.name = accepted.name || name;
+    desk.spoken = accepted.spoken || spoken;
+    desk.channelIndex = Number.isInteger(accepted.index) ? accepted.index : -1;
     this._send(peerId, {
       type: "joined",
       phoneId,
       name: desk.name,
       channel: desk.channelIndex,
     });
-    this._send(peerId, { type: "state", listening: !!joined.listening });
+    this._send(peerId, { type: "state", listening: !!accepted.listening });
     this._notify();
   }
 
@@ -507,4 +527,5 @@ module.exports = {
   publicMicUrl,
   parseIce,
   encodeIce,
+  pcmFromSignal,
 };

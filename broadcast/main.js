@@ -10,7 +10,7 @@ const googleAuth = require("./lib/google-auth");
 const bulletinLib = require("./lib/bulletin");
 const consent = require("./lib/consent");
 const updater = require("./lib/updater");
-const { PhoneJoin } = require("./lib/phone-join");
+const { PhoneJoin, pcmFromSignal } = require("./lib/phone-join");
 const { useFolder, releaseFolder } = require("./lib/folder-access");
 const operator = require("./lib/operator");
 
@@ -107,12 +107,12 @@ async function requireChurch() {
   const token = await ensureAuth();
   if (!token) throw new Error("로그인이 필요합니다.");
   const session = secrets.readSession(userDir());
-  if (!session || !session.localId) throw new Error("교회 로그인 정보가 없습니다. 다시 로그인해 주세요.");
+  if (!session || !session.localId) throw new Error("로그인 정보가 없습니다. 다시 로그인해 주세요.");
   const link = await firebase.getAccountLink(session.localId);
-  if (!link) throw new Error("이 계정에 연결된 교회가 없습니다. 방송 앱은 교회 계정으로 로그인합니다.");
+  if (!link) throw new Error("이 계정에 연결된 방송 계정이 없습니다. 등록된 계정으로 로그인해 주세요.");
   const church = await firebase.getChurch(link.churchId);
   if (!church || church.accountUid !== session.localId) {
-    throw new Error("교회 계정이 이 교회와 맞지 않습니다.");
+    throw new Error("로그인한 계정이 이 방송과 맞지 않습니다. 다시 로그인해 주세요.");
   }
   return church;
 }
@@ -316,7 +316,7 @@ function registerIpc() {
       };
     } catch (err) {
       const message = err && err.message ? err.message : "";
-      if (/연결된 교회|교회 계정|다시 로그인/.test(message)) {
+      if (/다시 로그인|연결된 방송 계정|맞지 않습니다/.test(message)) {
         idToken = "";
         tokenExpiresAt = 0;
         firebase.setIdToken("");
@@ -562,7 +562,7 @@ function registerIpc() {
       return;
     }
     if (msg.type === "text") phoneJoin.ingestText(msg.peerId, msg.text);
-    else if (msg.type === "pcm") phoneJoin.ingestPcm(msg.peerId, msg.pcm);
+    else if (msg.type === "pcm") phoneJoin.ingestPcm(msg.peerId, pcmFromSignal(msg.pcm));
     else if (msg.type === "leave") phoneJoin.peerLeft(msg.peerId);
     else if (msg.type === "error" && msg.message) {
       send({ type: "log", level: "error", text: String(msg.message) });
@@ -721,7 +721,7 @@ if (!gotLock) {
       writeLocalPrepaid,
     });
     phoneJoin = new PhoneJoin({
-      onHello: (phone) => engine.addPhone(phone),
+      onHello: (phone) => engine.acceptPhone(phone),
       onPcm: (phoneId, pcm) => engine.pushPhonePcm(phoneId, pcm),
       onLeave: (phoneId) => engine.markPhoneAway(phoneId),
       onChange: () => {

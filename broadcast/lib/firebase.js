@@ -15,7 +15,7 @@ function withAuth(url) {
 }
 
 function assertChurch(id) {
-  if (!isChurchId(id)) throw new Error("교회 아이디가 올바르지 않습니다.");
+  if (!isChurchId(id)) throw new Error("계정 아이디가 올바르지 않습니다.");
 }
 
 function assertFolder(folder) {
