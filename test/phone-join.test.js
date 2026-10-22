@@ -141,7 +141,16 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(pageVC, /sw-register\.js/);
   assert.match(pageVC, /forResource: "index"/);
   assert.match(pageVC, /scanLecture/);
+  assert.match(pageVC, /closest\("#scanQr"\)/);
+  assert.match(pageVC, /isModalInPresentation = true/);
   assert.match(pageVC, /lectureSlot/);
+  const scanner = read("ios/LiveInterpret/QrScannerViewController.swift");
+  assert.match(scanner, /isBeingDismissed/);
+  assert.match(scanner, /videoRecording/);
+  assert.ok(scanner.indexOf("commitConfiguration()") < scanner.indexOf("startRunning()"));
+  assert.match(lecture, /function readSlot/);
+  assert.match(lecture, /showSlot\(parsed\);\s*return true;/);
+  assert.ok(lecture.indexOf('getElementById("scanQr")') < lecture.indexOf("try { fillSpoken()"));
   assert.match(phonePages, /phone-booth/);
   assert.match(phonePages, /func lectureSlot/);
   assert.match(read("ios/LiveInterpret/PhonePages.swift"), /isRemoteLecturePage/);

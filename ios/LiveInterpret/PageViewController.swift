@@ -25,6 +25,19 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         if page == .lecture {
+            let openScanner = """
+            document.addEventListener("click", function (event) {
+              var node = event.target && event.target.closest ? event.target.closest("#scanQr") : null;
+              if (!node) return;
+              var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scanLecture;
+              if (bridge) bridge.postMessage("scan");
+            }, true);
+            """
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: openScanner,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            ))
             configuration.userContentController.add(lectureBridge, name: "scanLecture")
         }
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -101,7 +114,9 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        prepareMicrophone()
+        if presentedViewController == nil {
+            prepareMicrophone()
+        }
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
@@ -121,6 +136,43 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
     }
 
     @objc func scanQr() {
+        guard presentedViewController == nil else { return }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            showScanner()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if allowed {
+                        self.showScanner()
+                    } else {
+                        self.explainCameraDenied()
+                    }
+                }
+            }
+        default:
+            explainCameraDenied()
+        }
+    }
+
+    private func explainCameraDenied() {
+        let alert = UIAlertController(
+            title: "카메라가 필요합니다",
+            message: "QR을 읽으려면 설정에서 이 앱의 카메라를 허용해 주세요.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "닫기", style: .cancel))
+        alert.addAction(UIAlertAction(title: "설정 열기", style: .default) { _ in
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func showScanner() {
+        guard presentedViewController == nil else { return }
         let scanner = QrScannerViewController()
         if page == .lecture {
             scanner.hintText = "송출 컴퓨터에 나온 QR을 비추세요."
@@ -129,29 +181,41 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
             scanner.hintText = "상대 휴대폰에 나온 QR을 비추세요."
             scanner.accept = { FaceLink.joinURL(from: $0) }
         }
-        scanner.onLink = { [weak self] url in
-            guard let self else { return }
+        scanner.onLink = { [weak self] url, done in
+            guard let self else {
+                done(false)
+                return
+            }
             if self.page == .lecture, let slot = FaceLink.lectureSlot(from: url.absoluteString) {
-                self.applyLectureScan(slot)
+                self.lectureSlot = slot
+                self.applyLectureScan(slot, done: done)
                 return
             }
             self.loadPage(url)
+            done(true)
         }
         let sheet = UINavigationController(rootViewController: scanner)
         sheet.modalPresentationStyle = .fullScreen
+        sheet.isModalInPresentation = true
         present(sheet, animated: true)
     }
 
-    private func applyLectureScan(_ slot: FaceLink.LectureSlot) {
+    private func applyLectureScan(_ slot: FaceLink.LectureSlot, done: ((Bool) -> Void)? = nil) {
         lectureSlot = slot
         let script = "window.LIJoin&&window.LIJoin.applyScan({\"connectionId\":\"\(slot.connectionId)\",\"token\":\"\(slot.token)\"})"
-        webView.evaluateJavaScript(script, completionHandler: nil)
+        webView.evaluateJavaScript(script) { result, _ in
+            let accepted = (result as? Bool) == true || (result as? NSNumber)?.boolValue == true
+            done?(accepted)
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         spinner.stopAnimating()
         if let lectureSlot {
-            applyLectureScan(lectureSlot)
+            applyLectureScan(lectureSlot) { [weak self] accepted in
+                guard accepted, let self, self.presentedViewController != nil else { return }
+                self.dismiss(animated: true)
+            }
         }
     }
 

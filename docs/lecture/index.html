@@ -321,10 +321,15 @@
       });
       if (LI.catalog.langByCode.ko) spokenEl.value = "ko";
     }
-    fillSpoken();
     function securePage() {
       return window.isSecureContext === true && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1");
     }
+
+    document.getElementById("scanQr").addEventListener("click", () => {
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scanLecture;
+      if (bridge) bridge.postMessage("scan");
+      else say("휴대폰 앱에서 QR 스캔을 눌러 주세요.");
+    });
 
     function showSlot(next) {
       slot = next;
@@ -333,27 +338,31 @@
       say("이름과 말하는 언어를 입력한 뒤 마이크를 여세요.");
     }
 
+    function readSlot(connectionId, token) {
+      const id = String(connectionId || "").trim().toUpperCase();
+      const signal = String(token || "").trim().toLowerCase();
+      if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(id)) return null;
+      if (!/^[a-f0-9]{32}$/.test(signal)) return null;
+      return { connectionId: id, token: signal };
+    }
+
     window.LIJoin = {
       applyScan(payload) {
-        const parsed = payload && payload.connectionId
-          ? LI.orgServices.parseLectureSlot(`https://anyplan75.github.io/live-interpret/lecture/?c=${encodeURIComponent(payload.connectionId)}&s=${encodeURIComponent(payload.token || "")}`)
-          : null;
+        const parsed = readSlot(payload && payload.connectionId, payload && payload.token);
         if (!parsed) {
           say("이 QR은 강연 참여 QR이 아닙니다.");
-          return;
+          return false;
         }
         showSlot(parsed);
+        return true;
       },
     };
 
-    const fromPage = LI.orgServices.parseLectureSlot(location.href);
-    if (fromPage) showSlot(fromPage);
-
-    document.getElementById("scanQr").addEventListener("click", () => {
-      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scanLecture;
-      if (bridge) bridge.postMessage("scan");
-      else say("휴대폰 앱에서 QR 스캔을 눌러 주세요.");
-    });
+    try { fillSpoken(); } catch (_) { /* 언어 목록이 늦게 와도 스캔 단추는 동작합니다 */ }
+    try {
+      const fromPage = LI.orgServices && LI.orgServices.parseLectureSlot && LI.orgServices.parseLectureSlot(location.href);
+      if (fromPage) showSlot(fromPage);
+    } catch (_) { /* 주소에 칸 정보가 없어도 스캔으로 들어옵니다 */ }
 
     document.getElementById("micForm").addEventListener("submit", async (event) => {
       event.preventDefault();
