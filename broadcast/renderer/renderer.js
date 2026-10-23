@@ -852,10 +852,55 @@ function renderPhoneLevels() {
   }
 }
 
+function webMicAddress() {
+  const given = state.phoneJoin && state.phoneJoin.webMicUrl;
+  const url = String(given || "https://anyplan75.github.io/live-interpret/lecture/");
+  return url.split("?")[0];
+}
+
+function appendPhoneJoinCode(parent, connectionId) {
+  const number = document.createElement("p");
+  number.className = "phone-connection";
+  const label = document.createElement("span");
+  label.textContent = "연결 번호";
+  const code = document.createElement("strong");
+  code.className = "join-code";
+  code.textContent = connectionId || "";
+  number.append(label, code);
+  const web = document.createElement("p");
+  web.className = "hint phone-web";
+  web.textContent = `웹 마이크 ${webMicAddress()}`;
+  parent.append(number, web);
+}
+
+function renderPhoneCodes() {
+  const root = document.getElementById("phoneCodes");
+  if (!root) return;
+  const desks = state.phoneJoin && Array.isArray(state.phoneJoin.channels) ? state.phoneJoin.channels : [];
+  root.innerHTML = "";
+  root.hidden = desks.length === 0;
+  if (!desks.length) return;
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "브라우저에서 웹 마이크 주소를 열고, 그 칸의 연결 번호를 입력하세요.";
+  root.append(hint);
+  desks.forEach((desk, index) => {
+    const card = document.createElement("div");
+    card.className = "phone-code-line";
+    const title = document.createElement("p");
+    title.className = "phone-level-name";
+    title.textContent = `휴대폰 ${index + 1}`;
+    card.append(title);
+    appendPhoneJoinCode(card, desk && desk.connectionId);
+    root.append(card);
+  });
+}
+
 function renderPhoneDesks() {
   placePhoneCardBeforeInput();
   const root = document.getElementById("phoneDesks");
   renderPhoneLevels();
+  renderPhoneCodes();
   if (!root) return;
   const active = document.activeElement;
   const keep = active && active.dataset && active.dataset.phoneEdit && root.contains(active)
@@ -916,6 +961,11 @@ function renderPhoneDesks() {
       paintGlances();
     });
     wrap.append(title);
+    appendPhoneJoinCode(wrap, desk.connectionId);
+    const webHint = document.createElement("p");
+    webHint.className = "hint";
+    webHint.textContent = "브라우저에서 이 주소를 열고, 연결 번호를 입력하세요.";
+    wrap.append(webHint);
     appendPhoneLive(wrap, index + 1, view);
     appendSpokenControl(wrap, select);
     appendPhoneNameEditor(wrap, index + 1, view);

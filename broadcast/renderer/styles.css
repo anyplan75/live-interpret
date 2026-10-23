@@ -368,6 +368,23 @@ details.fold-inner[open] > summary { margin-bottom: 8px; }
 .live-mic .meter { height: 18px; }
 .live-mic select { width: 100%; padding: 6px 8px; }
 
+.phone-codes {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.phone-code-line {
+  background: #121a24;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.phone-connection { margin: 8px 0 4px; }
+.phone-connection .join-code { display: block; margin-top: 4px; }
+.phone-web { word-break: break-all; }
+
 .phone-level {
   display: grid;
   grid-template-columns: 132px 1fr;

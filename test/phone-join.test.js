@@ -158,6 +158,13 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.doesNotMatch(scanner, /videoOrientation/);
   assert.ok(scanner.indexOf("commitConfiguration()") < scanner.indexOf("startRunning()"));
   assert.match(lecture, /function readSlot/);
+  assert.match(lecture, /id="connectionNumber"/);
+  assert.match(lecture, /lectureJoinRecordUrl/);
+  assert.match(lecture, /SpeechRecognition/);
+  assert.match(lecture, /beginHearing/);
+  assert.match(lecture, /nativeLectureMic/);
+  assert.match(lecture, /sendLine/);
+  assert.doesNotMatch(lecture, /접속 번호|id="joinId"/);
   assert.match(lecture, /showSlot\(parsed\);\s*return true;/);
   assert.ok(lecture.indexOf('getElementById("scanQr")') < lecture.indexOf("try { fillSpoken()"));
   assert.match(phonePages, /phone-booth/);
@@ -169,6 +176,9 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(card, /id="phoneDesks"/);
   assert.match(card, /id="phoneCount"/);
   assert.match(card, /QR/);
+  assert.match(card, /연결 번호/);
+  assert.match(card, /웹 마이크/);
+  assert.match(read("broadcast/renderer/index.html"), /id="phoneCodes"/);
   assert.doesNotMatch(card, /암호/);
   assert.doesNotMatch(card, /id="addPhoneChannel"|id="phoneQr"|id="phoneJoinUrl"|이번 세션 4자리 암호/);
   assert.doesNotMatch(card, /id="joinId"|id="joinPin"/);
@@ -208,6 +218,11 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(screen, /이 이름을 자막에 표시/);
   assert.match(screen, /phone-qr/);
   assert.match(screen, /qrDataUrl/);
+  assert.match(screen, /function appendPhoneJoinCode/);
+  assert.match(screen, /연결 번호/);
+  assert.match(screen, /웹 마이크/);
+  assert.match(screen, /split\("\?"\)/);
+  assert.doesNotMatch(screen.slice(screen.indexOf("function webMicAddress"), screen.indexOf("function appendPhoneJoinCode")), /token/);
   assert.match(read("broadcast/lib/phone-join.js"), /refreshQrs/);
   assert.match(read("docs/lecture/index.html"), /type: "hello", name/);
   assert.doesNotMatch(screen, /음성 신호가 들어오고 있습니다/);
@@ -789,7 +804,14 @@ test("each phone slot has its own lecture QR", async () => {
   assert.match(info.channels[0].qrDataUrl, /^data:image\/png;base64,/);
   assert.match(info.channels[1].qrDataUrl, /^data:image\/png;base64,/);
   assert.notEqual(info.channels[0].connectionId, info.channels[1].connectionId);
+  assert.equal(info.webMicUrl, "https://anyplan75.github.io/live-interpret/lecture/");
+  assert.equal(info.webMicUrl.includes("s="), false);
+  assert.equal(info.webMicUrl.includes(token), false);
   const url = org.lectureSlotUrl("https://anyplan75.github.io/live-interpret", info.channels[0].connectionId, token);
+  assert.equal(
+    org.lectureJoinRecordUrl("https://live-interpret-db65e-default-rtdb.asia-southeast1.firebasedatabase.app", "live-interpret", info.channels[0].connectionId.toLowerCase()),
+    `https://live-interpret-db65e-default-rtdb.asia-southeast1.firebasedatabase.app/live-interpret/lectureJoins/${info.channels[0].connectionId}.json`
+  );
   const parsed = org.parseLectureSlot(url);
   assert.equal(parsed.connectionId, info.channels[0].connectionId);
   assert.equal(parsed.token, token);

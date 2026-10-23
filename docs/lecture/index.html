@@ -15,10 +15,15 @@
 <body>
   <main>
     <h1>강연·회의 통역</h1>
-    <p class="hint" id="lead">송출 컴퓨터에 나온 QR을 스캔한 뒤, 이름과 말하는 언어를 입력하세요.</p>
+    <p class="hint" id="lead">송출 컴퓨터에 나온 웹 마이크 주소를 연 뒤, 연결 번호를 입력하세요. 휴대폰 앱은 QR을 스캔해도 됩니다.</p>
 
     <section id="booth" class="card">
       <div id="needScan">
+        <form id="numberForm">
+          <label for="connectionNumber">연결 번호</label>
+          <input id="connectionNumber" name="connectionNumber" maxlength="11" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" placeholder="6자리" required>
+          <button type="submit" id="joinNumber">이 번호로 들어가기</button>
+        </form>
         <button type="button" id="scanQr">QR 스캔</button>
       </div>
       <form id="micForm" hidden>
@@ -406,6 +411,8 @@
     const micForm = document.getElementById("micForm");
     let link = null;
     let slot = null;
+    let hearing = null;
+    let pendingLines = [];
 
     function say(text) { statusEl.textContent = text; }
     function fillSpoken() {
@@ -455,6 +462,64 @@
       if (bridge) bridge.postMessage(state);
     }
 
+    function nativeLectureMic() {
+      return !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lectureMic);
+    }
+
+    function endHearing() {
+      const rec = hearing;
+      hearing = null;
+      if (!rec) return;
+      rec.onend = null;
+      try { rec.stop(); } catch (_) { /* 이미 멈춘 말하기 인식은 무시합니다 */ }
+    }
+
+    // 휴대폰 앱은 기기 인식이 글을 보냅니다. 브라우저만 이 페이지에서 말을 글로 바꿉니다.
+    function deliverLine(text) {
+      const body = String(text || "").replace(/\s+/g, " ").trim();
+      if (!body) return;
+      if (link && typeof link.sendLine === "function") {
+        if (link.sendLine(body)) say("말을 맥으로 보냈습니다.");
+        return;
+      }
+      pendingLines.push(body);
+      if (pendingLines.length > 8) pendingLines.shift();
+    }
+
+    function flushLines() {
+      const queued = pendingLines.splice(0);
+      queued.forEach((text) => deliverLine(text));
+    }
+
+    function beginHearing(spoken) {
+      endHearing();
+      if (nativeLectureMic()) return;
+      const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Ctor) {
+        say("이 브라우저는 말을 글로 바꾸지 못합니다. Chrome 또는 Safari에서 열어 주세요.");
+        return;
+      }
+      const rec = new Ctor();
+      rec.lang = speechLocale(spoken);
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          if (!event.results[i].isFinal) continue;
+          deliverLine(event.results[i][0] && event.results[i][0].transcript);
+        }
+      };
+      rec.onend = () => {
+        if (hearing !== rec) return;
+        try { rec.start(); } catch (_) { /* 다음 말이 있으면 다시 엽니다 */ }
+      };
+      try { rec.start(); } catch (_) {
+        say("말하기 인식을 시작하지 못했습니다. Chrome 또는 Safari에서 다시 열어 주세요.");
+        return;
+      }
+      hearing = rec;
+    }
+
     window.LIJoin = {
       applyScan(payload) {
         const parsed = readSlot(payload && payload.connectionId, payload && payload.token);
@@ -489,14 +554,46 @@
       if (fromPage) showSlot(fromPage);
     } catch (_) { /* 주소에 칸 정보가 없어도 스캔으로 들어옵니다 */ }
 
+    document.getElementById("numberForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const id = LI.orgServices.normalizeConnectionId(document.getElementById("connectionNumber").value);
+      if (!id) {
+        say("연결 번호 6자리를 확인해 주세요.");
+        return;
+      }
+      const joinButton = document.getElementById("joinNumber");
+      joinButton.disabled = true;
+      try {
+        const url = LI.orgServices.lectureJoinRecordUrl(
+          LI.catalog.firebase.databaseURL,
+          LI.catalog.firebase.rootPath,
+          id,
+        );
+        const res = await fetch(url, { cache: "no-store" });
+        const body = res.ok ? await res.json() : null;
+        const token = body && typeof body.token === "string" ? body.token : "";
+        if (!LI.orgServices.validToken(token)) {
+          say("이 연결 번호를 찾지 못했습니다. 송출 컴퓨터의 번호를 다시 확인해 주세요.");
+          return;
+        }
+        showSlot({ connectionId: id, token });
+      } catch (_) {
+        say("연결 번호를 확인하지 못했습니다. 다시 시도해 주세요.");
+      } finally {
+        joinButton.disabled = false;
+      }
+    });
+
     document.getElementById("micForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!slot) {
-        say("먼저 QR을 스캔해 주세요.");
+        say("먼저 연결 번호를 입력하거나 QR을 스캔해 주세요.");
         return;
       }
       if (link) link.stop();
       link = null;
+      pendingLines = [];
+      endHearing();
       const name = LI.orgServices.cleanName(document.getElementById("name").value);
       if (!name) {
         say("이름을 입력해 주세요.");
@@ -511,6 +608,7 @@
         say("이 페이지는 보안 연결이 아니라서 마이크를 열 수 없습니다.");
         return;
       }
+      beginHearing(spoken);
       openMic.disabled = true;
       try {
         let current = null;
@@ -522,7 +620,10 @@
           spoken,
           connectionId: slot.connectionId,
           role: "lecture",
-          onStop() { notifyMic("stop"); },
+          onStop() {
+            endHearing();
+            notifyMic("stop");
+          },
           onStatus: say,
           onLevel(width) { levelEl.style.width = `${width}%`; },
           onJson(message) {
@@ -534,6 +635,7 @@
           },
         });
         link = current;
+        flushLines();
         notifyMic(JSON.stringify({
           event: "open",
           serverBase: current.serverBase || "",
@@ -541,6 +643,8 @@
         }));
         say("마이크를 열었습니다. 송출 컴퓨터에 연결하는 중입니다.");
       } catch (err) {
+        endHearing();
+        pendingLines = [];
         openMic.disabled = false;
         const code = err && err.name;
         if (code === "NotAllowedError" || code === "PermissionDeniedError") {

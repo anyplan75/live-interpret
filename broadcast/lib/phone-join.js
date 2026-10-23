@@ -141,6 +141,7 @@ class PhoneJoin {
       ...this.infoCache,
       ips: (this.infoCache.ips || []).slice(),
       loginError: this.loginError || "",
+      webMicUrl: orgServices.lectureAppUrl(catalog.pagesBase),
       channels,
     };
   }
