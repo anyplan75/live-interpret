@@ -50,6 +50,8 @@ class SpeechSession {
     this.askedSamples = 0;
     this.wordAsk = null;
     this.partialCommitted = false;
+    this.sinceCommit = Buffer.alloc(0);
+    this.uttSent = 0;
     this.uttGen = 0;
     this.interimTimer = null;
     this.inflight = null;
@@ -291,10 +293,35 @@ class SpeechSession {
     return true;
   }
 
+  /** 24kHz 16비트 소리 0.1초. 이보다 짧은 버퍼를 확정하면 인식기가 빈 버퍼 오류를 냅니다. */
+  minCommitBytes() {
+    return Math.round(this.vad.sampleRate * 0.1) * 2;
+  }
+
   sendAppend(pcm) {
-    if (!pcm || !pcm.length) return;
+    if (!pcm || !pcm.length) return false;
     if (this.onAudio) this.onAudio(pcm);
-    this.send({ type: "input_audio_buffer.append", audio: pcm.toString("base64") });
+    const sent = this.send({ type: "input_audio_buffer.append", audio: pcm.toString("base64") });
+    if (!sent) return false;
+    const chunk = Buffer.from(pcm);
+    this.sinceCommit = this.sinceCommit && this.sinceCommit.length
+      ? Buffer.concat([this.sinceCommit, chunk])
+      : chunk;
+    return true;
+  }
+
+  /**
+   * 이번 발화에서 아직 인식기로 안 간 앞부분을 순서대로 붙입니다.
+   * 이미 붙인 소리를 다시 붙이지 않습니다.
+   */
+  appendUnsent(snapshot) {
+    if (!snapshot || !snapshot.length || !this.canStream()) return false;
+    const sent = this.uttSent || 0;
+    if (sent >= snapshot.length) return sent > 0;
+    const rest = snapshot.subarray(sent);
+    if (!this.sendAppend(rest)) return false;
+    this.uttSent = sent + rest.length;
+    return true;
   }
 
   canStream() {
@@ -316,16 +343,16 @@ class SpeechSession {
       this.streamed = false;
       this.uttGen += 1;
       this.partial = "";
+      this.uttSent = 0;
     }
-    if (evt.append && this.canStream()) {
-      this.sendAppend(evt.append);
-      this.streamed = true;
-    }
+    const snapshot = evt.current || (evt.finished ? evt.utterance : null);
+    if (snapshot && this.appendUnsent(snapshot)) this.streamed = true;
     if (evt.started) this.askedSamples = 0;
     if (this.vad.speechSamples < this.askedSamples) this.askedSamples = 0;
-    const askEvery = Math.round(this.vad.sampleRate * 0.8);
-    if (!evt.finished && !this.paused && this.vad.speechSamples - this.askedSamples >= askEvery) {
-      this.requestWords(evt.current);
+    const askEvery = Math.round(this.vad.sampleRate * 0.1);
+    const pending = Math.max(this.sinceCommit ? this.sinceCommit.length : 0, snapshot ? snapshot.length : 0);
+    if (!evt.finished && !this.paused && pending >= this.minCommitBytes() && this.vad.speechSamples - this.askedSamples >= askEvery) {
+      this.requestWords(snapshot);
     }
     if (this.mode === "file" && evt.speaking && evt.current) this.scheduleFileInterim(evt.current, this.uttGen);
     if (!evt.finished) return;
@@ -359,37 +386,48 @@ class SpeechSession {
     let metered = !!streamed;
     if (this.mode === "realtime" && this.ready) {
       try {
-        if (!streamed && !this.partialCommitted && audio && audio.length) {
-          this.sendAppend(audio);
-          metered = true;
+        if (audio && audio.length && this.appendUnsent(audio)) metered = true;
+        if ((this.sinceCommit ? this.sinceCommit.length : 0) >= this.minCommitBytes()) {
+          const text = await this.commitAndWait(8000);
+          this.partialCommitted = false;
+          if (text && text.trim()) return text.trim();
+        } else if (this.partialCommitted) {
+          this.partialCommitted = false;
+          return "";
         }
-        this.partialCommitted = false;
-        const text = await this.commitAndWait(8000);
-        if (text && text.trim()) return text.trim();
       } catch (err) {
         this.switchToFile(err.message || String(err));
       }
+    }
+    if (this.partialCommitted) {
+      this.partialCommitted = false;
+      return "";
     }
     return this.postFile(audio, !metered);
   }
 
   /**
    * 조용해질 때까지 기다리지 않습니다.
-   * 말이 이어지는 동안에도 인식기에 지금까지의 소리를 확정하라고 물어, 글을 화면에 올립니다.
+   * 실제 소리가 0.1초 이상 쌓였을 때만 그 버퍼를 인식기에 확정합니다.
+   * 비어 있거나 더 짧은 버퍼는 확정하지 않습니다.
    */
   requestWords(audio) {
     if (this.wordAsk || this.closed || this.paused) return;
     const snapshot = audio && audio.length ? Buffer.from(audio) : null;
     const canRealtime = this.canStream();
-    if (!canRealtime && (!snapshot || snapshot.length < 4800)) return;
+    const pending = Math.max(this.sinceCommit ? this.sinceCommit.length : 0, snapshot ? snapshot.length : 0);
+    if (pending < this.minCommitBytes()) return;
+    if (!canRealtime && (!snapshot || snapshot.length < this.minCommitBytes())) return;
     this.askedSamples = this.vad.speechSamples;
     this.wordAsk = (async () => {
       this.paused = true;
       try {
         let text = "";
         if (canRealtime) {
+          if (snapshot) this.appendUnsent(snapshot);
+          const had = this.sinceCommit ? this.sinceCommit.length : 0;
           text = await this.commitAndWait(5000);
-          this.partialCommitted = true;
+          if (had >= this.minCommitBytes() && (!this.sinceCommit || !this.sinceCommit.length)) this.partialCommitted = true;
         } else {
           text = await this.postFile(snapshot, true);
         }
@@ -406,10 +444,15 @@ class SpeechSession {
 
   commitAndWait(ms) {
     return new Promise((resolve, reject) => {
+      if (!this.sinceCommit || this.sinceCommit.length < this.minCommitBytes()) {
+        resolve("");
+        return;
+      }
       if (!this.send({ type: "input_audio_buffer.commit" })) {
         reject(new Error("음성 인식 소켓이 열려 있지 않습니다."));
         return;
       }
+      this.sinceCommit = Buffer.alloc(0);
       this.pendingItem = null;
       this.pendingResolve = resolve;
       this.pendingTimer = setTimeout(() => {

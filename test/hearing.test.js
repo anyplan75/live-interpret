@@ -249,6 +249,7 @@ test("speech session keeps deltas when the transcript is empty and ignores a lat
   const say = (event) => session.handleMessage(JSON.stringify(event));
   const audio = Buffer.alloc(24000);
 
+  session.uttSent = 0;
   const first = session.consume(audio, true);
   say({ type: "input_audio_buffer.committed", item_id: "a" });
   say({ type: "conversation.item.input_audio_transcription.delta", item_id: "a", delta: "주님께 " });
@@ -259,12 +260,14 @@ test("speech session keeps deltas when the transcript is empty and ignores a lat
 
   const realCommit = session.commitAndWait.bind(session);
   session.commitAndWait = () => realCommit(5);
+  session.uttSent = 0;
   const second = session.consume(audio, true);
   say({ type: "input_audio_buffer.committed", item_id: "b" });
   await second;
   session.commitAndWait = realCommit;
   assert.deepEqual(finals, ["주님께 감사드립니다", "파일로 받은 말"]);
 
+  session.uttSent = 0;
   const third = session.consume(audio, true);
   say({ type: "conversation.item.input_audio_transcription.completed", item_id: "b", transcript: "늦게 온 말" });
   say({ type: "input_audio_buffer.committed", item_id: "c" });
@@ -315,4 +318,124 @@ test("a moving phone bar asks for words before the sound goes quiet", async () =
   quiet.writeInt16LE(400, 0);
   soft.push(quiet);
   assert.ok(softSent.some((event) => event.type === "input_audio_buffer.append"));
+  assert.equal(softSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
+});
+
+test("phone audio is committed only after 100ms and stays CHO JUN", async () => {
+  const { SpeechSession } = require("../broadcast/lib/stt");
+  const { Pipeline } = require("../broadcast/lib/pipeline");
+  const { Engine } = require("../broadcast/lib/engine");
+  const phoneSent = [];
+  const macSent = [];
+  const phoneScreen = [];
+  const macScreen = [];
+  const phoneSubs = [];
+  const macSubs = [];
+
+  function open(name, sent, screen, subtitles) {
+    const pipeline = new Pipeline({
+      apiKey: "sk-test",
+      sourceLang: "ko",
+      targets: [],
+      speaker: name,
+      cloud: {
+        updateSubtitles: async (payload) => subtitles.push(JSON.parse(JSON.stringify(payload))),
+      },
+      onHeard: (heard) => screen.push(heard.text),
+      onLive: () => {},
+      translateImpl: async () => ({ text: "" }),
+    });
+    const speech = new SpeechSession({
+      apiKey: "sk-test",
+      sensitivity: "normal",
+      language: name === "CHO JUN" ? "en" : "ko",
+      onFinal: (text) => pipeline.onFinalChunk(text),
+      onInterim: (text) => pipeline.onInterim(text),
+      fetchImpl: async () => ({ ok: true, json: async () => ({ text: "" }) }),
+    });
+    speech.ready = true;
+    speech.mode = "realtime";
+    speech.ws = { readyState: 1, send: (data) => sent.push(JSON.parse(data)), close() {} };
+    return { pipeline, speech };
+  }
+
+  const phone = open("", phoneSent, phoneScreen, phoneSubs);
+  const mac = open("이종찬", macSent, macScreen, macSubs);
+  const engine = Object.create(Engine.prototype);
+  Object.assign(engine, {
+    channelRows: [
+      { source: "device", name: "", spoken: "ko", on: true, showName: true },
+      { source: "phone", phoneId: "phoneCHOJUN01", name: "CHO JUN", spoken: "en", on: true, connected: true, showName: true, signal: false },
+    ],
+    channelSessions: new Map([
+      [0, { source: "device", speech: mac.speech, pipeline: mac.pipeline, name: "이종찬" }],
+      [1, { source: "phone", speech: phone.speech, pipeline: phone.pipeline, name: "" }],
+    ]),
+    phonePcmWait: new Map(),
+    phoneSignalTimers: new Map(),
+    lastLevelAt: Date.now(),
+    resolvePhoneId(id) { return id; },
+    rememberPhoneAlias() {},
+    emit() {},
+    wakePhoneRecognizer() {},
+  });
+
+  const piece = Buffer.alloc(700 * 2);
+  piece.writeInt16LE(8000, 0);
+  engine.pushPhonePcm("phoneCHOJUN01", piece);
+  engine.pushPhonePcm("phoneCHOJUN01", piece);
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
+  assert.equal(macSent.filter((event) => event.type === "input_audio_buffer.append").length, 0);
+
+  engine.pushPhonePcm("phoneCHOJUN01", piece);
+  engine.pushPhonePcm("phoneCHOJUN01", piece);
+  const frame = Buffer.alloc(480 * 2);
+  frame.writeInt16LE(8000, 0);
+  for (let i = 0; i < 8; i += 1) {
+    engine._onPcm(frame, {
+      sampleRate: 24000,
+      nChannels: 1,
+      mode: "single",
+      deviceChannel: 0,
+      deviceChannels: 1,
+      selected: 0,
+    });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+
+  function bytesBeforeCommit(sent) {
+    const commitAt = sent.findIndex((event) => event.type === "input_audio_buffer.commit");
+    const prior = commitAt < 0 ? [] : sent.slice(0, commitAt);
+    return prior
+      .filter((event) => event.type === "input_audio_buffer.append")
+      .reduce((sum, event) => sum + Buffer.from(event.audio, "base64").length, 0);
+  }
+  assert.ok(bytesBeforeCommit(phoneSent) >= 4800);
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 1);
+  assert.ok(bytesBeforeCommit(macSent) >= 4800);
+  assert.notEqual(bytesBeforeCommit(phoneSent), bytesBeforeCommit(macSent));
+  assert.equal(macSent.filter((event) => event.type === "input_audio_buffer.commit").length, 1);
+
+  phone.speech.handleMessage(JSON.stringify({ type: "input_audio_buffer.committed", item_id: "phoneLine" }));
+  phone.speech.handleMessage(JSON.stringify({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "phoneLine",
+    transcript: "안녕하세요",
+  }));
+  mac.speech.handleMessage(JSON.stringify({ type: "input_audio_buffer.committed", item_id: "macLine" }));
+  mac.speech.handleMessage(JSON.stringify({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "macLine",
+    transcript: "안녕하세요",
+  }));
+  for (let i = 0; i < 8; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(phoneScreen.includes("CHO JUN: 안녕하세요"));
+  assert.ok(macScreen.includes("이종찬: 안녕하세요"));
+  assert.equal(phoneSubs.some((row) => row.ko && row.ko.text === "CHO JUN: 안녕하세요"), true);
+  assert.equal(macSubs.some((row) => row.ko && row.ko.text === "이종찬: 안녕하세요"), true);
+  assert.equal(phoneScreen.some((line) => line.startsWith("이종찬")), false);
+
+  const commitsBefore = phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length;
+  await phone.speech.commitAndWait(1000);
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, commitsBefore);
 });

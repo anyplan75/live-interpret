@@ -1298,6 +1298,13 @@ class Engine {
       return;
     }
     this.flushPhonePcm(feedId);
+    if (session.pipeline && row.showName !== false) {
+      const who = cleanDisplayName(row.name);
+      if (who) {
+        session.name = who;
+        session.pipeline.speaker = who;
+      }
+    }
     session.speech.push(pcm);
     const now = Date.now();
     if (session.lastLevelAt && now - session.lastLevelAt < 80) return;
