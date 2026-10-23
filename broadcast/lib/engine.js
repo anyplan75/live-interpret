@@ -1325,26 +1325,55 @@ class Engine {
     }
     const level = peak / 32768;
     this.notePhoneSignal(index, level);
-    const session = this.channelSessions && this.channelSessions.get(index);
-    if (!session || session.source !== "phone" || !session.speech || typeof session.speech.push !== "function") {
-      this.queuePhonePcm(feedId, pcm);
-      this.emit({ type: "level", channel: index, peak: level });
-      this.wakePhoneRecognizer(index);
-      return;
+    const now = Date.now();
+    if (!this.phoneLevelAt) this.phoneLevelAt = new Map();
+    if (!this.phoneLevelPeak) this.phoneLevelPeak = new Map();
+    const previous = this.phoneLevelAt.get(feedId) || 0;
+    const shown = this.phoneLevelPeak.get(feedId) || 0;
+    if (now - previous < 80 && level <= shown + 0.05) return;
+    this.phoneLevelAt.set(feedId, now);
+    this.phoneLevelPeak.set(feedId, level);
+    this.emit({ type: "level", channel: index, peak: level });
+  }
+
+  /**
+   * 휴대폰이 알아들은 글을 그 칸의 자막으로 올립니다.
+   * 소리 막대를 움직인 표본을 이 컴퓨터 인식기에 다시 넣지 않습니다.
+   */
+  hearPhoneLine(phoneId, text) {
+    const body = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!body || !this.channelRows) return;
+    const resolved = this.resolvePhoneId(phoneId);
+    let index = this.channelRows.findIndex((row) => row && row.source === "phone" && row.phoneId === resolved);
+    if (index < 0) {
+      const phones = [];
+      this.channelRows.forEach((row, rowIndex) => {
+        if (row && row.source === "phone" && row.phoneId && row.connected !== false) phones.push(rowIndex);
+      });
+      if (phones.length === 1) index = phones[0];
     }
-    this.flushPhonePcm(feedId);
-    if (session.pipeline && row.showName !== false) {
-      const who = cleanDisplayName(row.name);
+    if (index < 0) return;
+    const row = this.channelRows[index];
+    const who = row.showName === false ? "" : cleanDisplayName(row.name);
+    const session = this.channelSessions && this.channelSessions.get(index);
+    if (session && session.pipeline && typeof session.pipeline.onFinalChunk === "function") {
       if (who) {
         session.name = who;
         session.pipeline.speaker = who;
+      } else if (session.pipeline) {
+        session.name = "";
+        session.pipeline.speaker = "";
       }
+      session.pipeline.onFinalChunk(body);
+      return;
     }
-    session.speech.push(pcm);
-    const now = Date.now();
-    if (session.lastLevelAt && now - session.lastLevelAt < 80) return;
-    session.lastLevelAt = now;
-    this.emit({ type: "level", channel: index, peak: level });
+    this.emit({
+      type: "heard",
+      channel: index,
+      name: who,
+      id: `phone-line-${Date.now()}`,
+      text: body,
+    });
   }
 
   deviceSpeechSession(index) {

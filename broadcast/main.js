@@ -754,6 +754,7 @@ if (!gotLock) {
     phoneJoin = new PhoneJoin({
       onHello: (phone) => engine.acceptPhone(phone),
       onPcm: (phoneId, pcm) => engine.pushPhonePcm(phoneId, pcm),
+      onLine: (phoneId, text) => engine.hearPhoneLine(phoneId, text),
       onLeave: (phoneId) => engine.markPhoneAway(phoneId),
       onChange: () => {
         if (!phoneJoin) return;

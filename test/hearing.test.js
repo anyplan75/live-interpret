@@ -384,7 +384,7 @@ test("phone audio is committed only after 100ms and stays CHO JUN", async () => 
   piece.writeInt16LE(8000, 0);
   engine.pushPhonePcm("phoneCHOJUN01", piece);
   engine.pushPhonePcm("phoneCHOJUN01", piece);
-  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.append").length, 0);
   assert.equal(macSent.filter((event) => event.type === "input_audio_buffer.append").length, 0);
 
   engine.pushPhonePcm("phoneCHOJUN01", piece);
@@ -423,18 +423,12 @@ test("phone audio is committed only after 100ms and stays CHO JUN", async () => 
       .filter((event) => event.type === "input_audio_buffer.append")
       .reduce((sum, event) => sum + Buffer.from(event.audio, "base64").length, 0);
   }
-  assert.ok(bytesBeforeCommit(phoneSent) >= 38400);
-  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 1);
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.append").length, 0);
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
   assert.ok(bytesBeforeCommit(macSent) >= 38400);
-  assert.notEqual(bytesBeforeCommit(phoneSent), bytesBeforeCommit(macSent));
   assert.equal(macSent.filter((event) => event.type === "input_audio_buffer.commit").length, 1);
 
-  phone.speech.handleMessage(JSON.stringify({ type: "input_audio_buffer.committed", item_id: "phoneLine" }));
-  phone.speech.handleMessage(JSON.stringify({
-    type: "conversation.item.input_audio_transcription.completed",
-    item_id: "phoneLine",
-    transcript: "안녕하세요",
-  }));
+  engine.hearPhoneLine("phoneCHOJUN01", "안녕하세요");
   mac.speech.handleMessage(JSON.stringify({ type: "input_audio_buffer.committed", item_id: "macLine" }));
   mac.speech.handleMessage(JSON.stringify({
     type: "conversation.item.input_audio_transcription.completed",
@@ -447,8 +441,5 @@ test("phone audio is committed only after 100ms and stays CHO JUN", async () => 
   assert.equal(phoneSubs.some((row) => row.ko && row.ko.text === "CHO JUN: 안녕하세요"), true);
   assert.equal(macSubs.some((row) => row.ko && row.ko.text === "이종찬: 안녕하세요"), true);
   assert.equal(phoneScreen.some((line) => line.startsWith("이종찬")), false);
-
-  const commitsBefore = phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length;
-  await phone.speech.commitAndWait(1000);
-  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, commitsBefore);
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
 });

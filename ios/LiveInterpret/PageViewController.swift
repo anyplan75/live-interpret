@@ -39,11 +39,19 @@ final class LectureScanBridge: NSObject, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "lectureMic" {
             let body = message.body as? String ?? ""
-            if body == "open" {
-                owner?.lectureMicOpened()
-            } else if body == "stop" {
+            if body == "stop" {
                 owner?.lectureMicStopped()
+                return
             }
+            if let data = body.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               (object["event"] as? String) == "open" {
+                let base = object["serverBase"] as? String ?? ""
+                let locale = object["locale"] as? String ?? "ko-KR"
+                owner?.lectureMicConfigured(serverBase: base, locale: locale)
+                return
+            }
+            owner?.lectureMicOpened()
             return
         }
         owner?.scanQr()
@@ -58,6 +66,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
     private let errorLabel = UILabel()
     private var lectureSlot: FaceLink.LectureSlot?
     private var lectureMicOpen = false
+    private let lectureSpeech = LectureSpeech()
     private var micObservers: [NSObjectProtocol] = []
 
     init(page: PhonePage) {
@@ -163,7 +172,15 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            self?.lectureSpeech.setForwardAudio(true)
             self?.resumeLectureMic()
+        })
+        micObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.lectureSpeech.setForwardAudio(false)
         })
         micObservers.append(center.addObserver(
             forName: UIApplication.willResignActiveNotification,
@@ -240,6 +257,23 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         prepareLectureSession(active: true)
     }
 
+    /// 페이지가 연결 주소를 알려 주면, 화면이 꺼져도 그 주소로 글과 소리를 보냅니다.
+    func lectureMicConfigured(serverBase: String, locale: String) {
+        lectureMicOpened()
+        lectureSpeech.onHeard = { [weak self] text in
+            self?.deliverHeardLine(text)
+        }
+        lectureSpeech.start(locale: locale, serverBase: serverBase)
+    }
+
+    private func deliverHeardLine(_ text: String) {
+        guard let data = try? JSONSerialization.data(withJSONObject: [text]),
+              let wrapped = String(data: data, encoding: .utf8),
+              wrapped.count >= 2 else { return }
+        let argument = wrapped.dropFirst().dropLast()
+        webView.evaluateJavaScript("window.LIJoin&&window.LIJoin.submitHeard(\(argument))")
+    }
+
     /// 마이크를 열기 전에, 숨은 이름 대신 쓸 숫자 주소를 페이지에 알려 준다.
     private func publishLocalAddress() {
         let address = LocalAddress.wifiIPv4()
@@ -249,11 +283,13 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     func lectureMicStopped() {
         lectureMicOpen = false
+        lectureSpeech.stop()
     }
 
     private func resumeLectureMic() {
         guard lectureMicOpen else { return }
         prepareLectureSession(active: true)
+        lectureSpeech.setForwardAudio(UIApplication.shared.applicationState != .active)
         webView.evaluateJavaScript("window.LIJoin&&window.LIJoin.holdMic&&window.LIJoin.holdMic()")
     }
 

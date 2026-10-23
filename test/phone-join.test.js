@@ -414,8 +414,7 @@ test("reconnecting the same phone replaces it and the new audio reaches the reco
   const heard = Buffer.from([8, 0, 9, 0]);
   engine.pushPhonePcm("phoneAAAAAA", heard);
   engine.pushPhonePcm("phoneBBBBBB", Buffer.from([2, 0, 3, 0]));
-  assert.equal(fed.length, 2);
-  assert.equal(fed[0].readInt16LE(0), 8);
+  assert.equal(fed.length, 0);
   engine.channelRows[1].on = true;
   engine.markPhoneAway("phoneAAAAAA");
   assert.equal(engine.channelRows[1].connected, true);
@@ -550,7 +549,7 @@ test("a phone is an extra input and the first input stays included", async () =>
     [1, { source: "phone", speech: { push(buf) { phoneFed.push(buf); } } }],
   ]);
   engine.pushPhonePcm("phone0001", Buffer.from([0, 16, 0, 32]));
-  assert.equal(phoneFed.length, 1);
+  assert.equal(phoneFed.length, 0);
   assert.equal(deviceFed.length, 0);
   engine._onPcm(Buffer.alloc(3 * 2 * 8), {
     nChannels: 3,
@@ -561,7 +560,7 @@ test("a phone is an extra input and the first input stays included", async () =>
     selected: 0,
   });
   assert.equal(deviceFed.length, 1);
-  assert.equal(phoneFed.length, 1);
+  assert.equal(phoneFed.length, 0);
 
   const seen = [];
   engine.channelSessions.set(1, {
@@ -616,9 +615,9 @@ test("a phone that looks connected also feeds the translator", async () => {
   const joined = await pending;
   assert.equal(joined.listening, true);
   assert.equal(engine.channelRows[1].on, true);
-  assert.equal(fed.length, 1);
+  assert.equal(fed.length, 0);
   engine.pushPhonePcm("phone0001", Buffer.from([2, 0, 2, 0]));
-  assert.equal(fed.length, 2);
+  assert.equal(fed.length, 0);
 
   const late = new Engine(() => {});
   late.running = true;
@@ -641,9 +640,8 @@ test("a phone that looks connected also feeds the translator", async () => {
     });
   };
   late.pushPhonePcm("phone0001", Buffer.from([4, 0, 5, 0]));
-  for (let i = 0; i < 8 && !heard.length; i += 1) await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(heard.length, 1);
-  assert.equal(heard[0].readInt16LE(0), 4);
+  for (let i = 0; i < 4; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(heard.length, 0);
 
   const stuck = new Engine(() => {});
   stuck.running = true;
@@ -666,9 +664,8 @@ test("a phone that looks connected also feeds the translator", async () => {
     });
   };
   stuck.pushPhonePcm("phone0001", Buffer.from([6, 0, 7, 0]));
-  for (let i = 0; i < 8 && !rescued.length; i += 1) await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(rescued.length, 1);
-  assert.equal(rescued[0].readInt16LE(0), 6);
+  for (let i = 0; i < 4; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rescued.length, 0);
 
   const mac = new Engine(() => {});
   const macFed = [];
@@ -969,6 +966,13 @@ test("qr join reaches the mac card immediately and the lecture mic stays up with
   assert.match(pageSwift, /__liLocalAddress/);
   assert.match(pageSwift, /setLocalAddress/);
   assert.match(lecture, /lectureMic/);
+  assert.match(lecture, /submitHeard/);
+  assert.match(lecture, /type: "line"/);
+  assert.match(lecture, /event: "open"/);
+  assert.match(page, /setForwardAudio/);
+  assert.match(page, /lectureMicConfigured/);
+  assert.match(read("ios/LiveInterpret/LectureSpeech.swift"), /SFSpeechRecognizer/);
+  assert.match(read("ios/LiveInterpret/Info.plist"), /NSSpeechRecognitionUsageDescription/);
   assert.match(lecture, /createBufferSource/);
   assert.match(lecture, /0\.00001/);
   assert.match(lecture, /visibilitychange/);
@@ -1107,6 +1111,70 @@ test("phone sound is played in arrival order, not dictionary order", async () =>
   assert.equal(played[2][0], 3);
   assert.equal(played.some((chunk) => chunk[0] === 8), false);
   assert.equal(played.some((chunk) => chunk[0] === 9), false);
+});
+
+test("a phone heard line is shown with the phone name and is not a reordered sound slice", async () => {
+  const lines = [];
+  const server = new PhoneJoin({
+    onHello(phone) {
+      return { index: 1, name: phone.name, phoneId: phone.id, listening: true };
+    },
+    onLine(phoneId, text) { lines.push({ phoneId, text }); },
+  });
+  await server.start({ signal: false });
+  const opened = await server.openSession();
+  const hello = JSON.stringify({
+    type: "hello",
+    name: "CHO JUN",
+    spoken: "ko",
+    connectionId: opened.connectionId,
+    phoneId: "phoneCHOJUN",
+  });
+  server.takeIceEvent("peer0001aa", "put", JSON.stringify({
+    path: "/",
+    data: {
+      lineoldoldol: JSON.stringify({ type: "line", text: "옛 문장", seq: 1 }),
+      helloabc123: hello,
+    },
+  }));
+  assert.equal(lines.length, 0);
+  server.ingestText("peer0001aa", JSON.stringify({ type: "line", text: "안녕하세요", seq: 2 }));
+  server.ingestLine("peer0001aa", { type: "line", text: "안녕하세요", seq: 2 });
+  assert.deepEqual(lines, [{ phoneId: "phoneCHOJUN", text: "안녕하세요" }]);
+  const { Engine } = require("../broadcast/lib/engine");
+  const { Pipeline } = require("../broadcast/lib/pipeline");
+  const screen = [];
+  const subs = [];
+  const pipeline = new Pipeline({
+    apiKey: "sk-test",
+    sourceLang: "ko",
+    targets: [],
+    speaker: "",
+    cloud: { updateSubtitles: async (payload) => subs.push(JSON.parse(JSON.stringify(payload))) },
+    onHeard: (heard) => screen.push(heard.text),
+    onLive: () => {},
+    translateImpl: async () => ({ text: "" }),
+  });
+  const engine = Object.create(Engine.prototype);
+  Object.assign(engine, {
+    channelRows: [
+      { source: "device", name: "이종찬", spoken: "ko", on: true, showName: true },
+      { source: "phone", phoneId: "phoneCHOJUN", name: "CHO JUN", spoken: "ko", on: true, connected: true, showName: true },
+    ],
+    channelSessions: new Map([[1, { source: "phone", pipeline, name: "" }]]),
+    resolvePhoneId(id) { return id; },
+    emit() {},
+    emitPhones() {},
+  });
+  const loud = Buffer.alloc(4800);
+  for (let i = 0; i < loud.length; i += 2) loud.writeInt16LE(8000, i);
+  const fed = [];
+  engine.channelSessions.get(1).speech = { push(buf) { fed.push(buf); } };
+  engine.pushPhonePcm("phoneCHOJUN", loud);
+  assert.equal(fed.length, 0);
+  engine.hearPhoneLine("phoneCHOJUN", "안녕하세요");
+  assert.ok(screen.includes("CHO JUN: 안녕하세요"));
+  assert.equal(subs.some((row) => row.ko && row.ko.text === "CHO JUN: 안녕하세요"), true);
 });
 
 test("plain http hides the microphone and https exposes it", { timeout: 60000 }, async (t) => {

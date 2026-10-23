@@ -292,6 +292,6 @@ test("every spoken language is heard on its own channel, including Chinese besid
   assert.equal(deviceZh.length, 1);
   assert.equal(phoneFed.length, 0);
   engine.pushPhonePcm("phone0009", Buffer.alloc(4));
-  assert.equal(phoneFed.length, 1);
+  assert.equal(phoneFed.length, 0);
   assert.equal(koFed.length, 1);
 });

@@ -13,6 +13,7 @@
 		A10000000000000000000004 /* PageViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* PageViewController.swift */; };
 		A10000000000000000000005 /* QrScannerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* QrScannerViewController.swift */; };
 		A10000000000000000000006 /* PhonePages.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* PhonePages.swift */; };
+		A1000000000000000000000B /* LectureSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001D /* LectureSpeech.swift */; };
 		A10000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* Assets.xcassets */; };
 		A10000000000000000000008 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000018 /* LaunchScreen.storyboard */; };
 		A10000000000000000000009 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000019 /* PrivacyInfo.xcprivacy */; };
@@ -26,6 +27,7 @@
 		A10000000000000000000014 /* PageViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageViewController.swift; sourceTree = "<group>"; };
 		A10000000000000000000015 /* QrScannerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QrScannerViewController.swift; sourceTree = "<group>"; };
 		A10000000000000000000016 /* PhonePages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhonePages.swift; sourceTree = "<group>"; };
+		A1000000000000000000001D /* LectureSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureSpeech.swift; sourceTree = "<group>"; };
 		A10000000000000000000017 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000018 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A10000000000000000000019 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -62,6 +64,7 @@
 				A10000000000000000000014 /* PageViewController.swift */,
 				A10000000000000000000015 /* QrScannerViewController.swift */,
 				A10000000000000000000016 /* PhonePages.swift */,
+				A1000000000000000000001D /* LectureSpeech.swift */,
 				A10000000000000000000017 /* Assets.xcassets */,
 				A10000000000000000000018 /* LaunchScreen.storyboard */,
 				A10000000000000000000019 /* PrivacyInfo.xcprivacy */,
@@ -157,6 +160,7 @@
 				A10000000000000000000004 /* PageViewController.swift in Sources */,
 				A10000000000000000000005 /* QrScannerViewController.swift in Sources */,
 				A10000000000000000000006 /* PhonePages.swift in Sources */,
+				A1000000000000000000000B /* LectureSpeech.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -203,7 +207,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = ZJYZ656BL8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LiveInterpret/Info.plist;
@@ -228,7 +232,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = ZJYZ656BL8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LiveInterpret/Info.plist;

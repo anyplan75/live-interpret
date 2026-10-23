@@ -30,7 +30,7 @@ function readServerMessage(value) {
   if (typeof text !== "string" || !text) return null;
   let body;
   try { body = JSON.parse(text); } catch (_) { return null; }
-  if (!body || typeof body !== "object" || (body.type !== "hello" && body.type !== "pcm")) return null;
+  if (!body || typeof body !== "object" || (body.type !== "hello" && body.type !== "pcm" && body.type !== "line")) return null;
   return body;
 }
 
@@ -90,6 +90,7 @@ class PhoneJoin {
     const extra = hooks || {};
     this.onHello = extra.onHello || (() => ({ index: 0 }));
     this.onPcm = extra.onPcm || (() => {});
+    this.onLine = extra.onLine || (() => {});
     this.onLeave = extra.onLeave || (() => {});
     this.onError = extra.onError || (() => {});
     this.link = null;
@@ -289,7 +290,12 @@ class PhoneJoin {
     } catch (_) {
       return;
     }
-    if (!message || message.type !== "hello") return;
+    if (!message || typeof message !== "object") return;
+    if (message.type === "line") {
+      this.ingestLine(peerId, message);
+      return;
+    }
+    if (message.type !== "hello") return;
     const name = cleanDisplayName(message.name);
     const row = this._peer(peerId);
     if (!name) {
@@ -352,6 +358,7 @@ class PhoneJoin {
     if (!peerId) return;
     this.peers.delete(peerId);
     if (this.earlyPcm) this.earlyPcm.delete(peerId);
+    if (this.earlyLines) this.earlyLines.delete(peerId);
     this._toLink({ type: "close", peerId });
   }
 
@@ -392,6 +399,41 @@ class PhoneJoin {
     });
     this._send(peerId, { type: "state", listening: !!accepted.listening });
     this._notify();
+    this._flushEarlyLines(peerId);
+  }
+
+  /** 휴대폰이 알아들은 한 줄. 소리 조각 순서와 상관없이 그 글을 그대로 맥 화면에 올립니다. */
+  ingestLine(peerId, message) {
+    if (!PEER_RE.test(peerId || "")) return;
+    const text = String(message && message.text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    if (!text) return;
+    const row = this.peers.get(peerId);
+    if (!row || !row.phoneId) {
+      if (!this.earlyLines) this.earlyLines = new Map();
+      const queued = this.earlyLines.get(peerId) || [];
+      queued.push(text);
+      this.earlyLines.set(peerId, queued.slice(-8));
+      return;
+    }
+    this._emitLine(row.phoneId, text);
+  }
+
+  _flushEarlyLines(peerId) {
+    const queued = this.earlyLines && this.earlyLines.get(peerId);
+    if (!queued || !queued.length) return;
+    this.earlyLines.delete(peerId);
+    const row = this.peers.get(peerId);
+    if (!row || !row.phoneId) return;
+    queued.forEach((text) => this._emitLine(row.phoneId, text));
+  }
+
+  _emitLine(phoneId, text) {
+    const now = Date.now();
+    const key = `${phoneId}\n${text}`;
+    if (this.lastLineKey === key && now - (this.lastLineAt || 0) < 4000) return;
+    this.lastLineKey = key;
+    this.lastLineAt = now;
+    try { this.onLine(phoneId, text); } catch (_) { /* 화면 갱신 실패는 다음 줄에서 다시 보입니다 */ }
   }
 
   ingestPcm(peerId, data, via) {
@@ -591,6 +633,23 @@ class PhoneJoin {
       if (offer && offer.sdp) this._onOffer(peerId, offer.sdp);
     }
     this._ensureIceWatch(peerId);
+    await this._pollLines(peerId);
+  }
+
+  /** 알아들은 글만 읽습니다. 소리 조각 이름은 여기서 정렬하지 않습니다. */
+  async _pollLines(peerId) {
+    const ices = await this._getSignal(`peers/${peerId}/phoneIce.json?shallow=true`);
+    if (!ices || typeof ices !== "object") return;
+    const ids = Object.keys(ices).filter((iceId) => iceId.startsWith("line") && ICE_ID_RE.test(iceId) && !this.seenIce.has(`${peerId}/${iceId}`));
+    const lines = [];
+    for (const iceId of ids) {
+      const value = await this._getSignal(`peers/${peerId}/phoneIce/${iceId}.json`);
+      this.seenIce.add(`${peerId}/${iceId}`);
+      const message = readServerMessage(value);
+      if (message && message.type === "line") lines.push(message);
+    }
+    lines.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0));
+    lines.forEach((message) => this.ingestLine(peerId, message));
   }
 
   _applyPath(path, data) {
@@ -645,6 +704,11 @@ class PhoneJoin {
     if (message && message.type === "hello") {
       this.seenIce.add(key);
       this.ingestText(peerId, JSON.stringify(message));
+      return;
+    }
+    if (message && message.type === "line") {
+      this.seenIce.add(key);
+      this.ingestLine(peerId, message);
       return;
     }
     if (message && message.type === "pcm") {
@@ -801,7 +865,7 @@ class PhoneJoin {
     }
     entries.forEach(([iceId, value]) => {
       const message = readServerMessage(value);
-      if (message && message.type === "pcm") {
+      if (message && (message.type === "pcm" || message.type === "line")) {
         this.seenIce.add(`${peerId}/${iceId}`);
         return;
       }
