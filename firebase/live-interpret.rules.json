@@ -31,6 +31,13 @@
         ".write": false
       }
     },
+    "billing": {
+      "testPeriod": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com'",
+        ".validate": "newData.isBoolean()"
+      }
+    },
     "phoneLinks": {
       "$token": {
         ".read": "$token.matches(/^[a-f0-9]{32}$/)",
@@ -136,7 +143,7 @@
         "billing": {
           "balance": {
             ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
-            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.parent().child('lastEntryId').isString() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).exists() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() == newData.val() - (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('balanceAfter').val() == newData.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('amountKrw').val() == newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() && ((auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && data.exists() && newData.val() < data.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() < 0) || (auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && data.exists() && newData.val() > data.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() > 0 && newData.parent().child('prepaid').child('remainingSeconds').val() == 0 && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() <= data.parent().child('prepaid').child('amountKrw').val()) || (auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com' && newData.val() > (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() > 0))"
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.parent().child('lastEntryId').isString() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).exists() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() == newData.val() - (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('balanceAfter').val() == newData.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('amountKrw').val() == newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() && ((auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && data.exists() && root.child('live-interpret/billing/testPeriod').val() !== true && newData.val() < data.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() < 0) || (auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val() && data.exists() && newData.val() > data.val() && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() > 0 && newData.parent().child('prepaid').child('remainingSeconds').val() == 0 && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() <= data.parent().child('prepaid').child('amountKrw').val()) || (auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com' && newData.val() > (data.exists() ? data.val() : 0) && newData.parent().child('ledger').child(newData.parent().child('lastEntryId').val()).child('deltaKrw').val() > 0))"
           },
           "lastEntryId": {
             ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",

@@ -80,6 +80,9 @@ test("server rules let only the operator read every account and add credit", () 
   const balance = live.churches.$churchId.billing.balance[".validate"];
   assert.match(balance, /auth\.token\.email\.toLowerCase\(\) === 'anyplan@me\.com'/);
   assert.match(balance, /newData\.val\(\) < data\.val\(\)/);
+  assert.match(balance, /billing\/testPeriod'\)\.val\(\) !== true && newData\.val\(\) < data\.val\(\)/);
+  assert.equal(live.billing.testPeriod[".validate"], "newData.isBoolean()");
+  assert.match(live.billing.testPeriod[".write"], /anyplan@me\.com/);
   assert.match(balance, /deltaKrw'\)\.val\(\) > 0/);
   assert.match(live.churches.$churchId.billing.balance[".write"], /account\/uid/);
   const html = fs.readFileSync(path.join(root, "broadcast/renderer/index.html"), "utf8");
@@ -89,6 +92,11 @@ test("server rules let only the operator read every account and add credit", () 
   assert.match(page, /남은 잔액/);
   assert.match(page, /최근 사용/);
   assert.match(page, /id="operatorCredit"/);
+  assert.match(page, /id="testPeriod"/);
+  assert.match(page, /테스트 기간/);
+  const phone = fs.readFileSync(path.join(root, "ios/LiveInterpret/OperatorViewController.swift"), "utf8");
+  assert.match(phone, /테스트 기간/);
+  assert.doesNotMatch(phone, /교회|설교/);
   assert.doesNotMatch(page, /교회/);
   const actions = html.slice(html.indexOf('id="broadcastActions"'), html.indexOf('id="costCard"'));
   assert.match(actions, /id="start">시작</);
@@ -100,6 +108,7 @@ test("server rules let only the operator read every account and add credit", () 
   assert.match(creditHandler, /operatorGate/);
   assert.match(creditHandler, /충전할 금액을 적으세요/);
   assert.match(main, /isOperatorAccount/);
+  assert.match(main, /operator:setTestPeriod/);
   const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
   const creditClick = renderer.slice(renderer.indexOf('getElementById("operatorCredit")'), renderer.indexOf('getElementById("pickBulletin").addEventListener'));
   assert.match(creditClick, /충전할 금액을 적으세요/);

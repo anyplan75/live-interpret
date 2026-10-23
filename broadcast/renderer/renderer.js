@@ -1382,7 +1382,9 @@ function paintConfirm(preview) {
     : "선택한 언어: 없음";
   const price = document.getElementById("confirmPrice");
   const extras = Math.max(0, Math.round(Number(preview.extraInputs) || 0));
-  price.textContent = `다음 30분: ${formatKrw(preview.halfKrw || preview.chargeKrw)}. 시간당 ${formatKrw(preview.firstHourKrw)}. 한국어와 영어, 첫 입력이 포함됩니다.`;
+  price.textContent = preview.testPeriod
+    ? "테스트 기간이라 충전금을 빼지 않습니다."
+    : `다음 30분: ${formatKrw(preview.halfKrw || preview.chargeKrw)}. 시간당 ${formatKrw(preview.firstHourKrw)}. 한국어와 영어, 첫 입력이 포함됩니다.`;
   if (extras) price.textContent += ` 추가 입력 ${extras}개.`;
   document.getElementById("confirmOvertime").textContent = preview.overtimeText;
   document.getElementById("confirmBalance").textContent = `남은 충전금: ${formatKrw(preview.balanceKrw)}`;
@@ -1500,13 +1502,36 @@ function paintOperator(accounts) {
 
 async function loadOperator() {
   const msg = document.getElementById("operatorMsg");
+  const periodMsg = document.getElementById("testPeriodMsg");
   try {
     const result = await window.broadcast.operatorList();
     paintOperator(result && result.accounts ? result.accounts : []);
   } catch (err) {
     if (msg) msg.textContent = visibleError(err);
   }
+  try {
+    const period = await window.broadcast.testPeriod();
+    const box = document.getElementById("testPeriod");
+    if (box) box.checked = !!(period && period.on);
+    if (periodMsg) periodMsg.textContent = period && period.on ? "테스트 기간이 켜져 있습니다." : "테스트 기간이 꺼져 있습니다.";
+  } catch (err) {
+    if (periodMsg) periodMsg.textContent = visibleError(err);
+  }
 }
+
+document.getElementById("testPeriod").addEventListener("change", async (event) => {
+  const box = event.target;
+  const periodMsg = document.getElementById("testPeriodMsg");
+  const on = !!box.checked;
+  try {
+    const period = await window.broadcast.setTestPeriod(on);
+    box.checked = !!(period && period.on);
+    if (periodMsg) periodMsg.textContent = period && period.on ? "테스트 기간이 켜져 있습니다." : "테스트 기간이 꺼져 있습니다.";
+  } catch (err) {
+    box.checked = !on;
+    if (periodMsg) periodMsg.textContent = visibleError(err);
+  }
+});
 
 async function refreshKeyHint() {
   const hint = document.getElementById("keyHint");

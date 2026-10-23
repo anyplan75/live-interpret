@@ -297,6 +297,12 @@ test("face session charges 2500 won per person hour and pauses the clock", () =>
   assert.equal(three.amount, 7500);
   assert.equal(three.balance, 0);
   assert.equal(three.remainingSeconds, orgServices.FACE_BLOCK_SECONDS);
+  const freeFace = orgServices.faceChargePatch({ balance: 1000, people: 2, now: 1000, testPeriod: true });
+  assert.equal(freeFace.ok, true);
+  assert.equal(freeFace.amount, 0);
+  assert.equal(freeFace.balance, 1000);
+  assert.equal(freeFace.patch, null);
+  assert.equal(freeFace.remainingSeconds, orgServices.FACE_BLOCK_SECONDS);
   const short = orgServices.faceChargePatch({ balance: 4000, people: 2, now: 1000 });
   assert.equal(short.ok, false);
   assert.equal(short.short, true);

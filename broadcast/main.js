@@ -418,6 +418,16 @@ function registerIpc() {
     await firebase.update(`churches/${accountId}/billing`, update.patch);
     return { balanceKrw: update.balance, balanceLabel: update.balanceLabel };
   });
+  ipcMain.handle("operator:testPeriod", async () => {
+    await operatorGate();
+    return { on: (await firebase.get("billing/testPeriod")) === true };
+  });
+  ipcMain.handle("operator:setTestPeriod", async (_event, on) => {
+    await operatorGate();
+    const next = on === true;
+    await firebase.set("billing/testPeriod", next);
+    return { on: next };
+  });
   ipcMain.handle("church:current", async () => {
     const church = await requireChurch();
     const settings = await firebase.get(`churches/${church.id}/live/settings`);

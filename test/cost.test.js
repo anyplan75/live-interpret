@@ -130,6 +130,16 @@ test("hourly package bills Korean and English as the base", () => {
   assert.equal(afterZero.mode, "half");
   assert.equal(afterZero.charged, 5000);
 
+  const freeStart = cost.planBroadcastStart({ balance: 1000, languages: ["en"], testPeriod: true });
+  assert.equal(freeStart.ok, true);
+  assert.equal(freeStart.short, false);
+  assert.equal(freeStart.charged, 0);
+  assert.equal(freeStart.balance, 1000);
+  const freeHalf = cost.openHalfBlock({ balance: 0, languages: ["en"], testPeriod: true });
+  assert.equal(freeHalf.ok, true);
+  assert.equal(freeHalf.charged, 0);
+  assert.equal(freeHalf.balance, 0);
+
   const half = cost.openHalfBlock({ balance: 50000, languages: ["en", "zh-CN"] });
   assert.equal(half.ok, true);
   assert.equal(half.charged, 6000);

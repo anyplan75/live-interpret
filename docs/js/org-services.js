@@ -235,6 +235,8 @@ function claimConnection(holderPeerId, peerId) {
       balance: source.balance,
       languages: source.languages,
       prepaid: source.prepaid,
+      extraInputs: source.extraInputs,
+      testPeriod: source.testPeriod === true,
     });
     if (!plan.ok) return { ok: false, short: true, plan, patch: null, resumed: false };
     if (!plan.charged) return { ok: true, short: false, plan, patch: null, resumed: true, prepaid: plan.prepaid };
@@ -273,7 +275,12 @@ function claimConnection(holderPeerId, peerId) {
   function halfPatch(input) {
     const cost = costLib();
     const source = input || {};
-    const opened = cost.openHalfBlock({ balance: source.balance, languages: source.languages });
+    const opened = cost.openHalfBlock({
+      balance: source.balance,
+      languages: source.languages,
+      extraInputs: source.extraInputs,
+      testPeriod: source.testPeriod === true,
+    });
     if (!opened.ok) return { ok: false, short: true, plan: opened, patch: null };
     const entry = cost.ledgerEntry({
       id: source.entryId,
@@ -426,6 +433,18 @@ function claimConnection(holderPeerId, peerId) {
     const source = input || {};
     const people = Math.max(0, Math.round(Number(source.people) || 0));
     const amount = facePeopleKrw(people);
+    if (source.testPeriod === true) {
+      return {
+        ok: true,
+        short: false,
+        amount: 0,
+        people,
+        balance: Math.round(Number(source.balance) || 0),
+        patch: null,
+        remainingSeconds: FACE_BLOCK_SECONDS,
+        testPeriod: true,
+      };
+    }
     const charged = cost.applyCharge(source.balance, amount);
     if (!charged.ok) {
       return { ok: false, short: true, amount, people, balance: charged.balance, patch: null };

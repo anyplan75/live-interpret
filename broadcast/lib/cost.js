@@ -413,6 +413,32 @@
       note: "30분",
       kind: "half",
     };
+    if (source.testPeriod === true) {
+      return {
+        ...base,
+        ok: true,
+        short: false,
+        running: true,
+        charged: 0,
+        refundKrw: 0,
+        balance,
+        balanceAfterRefund: balance,
+        remainingSeconds: HALF_SECONDS,
+        amountKrw: 0,
+        chargeKrw: 0,
+        testPeriod: true,
+        note: "테스트 기간",
+        prepaid: {
+          remainingSeconds: HALF_SECONDS,
+          languages,
+          kind: "half",
+          amountKrw: 0,
+          extraCount: extraLanguageCount(languages),
+          extraInputs: extras,
+          languageKey: languageKey(languages),
+        },
+      };
+    }
     if (afterRefund < half) {
       if (keep || refundKrw <= 0) {
         return {
@@ -478,6 +504,32 @@
     const extras = extraInputCount(source.extraInputs != null ? source.extraInputs : source.channels);
     const balance = Math.round(Number(source.balance) || 0);
     const half = halfBlockKrw(languages, extras);
+    if (source.testPeriod === true) {
+      return {
+        ok: true,
+        short: false,
+        running: true,
+        charged: 0,
+        chargeKrw: 0,
+        balance,
+        languages,
+        remainingSeconds: HALF_SECONDS,
+        kind: "half",
+        amountKrw: 0,
+        halfKrw: half,
+        testPeriod: true,
+        prepaid: {
+          remainingSeconds: HALF_SECONDS,
+          languages,
+          kind: "half",
+          amountKrw: 0,
+          extraCount: extraLanguageCount(languages),
+          extraInputs: extras,
+          languageKey: languageKey(languages),
+        },
+        note: "테스트 기간",
+      };
+    }
     const step = applyCharge(balance, half);
     if (!step.ok) {
       return {

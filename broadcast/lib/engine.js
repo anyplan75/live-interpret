@@ -213,6 +213,12 @@ class Engine {
     return Math.round(Number(raw) || 0);
   }
 
+  async readTestPeriod() {
+    const value = await firebase.get("billing/testPeriod");
+    this.testPeriod = value === true;
+    return this.testPeriod;
+  }
+
   extraInputsOn(includeIndex) {
     const on = new Set();
     (this.channelRows || []).forEach((row, index) => {
@@ -223,6 +229,7 @@ class Engine {
   }
 
   async writeMoney(delta, balance, prepaid, note) {
+    if (this.testPeriod) return prepaid;
     const at = Date.now();
     const entry = cost.ledgerEntry({
       id: cost.ledgerId(at),
@@ -263,7 +270,8 @@ class Engine {
     const balance = await this.readBalance(churchId);
     const prepaid = await this.readPrepaid(churchId);
     const extras = cost.extraInputCount(extraChannels);
-    const plan = cost.planBroadcastStart({ balance, languages, prepaid, extraInputs: extras });
+    const testPeriod = await this.readTestPeriod();
+    const plan = cost.planBroadcastStart({ balance, languages, prepaid, extraInputs: extras, testPeriod });
     const remaining = prepaid ? prepaid.remainingSeconds : 0;
     return {
       balance,
@@ -289,6 +297,7 @@ class Engine {
       channelFeeEachKrw: 0,
       extraInputs: extras,
       refundKrw: plan.refundKrw,
+      testPeriod: plan.testPeriod === true,
     };
   }
 
@@ -312,6 +321,7 @@ class Engine {
   }
 
   async writePrepaid(churchId, block) {
+    if (this.testPeriod) return block;
     const stored = cost.firebasePrepaid(block, Date.now());
     try {
       // 남은 초만 낮춥니다. 금액·언어를 다시 쓰면 서버 규칙이 거절하고 화면에 권한 오류가 남습니다.
@@ -441,6 +451,19 @@ class Engine {
   async chargeNextBlock() {
     if (!this.running || !this.church || !this.prepaid || this.pendingStopReason) return;
     if (this.liveRemaining() > 0) return;
+    if (await this.readTestPeriod()) {
+      const languages = (this.prepaid.languages || this.targets || []).slice();
+      this.armPrepaid({
+        remainingSeconds: 1800,
+        languages,
+        kind: "half",
+        amountKrw: 0,
+        extraCount: this.prepaid.extraCount || 0,
+        extraInputs: this.extraInputsOn(),
+        languageKey: this.prepaid.languageKey || languages.join(","),
+      });
+      return;
+    }
     const languages = this.prepaid.languages.slice();
     const balance = await this.readBalance(this.church.id);
     if (!this.running) return;
@@ -533,11 +556,13 @@ class Engine {
     const balance = await this.readBalance(this.church.id);
     const existing = await this.readPrepaid(this.church.id);
     this.prepaid = existing;
+    this.testPeriod = await this.readTestPeriod();
     const plan = cost.planBroadcastStart({
       balance,
       languages,
       prepaid: existing,
       extraInputs: this.extraInputsOn(),
+      testPeriod: this.testPeriod,
     });
     if (!plan.ok && plan.refundKrw > 0) {
       await this.writeMoney(plan.refundKrw, plan.balanceAfterRefund, plan.prepaid, "쓰지 않은 시간");
@@ -552,7 +577,9 @@ class Engine {
     this.emit({
       type: "log",
       level: "info",
-      text: `다음 30분 ${cost.formatKrw(plan.charged)}을 뺐습니다. ${cost.prepaidLabel(plan.remainingSeconds)}.`,
+      text: plan.testPeriod
+        ? "테스트 기간이라 충전금을 빼지 않습니다."
+        : `다음 30분 ${cost.formatKrw(plan.charged)}을 뺐습니다. ${cost.prepaidLabel(plan.remainingSeconds)}.`,
     });
     return plan;
   }
@@ -813,7 +840,8 @@ class Engine {
     }
     try {
       const alreadyLive = !!(this.channelRows[i] && this.channelRows[i].on && this.channelSessions && this.channelSessions.has(i));
-      if (this.running && i > 0 && this.prepaid && !alreadyLive) {
+      if (this.running) this.testPeriod = await this.readTestPeriod();
+      if (this.running && i > 0 && this.prepaid && !alreadyLive && !this.testPeriod) {
         const balance = this.sessionCharge ? this.sessionCharge.balance : await this.readBalance(this.church.id);
         const plan = cost.planBroadcastStart({
           balance,

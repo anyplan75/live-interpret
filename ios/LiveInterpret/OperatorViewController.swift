@@ -8,6 +8,8 @@ final class OperatorViewController: UIViewController {
     private let accountButton = UIButton(type: .system)
     private let amountField = UITextField()
     private let messageLabel = UILabel()
+    private let periodSwitch = UISwitch()
+    private let periodMessage = UILabel()
     private var accounts: [OperatorAccount] = []
     private var selectedId = ""
     private var busy = false
@@ -85,6 +87,27 @@ final class OperatorViewController: UIViewController {
         }
         amountField.heightAnchor.constraint(equalToConstant: 48).isActive = true
 
+        let period = card(title: "테스트 기간", lines: [
+            "켜면 방송, 강연, 대면 모두 충전금을 빼지 않습니다. 끄면 기본 시간 10,000원, 추가 언어 2,000원, 추가 입력 3,000원으로 30분마다 빠집니다.",
+        ])
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.alignment = .center
+        let periodLabel = UILabel()
+        periodLabel.text = "테스트 기간"
+        periodLabel.textColor = ShellColor.text
+        periodLabel.font = .systemFont(ofSize: 17, weight: .semibold)
+        periodSwitch.onTintColor = ShellColor.purple
+        periodSwitch.addAction(UIAction { [weak self] _ in self?.togglePeriod() }, for: .valueChanged)
+        row.addArrangedSubview(periodLabel)
+        row.addArrangedSubview(periodSwitch)
+        periodMessage.textColor = ShellColor.hint
+        periodMessage.font = .systemFont(ofSize: 16)
+        periodMessage.numberOfLines = 0
+        period.addArrangedSubview(row)
+        period.addArrangedSubview(periodMessage)
+
+        body.addArrangedSubview(period)
         body.addArrangedSubview(intro)
         body.addArrangedSubview(credit)
         let guide = view.safeAreaLayoutGuide
@@ -100,6 +123,35 @@ final class OperatorViewController: UIViewController {
             body.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -32),
         ])
         reload()
+        loadPeriod()
+    }
+
+    private func loadPeriod() {
+        Task {
+            do {
+                let on = try await operatorSession.testPeriodOn()
+                periodSwitch.setOn(on, animated: false)
+                periodMessage.text = on ? "테스트 기간이 켜져 있습니다." : "테스트 기간이 꺼져 있습니다."
+            } catch {
+                periodMessage.text = PhoneOperator.userFacing(error)
+            }
+        }
+    }
+
+    private func togglePeriod() {
+        let on = periodSwitch.isOn
+        periodSwitch.isEnabled = false
+        Task {
+            do {
+                let next = try await operatorSession.setTestPeriod(on)
+                periodSwitch.setOn(next, animated: true)
+                periodMessage.text = next ? "테스트 기간이 켜져 있습니다." : "테스트 기간이 꺼져 있습니다."
+            } catch {
+                periodSwitch.setOn(!on, animated: true)
+                periodMessage.text = PhoneOperator.userFacing(error)
+            }
+            periodSwitch.isEnabled = true
+        }
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }

@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("broadcast", {
   signOut: () => ask("auth:signOut"),
   operatorList: () => ask("operator:list"),
   operatorCredit: (accountId, amountKrw) => ask("operator:credit", accountId, amountKrw),
+  testPeriod: () => ask("operator:testPeriod"),
+  setTestPeriod: (on) => ask("operator:setTestPeriod", on),
   currentChurch: () => ask("church:current"),
   previewBilling: (targets, spoken, extraChannels) => ask("billing:preview", targets, spoken, extraChannels),
   saveStyle: (style) => ask("style:set", style),

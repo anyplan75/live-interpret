@@ -437,6 +437,7 @@
     async function chargePeople(count, note) {
       const run = chargeChain.then(async () => {
         const billing = (await LI.db.get(`churches/${churchId}/billing`)) || {};
+        const testPeriod = (await LI.db.get("billing/testPeriod")) === true;
         const charge = LI.orgServices.faceChargePatch({
           balance: billing.balance,
           people: count,
@@ -444,9 +445,10 @@
           who: signedUser ? signedUser.uid : "",
           churchId,
           note,
+          testPeriod,
         });
         if (!charge.ok) return charge;
-        await LI.db.update(`churches/${churchId}/billing`, charge.patch);
+        if (charge.patch) await LI.db.update(`churches/${churchId}/billing`, charge.patch);
         amountKrw += charge.amount;
         paintPeople();
         return charge;
@@ -659,9 +661,10 @@
           if (shownSeconds() <= 0 && !paused) setRunning(true).catch(() => {});
           else if (!paused) broadcastClock();
         }, 1000);
-        say(setupMode === "solo"
+        const started = setupMode === "solo"
           ? "통역을 시작했습니다. 말하는 사람을 누르고 이야기하세요."
-          : "모두 모였습니다. 통역을 시작했습니다.");
+          : "모두 모였습니다. 통역을 시작했습니다.";
+        say(charge.testPeriod ? `테스트 기간이라 충전금을 빼지 않습니다. ${started}` : started);
       } catch (err) {
         starting = false;
         sessionLive = false;

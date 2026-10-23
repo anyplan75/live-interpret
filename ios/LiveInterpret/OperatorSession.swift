@@ -208,6 +208,21 @@ final class PhoneOperator {
         return Self.formatKrw(next)
     }
 
+    func testPeriodOn() async throws -> Bool {
+        try await ensureOperator()
+        let value = try await getJSON("billing/testPeriod")
+        if value is NSNull { return false }
+        if let flag = value as? Bool { return flag }
+        if let number = value as? NSNumber { return number.boolValue }
+        return false
+    }
+
+    func setTestPeriod(_ on: Bool) async throws -> Bool {
+        try await ensureOperator()
+        try await putJSON("billing/testPeriod", body: Data((on ? "true" : "false").utf8))
+        return on
+    }
+
     private func ensureOperator() async throws {
         try await refreshIfNeeded()
         let adminUid = try await Self.readAdminUid(idToken: idToken)
@@ -431,6 +446,15 @@ final class PhoneOperator {
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        _ = try await Self.send(request)
+    }
+
+    private func putJSON(_ path: String, body: Data) async throws {
+        try await refreshIfNeeded()
+        var request = URLRequest(url: try Self.databaseURL(path, idToken: idToken))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
         _ = try await Self.send(request)
     }
 
