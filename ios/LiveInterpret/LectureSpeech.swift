@@ -19,7 +19,13 @@ final class LectureSpeech {
     private var running = false
     private var tapped = false
     private var restarting = false
+    private var listenGeneration = 0
     private var pcmCarry = Data()
+    private var pendingText = ""
+    private var silenceItem: DispatchWorkItem?
+    private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    /// 웹 페이지가 한 문장을 끊는 길이와 같게, 말이 잠깐 멈추면 그 문장을 보냅니다.
+    private let sentencePause: TimeInterval = 0.8
     var onHeard: ((String) -> Void)?
 
     func start(locale: String, serverBase: String) {
@@ -28,11 +34,16 @@ final class LectureSpeech {
         self.serverBase = base
         if !locale.isEmpty { localeId = locale }
         DispatchQueue.main.async { [weak self] in
-            self?.beginEngine()
+            guard let self else { return }
+            if self.running { self.stop() }
+            self.beginEngine()
         }
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             guard status == .authorized else { return }
-            DispatchQueue.main.async { self?.beginRecognition() }
+            DispatchQueue.main.async {
+                guard let self, self.running, self.request == nil else { return }
+                self.beginRecognition()
+            }
         }
     }
 
@@ -40,14 +51,33 @@ final class LectureSpeech {
     func setForwardAudio(_ on: Bool) {
         forwardAudio = on
         guard running else { return }
-        if on, !engine.isRunning {
-            try? engine.start()
+        if on {
+            holdBackground()
+            ensureRunning()
+        } else {
+            endBackground()
+        }
+    }
+
+    /// 화면이 꺼져 듣기가 끊기면 마이크와 문장 듣기를 다시 엽니다.
+    func ensureRunning() {
+        guard running, !serverBase.isEmpty else { return }
+        if !tapped || !engine.isRunning {
+            beginEngine()
+        }
+        if task?.state != .running {
+            restart()
         }
     }
 
     func stop() {
         running = false
+        listenGeneration += 1
+        restarting = false
         forwardAudio = false
+        silenceItem?.cancel()
+        silenceItem = nil
+        pendingText = ""
         task?.cancel()
         task = nil
         request?.endAudio()
@@ -59,73 +89,148 @@ final class LectureSpeech {
         engine.stop()
         pcmCarry.removeAll()
         lastSent = ""
+        endBackground()
     }
 
     private func beginEngine() {
         guard !serverBase.isEmpty else { return }
-        if running { stop() }
         running = true
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { return }
-        if tapped { input.removeTap(onBus: 0) }
+        if tapped { input.removeTap(onBus: 0); tapped = false }
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
             if let request = self?.request { request.append(buffer) }
             self?.forward(buffer)
         }
         tapped = true
         engine.prepare()
-        try? engine.start()
+        if !engine.isRunning {
+            try? engine.start()
+        }
     }
 
     private func beginRecognition() {
         guard running else { return }
         recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeId))
+        let next = makeRequest()
+        request = next
+        listen(next)
+    }
+
+    private func makeRequest() -> SFSpeechAudioBufferRecognitionRequest {
         let next = SFSpeechAudioBufferRecognitionRequest()
         next.shouldReportPartialResults = true
         next.taskHint = .dictation
-        request = next
-        listen(next)
+        if recognizer?.supportsOnDeviceRecognition == true {
+            next.requiresOnDeviceRecognition = true
+        }
+        if #available(iOS 16.0, *) {
+            next.addsPunctuation = true
+        }
+        return next
     }
 
     private func listen(_ request: SFSpeechAudioBufferRecognitionRequest) {
         task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
             guard let self, self.running else { return }
-            if let result, result.isFinal {
-                self.publish(result.bestTranscription.formattedString)
-                self.restart()
-                return
+            if let result {
+                let text = self.normalized(result.bestTranscription.formattedString)
+                let finished = result.isFinal
+                DispatchQueue.main.async {
+                    self.note(text, isFinal: finished)
+                }
             }
-            if error != nil { self.restart() }
+            if let error, !self.causedByRestart(error) {
+                DispatchQueue.main.async {
+                    guard self.running, !self.restarting else { return }
+                    self.finishPending()
+                }
+            }
         }
+    }
+
+    /// 애플은 듣기를 끄기 전에는 문장 끝을 알려 주지 않습니다. 웹 페이지처럼 말이 멈추면 그 문장을 보냅니다.
+    private func note(_ text: String, isFinal: Bool) {
+        guard running, !restarting else { return }
+        if isFinal {
+            silenceItem?.cancel()
+            pendingText = ""
+            publish(text)
+            restart()
+            return
+        }
+        guard !text.isEmpty, text != pendingText else { return }
+        pendingText = text
+        silenceItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.finishPending()
+        }
+        silenceItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + sentencePause, execute: item)
+    }
+
+    private func finishPending() {
+        silenceItem?.cancel()
+        let text = pendingText
+        pendingText = ""
+        if !text.isEmpty { publish(text) }
+        restart()
+    }
+
+    private func normalized(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func causedByRestart(_ error: Error) -> Bool {
+        let ns = error as NSError
+        return ns.domain == "kAFAssistantErrorDomain" && (ns.code == 216 || ns.code == 301)
     }
 
     private func restart() {
         guard running, !restarting else { return }
         restarting = true
+        silenceItem?.cancel()
+        pendingText = ""
+        task?.cancel()
+        task = nil
+        let generation = listenGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self, self.running else { return }
+            guard let self, self.running, self.listenGeneration == generation else { return }
             self.restarting = false
-            self.task = nil
             self.request?.endAudio()
-            let next = SFSpeechAudioBufferRecognitionRequest()
-            next.shouldReportPartialResults = true
-            next.taskHint = .dictation
+            if self.recognizer == nil {
+                self.recognizer = SFSpeechRecognizer(locale: Locale(identifier: self.localeId))
+            }
+            let next = self.makeRequest()
             self.request = next
             self.listen(next)
         }
     }
 
     private func publish(_ text: String) {
-        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = normalized(String(text.prefix(400)))
         guard !body.isEmpty, body != lastSent else { return }
         lastSent = body
         seq += 1
         let current = seq
-        DispatchQueue.main.async { [weak self] in
-            self?.onHeard?(body)
-            self?.putLine(body, seq: current)
+        onHeard?(body)
+        putLine(body, seq: current)
+    }
+
+    private func holdBackground() {
+        guard backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "lecture-mic") { [weak self] in
+            self?.endBackground()
         }
+    }
+
+    private func endBackground() {
+        guard backgroundTask != .invalid else { return }
+        let task = backgroundTask
+        backgroundTask = .invalid
+        UIApplication.shared.endBackgroundTask(task)
     }
 
     private func forward(_ buffer: AVAudioPCMBuffer) {

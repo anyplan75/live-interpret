@@ -225,7 +225,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         if page == .lecture && isMovingFromParent {
-            lectureMicOpen = false
+            lectureMicStopped()
         }
     }
 
@@ -290,6 +290,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         guard lectureMicOpen else { return }
         prepareLectureSession(active: true)
         lectureSpeech.setForwardAudio(UIApplication.shared.applicationState != .active)
+        lectureSpeech.ensureRunning()
         webView.evaluateJavaScript("window.LIJoin&&window.LIJoin.holdMic&&window.LIJoin.holdMic()")
     }
 

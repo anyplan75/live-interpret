@@ -994,6 +994,11 @@ test("qr join reaches the mac card immediately and the lecture mic stays up with
   assert.match(page, /setForwardAudio/);
   assert.match(page, /lectureMicConfigured/);
   assert.match(read("ios/LiveInterpret/LectureSpeech.swift"), /SFSpeechRecognizer/);
+  assert.match(read("ios/LiveInterpret/LectureSpeech.swift"), /finishPending/);
+  assert.match(read("ios/LiveInterpret/LectureSpeech.swift"), /sentencePause/);
+  assert.match(read("ios/LiveInterpret/LectureSpeech.swift"), /ensureRunning/);
+  assert.match(read("ios/LiveInterpret/LectureSpeech.swift"), /"type": "line"/);
+  assert.match(page, /ensureRunning/);
   assert.match(read("ios/LiveInterpret/Info.plist"), /NSSpeechRecognitionUsageDescription/);
   assert.match(lecture, /createBufferSource/);
   assert.match(lecture, /0\.00001/);
