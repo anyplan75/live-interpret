@@ -129,7 +129,7 @@ final class OperatorViewController: UIViewController {
     private func loadPeriod() {
         Task {
             do {
-                let on = try await operatorSession.testPeriodOn()
+                let on = try await session.testPeriodOn()
                 periodSwitch.setOn(on, animated: false)
                 periodMessage.text = on ? "테스트 기간이 켜져 있습니다." : "테스트 기간이 꺼져 있습니다."
             } catch {
@@ -143,7 +143,7 @@ final class OperatorViewController: UIViewController {
         periodSwitch.isEnabled = false
         Task {
             do {
-                let next = try await operatorSession.setTestPeriod(on)
+                let next = try await session.setTestPeriod(on)
                 periodSwitch.setOn(next, animated: true)
                 periodMessage.text = next ? "테스트 기간이 켜져 있습니다." : "테스트 기간이 꺼져 있습니다."
             } catch {
