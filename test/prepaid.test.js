@@ -42,57 +42,48 @@ test("broadcast time pauses on stop and the next block is charged only while liv
   try {
     engine.targets = ["en"];
     const opened = await engine.chargeOpening();
-    assert.equal(opened.mode, "hour");
-    assert.equal(opened.charged, 15000);
-    assert.equal(balance, 85000);
+    assert.equal(opened.mode, "half");
+    assert.equal(opened.charged, 5000);
+    assert.equal(balance, 95000);
     const first = updates[0][1];
-    assert.equal(first["prepaid/remainingSeconds"], 3600);
-    assert.equal(first["prepaid/kind"], "hour");
-    assert.equal(first["prepaid/amountKrw"], 15000);
-    assert.equal(first["ledger/" + first.lastEntryId].deltaKrw, -15000);
-    assert.equal(local["grace-ab"].remainingSeconds, 3600);
+    assert.equal(first["prepaid/remainingSeconds"], 1800);
+    assert.equal(first["prepaid/kind"], "half");
+    assert.equal(first["prepaid/amountKrw"], 5000);
+    assert.equal(first["ledger/" + first.lastEntryId].deltaKrw, -5000);
+    assert.equal(local["grace-ab"].remainingSeconds, 1800);
 
     engine.targets = ["en"];
     remotePrepaid = {
-      remainingSeconds: 2530,
+      remainingSeconds: 900,
       languageKey: "en",
-      kind: "hour",
-      amountKrw: 15000,
+      kind: "half",
+      amountKrw: 5000,
       extraCount: 0,
       updatedAt: Date.now(),
     };
-    const resumed = await engine.chargeOpening();
-    assert.equal(resumed.mode, "resume");
-    assert.equal(resumed.charged, 0);
-    assert.equal(resumed.noExtraCharge, true);
-    assert.equal(balance, 85000);
-    assert.equal(updates.length, 1);
-
-    engine.targets = ["en", "zh-CN"];
-    const added = await engine.chargeOpening();
-    assert.equal(added.mode, "extra");
-    assert.equal(added.charged, 5000);
-    assert.equal(added.remainingSeconds, 2530);
-    assert.equal(balance, 80000);
-    const extra = updates.at(-1)[1];
-    assert.equal(extra["prepaid/remainingSeconds"], 2530);
-    assert.equal(extra["prepaid/kind"], "hour");
-    assert.equal(extra["prepaid/extraCount"], 1);
-    assert.match(extra["prepaid/languageKey"], /zh-CN/);
+    const again = await engine.chargeOpening();
+    assert.equal(again.mode, "half");
+    assert.equal(again.refundKrw, 2500);
+    assert.equal(again.charged, 5000);
+    assert.equal(balance, 92500);
+    assert.equal(again.remainingSeconds, 1800);
 
     engine.running = true;
-    engine.prepaid = cost.normalizePrepaid(remotePrepaid);
-    engine.prepaidBudget = 2530;
-    engine.prepaidAnchor = Date.now() - 15000;
-    const updatesBeforeStop = updates.length;
+    engine.prepaid = cost.normalizePrepaid({
+      remainingSeconds: 1800,
+      languageKey: "en",
+      kind: "half",
+      amountKrw: 5000,
+      extraCount: 0,
+      updatedAt: Date.now(),
+    });
+    engine.prepaidBudget = 1800;
+    engine.prepaidAnchor = Date.now() - 600000;
+    engine.sessionCharge = { charged: 5000, balance, halfKrw: 5000, languages: ["en"] };
     await engine.stop();
-    assert.equal(updates.length, updatesBeforeStop);
-    assert.equal(engine.prepaid.kind, "hour");
-    assert.ok(engine.prepaid.remainingSeconds < 2530);
-    assert.ok(engine.prepaid.remainingSeconds > 2500);
-    assert.equal(local["grace-ab"].remainingSeconds, engine.prepaid.remainingSeconds);
-    assert.equal(sets.at(-1)[1].remainingSeconds, engine.prepaid.remainingSeconds);
-    assert.match(sets.at(-1)[0], /billing\/prepaid$/);
+    assert.equal(engine.prepaid.remainingSeconds, 0);
+    assert.equal(balance, 92500 + 3333);
+    assert.equal(engine.sessionCharge.charged, 5000 - 3333);
 
     const blocked = updates.length;
     await engine.chargeNextBlock();
@@ -104,7 +95,9 @@ test("broadcast time pauses on stop and the next block is charged only while liv
     delete local["grace-ab"];
     engine.church = { id: "grace-ab", accountUid: "operator" };
     engine.targets = ["en"];
-    await assert.rejects(() => engine.chargeOpening(), /충전금이 부족합니다/);
+    engine.prepaid = null;
+    engine.channelRows = [];
+    await assert.rejects(() => engine.chargeOpening(), /다음 30분/);
     assert.equal(balance, 1000);
 
     balance = 20000;
@@ -113,18 +106,19 @@ test("broadcast time pauses on stop and the next block is charged only while liv
     engine.prepaid = cost.normalizePrepaid({
       remainingSeconds: 20,
       languageKey: "en,zh-CN",
-      kind: "hour",
-      amountKrw: 20000,
+      kind: "half",
+      amountKrw: 6000,
       updatedAt: 1,
     });
     engine.prepaidBudget = 0;
     engine.prepaidAnchor = Date.now();
-    engine.sessionCharge = { charged: 0, balance, halfKrw: 10000, languages: ["en", "zh-CN"] };
+    engine.sessionCharge = { charged: 0, balance, halfKrw: 6000, languages: ["en", "zh-CN"] };
+    engine.channelRows = [{ on: true, spoken: "ko" }];
     await engine.chargeNextBlock();
-    assert.equal(balance, 10000);
+    assert.equal(balance, 14000);
     assert.equal(engine.prepaid.remainingSeconds, 1800);
     assert.equal(engine.prepaid.kind, "half");
-    assert.equal(engine.sessionCharge.charged, 10000);
+    assert.equal(engine.sessionCharge.charged, 6000);
     assert.equal(engine.pendingStopReason, "");
 
     balance = 1000;
@@ -133,7 +127,7 @@ test("broadcast time pauses on stop and the next block is charged only while liv
       remainingSeconds: 10,
       languageKey: "en",
       kind: "half",
-      amountKrw: 7500,
+      amountKrw: 5000,
       updatedAt: 2,
     });
     engine.prepaidBudget = 0;

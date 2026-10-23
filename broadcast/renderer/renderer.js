@@ -125,7 +125,8 @@ function billingSpoken() {
 }
 
 function extraChannelIndexes() {
-  return (state.channels || []).map((row, index) => (row.on ? index : -1)).filter((index) => index > 0);
+  const on = (state.channels || []).filter((row) => row && row.on).length;
+  return Math.max(0, on - 1);
 }
 
 function ensureChannels(count) {
@@ -682,6 +683,7 @@ function renderChannels(count) {
   });
   renderHeardTitle();
   paintGlances();
+  renderPhoneLevels();
 }
 
 function deskChannelIndex(desk) {
@@ -773,15 +775,81 @@ function phoneSlotForRow(row) {
   return index >= 0 ? index + 1 : 1;
 }
 
+function liveMicName(row, index) {
+  const typed = String(row && row.name || "").trim();
+  if (typed) return typed;
+  if (row && row.source === "phone") return "";
+  if (index === 0) return preacherDisplayName();
+  return "";
+}
+
 function renderPhoneLevels() {
   const root = document.getElementById("phoneLevels");
   if (!root) return;
-  const desks = state.phoneJoin && Array.isArray(state.phoneJoin.channels) ? state.phoneJoin.channels : [];
+  const active = document.activeElement;
+  const keep = active && active.dataset && active.dataset.liveSense && root.contains(active)
+    ? active.dataset.liveSense
+    : "";
   root.innerHTML = "";
-  root.hidden = desks.length === 0;
-  desks.forEach((desk, index) => {
-    appendPhoneLive(root, index + 1, deskView(desk));
+  const items = [];
+  (state.channels || []).forEach((row, index) => {
+    if (!row || row.on === false) return;
+    if (row.source === "phone" && !phoneJoined(row)) return;
+    const slot = row.source === "phone" ? phoneSlotForRow(row) : 0;
+    items.push({
+      key: styleKey(row, index) || `device:${index}`,
+      label: row.source === "phone" ? `휴대폰${slot}` : `채널 ${index + 1}`,
+      name: liveMicName(row, index),
+      levelKey: String(index),
+      phone: row.source === "phone",
+      row,
+      index,
+    });
   });
+  root.hidden = items.length === 0;
+  items.forEach((item) => {
+    const line = document.createElement("div");
+    line.className = "live-mic";
+    const label = document.createElement("span");
+    label.className = "live-mic-label";
+    label.textContent = item.label;
+    const name = document.createElement("span");
+    name.className = "live-mic-name";
+    name.textContent = item.name || item.label;
+    const meter = document.createElement("div");
+    meter.className = "meter";
+    meter.setAttribute("aria-label", `${item.label} 소리 크기`);
+    const bar = document.createElement("span");
+    if (item.phone) bar.dataset.phoneLevel = item.levelKey;
+    else bar.dataset.channel = item.levelKey;
+    const saved = levelWidths.get(item.levelKey);
+    if (saved) bar.style.width = saved;
+    meter.append(bar);
+    const sense = document.createElement("select");
+    sense.dataset.liveSense = item.key;
+    sense.setAttribute("aria-label", `${item.label} 감도`);
+    [["high", "감도 높음"], ["normal", "감도 보통"], ["low", "감도 낮음"]].forEach(([code, text]) => {
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = text;
+      sense.append(option);
+    });
+    const current = styleFor(item.row, item.index);
+    sense.value = current.sensitivity === "high" || current.sensitivity === "low" ? current.sensitivity : "normal";
+    sense.addEventListener("change", () => {
+      const next = styleFor(item.row, item.index);
+      next.sensitivity = sense.value;
+      if (!item.phone && sensitivityEl) sensitivityEl.value = sense.value;
+      rememberStyle(item.key, next);
+      paintGlances();
+    });
+    line.append(label, name, meter, sense);
+    root.append(line);
+  });
+  if (keep) {
+    const again = root.querySelector(`[data-live-sense="${CSS.escape(keep)}"]`);
+    if (again) again.focus();
+  }
 }
 
 function renderPhoneDesks() {
@@ -1244,12 +1312,12 @@ function showPrepaid(info) {
   if (seconds > 0) {
     node.textContent = `남은 시간 ${formatClock(seconds)}`;
     hint.textContent = running
-      ? "이 시간이 끝날 때까지 추가 요금은 없습니다."
-      : "이어서 쓸 수 있는 시간입니다. 끄면 타이머가 멈추고, 이 시간이 끝날 때까지 추가 요금은 없습니다.";
+      ? "이 30분이 끝나기 전에 끄면, 쓰지 않은 만큼 충전금으로 돌아갑니다."
+      : "쓰지 않은 시간은 충전금으로 돌아갑니다.";
     return;
   }
   node.textContent = "남은 시간 없음";
-  hint.textContent = "방송을 켜 둔 시간만 줄어듭니다. 끄면 남은 시간이 이 계정에 남습니다.";
+  hint.textContent = "시작하려면 다음 30분 요금이 충전금에 있어야 합니다. 30분을 다 쓰지 않고 끄면 쓰지 않은 만큼 충전금으로 돌아갑니다.";
 }
 
 function languageLabel(code) {
@@ -1263,29 +1331,15 @@ function paintConfirm(preview) {
     ? `선택한 언어: ${labels.join(", ")}`
     : "선택한 언어: 없음";
   const price = document.getElementById("confirmPrice");
-  if (preview.noExtraCharge) {
-    price.textContent = `${preview.label || `남은 시간 ${formatClock(preview.remainingSeconds)}`}. 이번 시작은 추가 요금이 없습니다.`;
-  } else if (preview.mode === "extra") {
-    const added = (preview.addedLanguages || []).map(languageLabel).join(", ");
-    price.textContent = `추가 언어 ${added}: ${formatKrw(preview.extraFeeKrw)} (언어당 5,000원, 이번 남은 시간에 한 번). 남은 시간은 그대로입니다.`;
-  } else {
-    price.textContent = `첫 시간 요금: ${formatKrw(preview.firstHourKrw)}. 영어는 기본 요금에 포함됩니다.`;
-  }
-  if (preview.channelFeeKrw) {
-    price.textContent += ` 추가 채널: ${formatKrw(preview.channelFeeKrw)} (채널당 ${formatKrw(preview.channelFeeEachKrw || 10000)}, 한 번).`;
-  }
-  if (preview.blockedChannels && preview.blockedChannels.length) {
-    const names = preview.blockedChannels.map((index) => `채널 ${index + 1}`).join(", ");
-    price.textContent += ` ${names}은 충전금이 부족해 시작하지 않습니다. 채널 1은 그대로 방송됩니다.`;
-  }
+  const extras = Math.max(0, Math.round(Number(preview.extraInputs) || 0));
+  price.textContent = `다음 30분: ${formatKrw(preview.halfKrw || preview.chargeKrw)}. 시간당 ${formatKrw(preview.firstHourKrw)}. 한국어와 영어, 첫 입력이 포함됩니다.`;
+  if (extras) price.textContent += ` 추가 입력 ${extras}개.`;
   document.getElementById("confirmOvertime").textContent = preview.overtimeText;
   document.getElementById("confirmBalance").textContent = `남은 충전금: ${formatKrw(preview.balanceKrw)}`;
   const short = document.getElementById("confirmShort");
   short.hidden = !preview.short;
-  if (preview.short && preview.mode === "extra") {
-    short.textContent = `충전금이 부족합니다. 추가 언어 요금 ${formatKrw(preview.extraFeeKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`;
-  } else if (preview.short) {
-    short.textContent = `충전금이 부족합니다. 첫 시간에 ${formatKrw(preview.firstHourKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`;
+  if (preview.short) {
+    short.textContent = `충전금이 부족합니다. 다음 30분에 ${formatKrw(preview.chargeKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`;
   } else {
     short.textContent = "";
   }
@@ -1344,6 +1398,11 @@ function setSignedIn(auth) {
   if (heard) heard.hidden = state.operator;
   const prepaid = document.getElementById("prepaidTime");
   if (prepaid) prepaid.hidden = state.operator;
+  ["balanceCost", "churchCost"].forEach((id) => {
+    const node = document.getElementById(id);
+    const wrap = node && node.closest ? node.closest(".header-money") : null;
+    if (wrap) wrap.hidden = state.operator;
+  });
   if (!state.signedIn) {
     state.church = null;
     state.operator = false;

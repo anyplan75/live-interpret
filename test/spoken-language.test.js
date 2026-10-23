@@ -28,15 +28,15 @@ test("spoken language is not translated or billed again", () => {
   assert.deepEqual(catalog.translationTargets(["en", "ja", "zh-CN"], "ko"), ["en", "ja", "zh-CN"]);
   assert.deepEqual(catalog.translationTargets(["en", "ja"], "en"), ["ja"]);
   assert.deepEqual(catalog.translationTargets(["en", "ja", "zh-CN"], "ja"), ["en", "zh-CN"]);
-  assert.equal(cost.HOUR_BASE_KRW, 15000);
-  assert.equal(cost.EXTRA_LANG_HOUR_KRW, 5000);
+  assert.equal(cost.HOUR_BASE_KRW, 10000);
+  assert.equal(cost.EXTRA_LANG_HOUR_KRW, 2000);
   const koreanSpoken = cost.packageKrw({ minutes: 60, languages: catalog.translationTargets(["en", "ja"], "ko") });
   const englishSpoken = cost.packageKrw({ minutes: 60, languages: catalog.translationTargets(["en", "ja"], "en") });
   const japaneseSpoken = cost.packageKrw({ minutes: 60, languages: catalog.translationTargets(["en", "ja", "zh-CN"], "ja") });
-  assert.equal(koreanSpoken, 20000);
-  assert.equal(englishSpoken, 20000);
-  assert.equal(japaneseSpoken, 20000);
-  assert.equal(cost.packageKrw({ minutes: 60, languages: catalog.translationTargets(["en"], "ja") }), 15000);
+  assert.equal(koreanSpoken, 12000);
+  assert.equal(englishSpoken, 12000);
+  assert.equal(japaneseSpoken, 12000);
+  assert.equal(cost.packageKrw({ minutes: 60, languages: catalog.translationTargets(["en"], "ja") }), 10000);
 });
 
 test("recognition follows the spoken language and does not translate it into itself", () => {

@@ -274,8 +274,8 @@ test("firebase api key is not committed", () => {
 test("face session charges 2500 won per person hour and pauses the clock", () => {
   const orgServices = require("../docs/js/org-services.js");
   const cost = require("../docs/js/cost.js");
-  assert.equal(cost.HOUR_BASE_KRW, 15000);
-  assert.equal(cost.EXTRA_LANG_HOUR_KRW, 5000);
+  assert.equal(cost.HOUR_BASE_KRW, 10000);
+  assert.equal(cost.EXTRA_LANG_HOUR_KRW, 2000);
   assert.equal(orgServices.FACE_PERSON_KRW, 2500);
   assert.equal(orgServices.facePeopleKrw(1), 2500);
   assert.equal(orgServices.facePeopleKrw(2), 5000);

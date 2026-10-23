@@ -298,6 +298,11 @@ class SpeechSession {
     return Math.round(this.vad.sampleRate * 0.1) * 2;
   }
 
+  /** 말이 한 덩어리가 되는 0.8초. 0.1초만 끊으면 인식기가 빈 글을 돌려줍니다. */
+  phraseBytes() {
+    return Math.round(this.vad.sampleRate * 0.8) * 2;
+  }
+
   sendAppend(pcm) {
     if (!pcm || !pcm.length) return false;
     if (this.onAudio) this.onAudio(pcm);
@@ -349,9 +354,9 @@ class SpeechSession {
     if (snapshot && this.appendUnsent(snapshot)) this.streamed = true;
     if (evt.started) this.askedSamples = 0;
     if (this.vad.speechSamples < this.askedSamples) this.askedSamples = 0;
-    const askEvery = Math.round(this.vad.sampleRate * 0.1);
-    const pending = Math.max(this.sinceCommit ? this.sinceCommit.length : 0, snapshot ? snapshot.length : 0);
-    if (!evt.finished && !this.paused && pending >= this.minCommitBytes() && this.vad.speechSamples - this.askedSamples >= askEvery) {
+    const askEvery = Math.round(this.vad.sampleRate * 0.8);
+    const pending = this.sinceCommit ? this.sinceCommit.length : 0;
+    if (!evt.finished && !this.paused && pending >= this.phraseBytes() && this.vad.speechSamples - this.askedSamples >= askEvery) {
       this.requestWords(snapshot);
     }
     if (this.mode === "file" && evt.speaking && evt.current) this.scheduleFileInterim(evt.current, this.uttGen);
@@ -407,17 +412,16 @@ class SpeechSession {
   }
 
   /**
-   * 조용해질 때까지 기다리지 않습니다.
-   * 실제 소리가 0.1초 이상 쌓였을 때만 그 버퍼를 인식기에 확정합니다.
-   * 비어 있거나 더 짧은 버퍼는 확정하지 않습니다.
+   * 말이 이어지는 동안 0.8초 분량이 쌓이면 그 버퍼를 인식기에 확정합니다.
+   * 0.1초보다 짧은 버퍼는 확정하지 않습니다. 말이 끝나면 0.1초 이상인 나머지를 확정합니다.
    */
   requestWords(audio) {
     if (this.wordAsk || this.closed || this.paused) return;
     const snapshot = audio && audio.length ? Buffer.from(audio) : null;
     const canRealtime = this.canStream();
     const pending = Math.max(this.sinceCommit ? this.sinceCommit.length : 0, snapshot ? snapshot.length : 0);
-    if (pending < this.minCommitBytes()) return;
-    if (!canRealtime && (!snapshot || snapshot.length < this.minCommitBytes())) return;
+    if (pending < this.phraseBytes()) return;
+    if (!canRealtime && (!snapshot || snapshot.length < this.phraseBytes())) return;
     this.askedSamples = this.vad.speechSamples;
     this.wordAsk = (async () => {
       this.paused = true;

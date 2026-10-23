@@ -45,9 +45,27 @@ header {
 .header-status {
   margin-left: auto;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 0 0 auto;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 16px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+.header-money {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 0;
+}
+.header-kicker {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+header .cost-figure {
+  margin: 0;
+  font-size: 1.15rem;
+  white-space: nowrap;
 }
 header .cost-figure.time {
   margin: 0;
@@ -327,6 +345,28 @@ details.fold-inner[open] > summary { margin-bottom: 8px; }
   gap: 8px;
   margin-top: 12px;
 }
+
+.live-mic {
+  display: grid;
+  grid-template-columns: 72px minmax(72px, 1fr) minmax(80px, 1.4fr) 118px;
+  gap: 8px;
+  align-items: center;
+  background: #121a24;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.live-mic-label,
+.live-mic-name {
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.live-mic .meter { height: 18px; }
+.live-mic select { width: 100%; padding: 6px 8px; }
 
 .phone-level {
   display: grid;

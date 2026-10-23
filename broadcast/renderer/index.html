@@ -14,6 +14,14 @@
       <p id="churchLine">계정으로 로그인하면 그 계정만 열립니다.</p>
     </div>
     <div class="header-status">
+      <div class="header-money">
+        <span class="header-kicker">남은 충전금</span>
+        <span id="balanceCost" class="cost-figure">0원</span>
+      </div>
+      <div class="header-money">
+        <span class="header-kicker">이번 방송 차감</span>
+        <span id="churchCost" class="cost-figure">0원</span>
+      </div>
       <div id="prepaidTime" class="cost-figure time" aria-live="polite">남은 시간 없음</div>
       <div id="status" class="pill">대기</div>
     </div>
@@ -47,12 +55,8 @@
         </div>
 
         <div class="card" id="costCard">
-          <p class="hint" id="prepaidHint">방송을 켜 둔 시간만 줄어듭니다. 끄면 남은 시간이 이 계정에 남습니다. 이 시간이 끝날 때까지 추가 요금은 없습니다.</p>
-          <h2>남은 충전금</h2>
-          <p id="balanceCost" class="cost-figure">0원</p>
-          <h2>이번 방송 차감</h2>
-          <p id="churchCost" class="cost-figure">0원</p>
-          <p class="hint">한국어와 영어가 1시간 15,000원입니다. 다른 언어는 시간당 5,000원이고, 61분부터 30분마다 절반이 더 빠집니다. 초마다 오르지 않습니다.</p>
+          <p class="hint" id="prepaidHint">시작하려면 다음 30분 요금이 충전금에 있어야 합니다. 30분을 다 쓰지 않고 끄면 쓰지 않은 만큼 충전금으로 돌아갑니다.</p>
+          <p class="hint">한국어와 영어, 첫 입력은 시간당 10,000원입니다. 그 밖 언어는 시간당 2,000원, 추가 입력은 시간당 3,000원입니다. 휴대폰을 연결할 때 10,000원을 빼지 않습니다.</p>
         </div>
 
         <div class="card" id="startConfirm" hidden>
@@ -166,7 +170,7 @@
             <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
           </div>
           <div id="channels" class="channels"></div>
-          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 말하는 언어는 그 칸 너비로 펼칩니다. 채널 1은 기본 요금에 포함됩니다. 다른 채널을 켜면 채널당 10,000원이 한 번 빠지고, 30분 추가 요금에는 다시 포함되지 않습니다.</p>
+          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 말하는 언어는 그 칸 너비로 펼칩니다. 첫 입력은 기본 요금에 포함됩니다. 그 다음 채널이나 휴대폰은 시간당 3,000원이고, 연결할 때 따로 빼지 않습니다.</p>
         </details>
 
         <details class="card fold">

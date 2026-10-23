@@ -129,7 +129,9 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(renderer.slice(renderer.indexOf("function appendSpokenControl"), renderer.indexOf("function appendCaptionNameSwitch")), /spokenTitle/);
   assert.doesNotMatch(renderer.slice(renderer.indexOf("function appendPhoneNameEditor"), renderer.indexOf("function applyPhoneDisplay")), /if \(!phoneJoined\(view\)\) return/);
   const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
-  assert.match(header, /class="header-status"[\s\S]*id="prepaidTime"[\s\S]*id="status"/);
+  assert.match(header, /class="header-status"[\s\S]*id="balanceCost"[\s\S]*id="churchCost"[\s\S]*id="prepaidTime"[\s\S]*id="status"/);
+  assert.match(header, /남은 충전금/);
+  assert.match(header, /이번 방송 차감/);
   assert.doesNotMatch(header.slice(header.indexOf('class="title-block"'), header.indexOf('class="header-status"')), /id="prepaidTime"/);
   const costCard = html.slice(html.indexOf('id="costCard"'), html.indexOf('id="startConfirm"'));
   assert.doesNotMatch(costCard, /id="prepaidTime"|<h2>남은 시간<\/h2>/);

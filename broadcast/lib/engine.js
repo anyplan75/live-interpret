@@ -212,38 +212,82 @@ class Engine {
     return Math.round(Number(raw) || 0);
   }
 
+  extraInputsOn(includeIndex) {
+    const on = new Set();
+    (this.channelRows || []).forEach((row, index) => {
+      if (row && row.on) on.add(index);
+    });
+    if (Number.isInteger(includeIndex) && includeIndex >= 0) on.add(includeIndex);
+    return Math.max(0, on.size - 1);
+  }
+
+  async writeMoney(delta, balance, prepaid, note) {
+    const at = Date.now();
+    const entry = cost.ledgerEntry({
+      id: cost.ledgerId(at),
+      type: "charge",
+      deltaKrw: delta,
+      balanceAfter: balance,
+      at,
+      who: this.church.accountUid || "",
+      note: note || "",
+      churchId: this.church.id,
+    });
+    return this.writeBilling(this.church.id, balance, entry, prepaid);
+  }
+
+  async applyStartPlan(plan) {
+    if (plan.refundKrw > 0) {
+      const cleared = cost.clearedPrepaid(this.prepaid);
+      await this.writeMoney(plan.refundKrw, plan.balanceAfterRefund, cleared, "쓰지 않은 시간");
+    }
+    const stored = await this.writeMoney(-plan.charged, plan.balance, plan.prepaid, plan.note);
+    const previous = Math.round(Number(this.sessionCharge && this.sessionCharge.charged) || 0);
+    this.sessionCharge = {
+      ok: true,
+      running: true,
+      short: false,
+      charged: previous - (plan.refundKrw || 0) + plan.charged,
+      balance: plan.balance,
+      halfKrw: plan.halfKrw,
+      languages: plan.paidLanguages,
+    };
+    this.armPrepaid(stored || plan.prepaid);
+    this.emitCharge(this.pricedUsage());
+    return plan;
+  }
+
   async previewCharge(churchId, targets, spoken, extraChannels) {
     const languages = translationTargets(targets, spoken);
     const balance = await this.readBalance(churchId);
     const prepaid = await this.readPrepaid(churchId);
-    const plan = cost.planBroadcastStart({ balance, languages, prepaid });
+    const extras = cost.extraInputCount(extraChannels);
+    const plan = cost.planBroadcastStart({ balance, languages, prepaid, extraInputs: extras });
     const remaining = prepaid ? prepaid.remainingSeconds : 0;
-    const balanceAfterHour = plan.short ? balance : (plan.charged > 0 ? plan.balance : balance);
-    const channelPlan = plan.short
-      ? { started: [], blocked: [], charged: 0, balance: balanceAfterHour, feeKrw: cost.EXTRA_CHANNEL_KRW }
-      : cost.channelFeePlan({ balance: balanceAfterHour, channels: extraChannels, paid: [] });
     return {
       balance,
       balanceKrw: balance,
-      firstHourKrw: plan.mode === "hour" ? plan.firstHourKrw : 0,
+      firstHourKrw: plan.firstHourKrw,
       halfKrw: plan.halfKrw,
       overtimeText: plan.overtimeText,
       short: !!plan.short,
       languages,
       mode: plan.mode,
       remainingSeconds: remaining,
-      resumed: plan.resumed,
-      noExtraCharge: plan.noExtraCharge,
-      extraFeeKrw: plan.extraFeeKrw,
-      addedLanguages: plan.addedLanguages,
-      chargeKrw: plan.chargeKrw,
+      resumed: false,
+      noExtraCharge: false,
+      extraFeeKrw: 0,
+      addedLanguages: [],
+      chargeKrw: plan.ok ? plan.charged : plan.chargeKrw,
       paidLanguages: plan.paidLanguages,
-      kind: prepaid ? prepaid.kind : "",
+      kind: "half",
       label: remaining > 0 ? cost.prepaidLabel(remaining) : "",
-      channelFeeKrw: channelPlan.charged,
-      extraChannels: channelPlan.started,
-      blockedChannels: channelPlan.blocked,
-      channelFeeEachKrw: cost.EXTRA_CHANNEL_KRW,
+      channelFeeKrw: 0,
+      extraChannels: [],
+      blockedChannels: [],
+      channelFeeEachKrw: 0,
+      extraInputs: extras,
+      refundKrw: plan.refundKrw,
     };
   }
 
@@ -307,12 +351,9 @@ class Engine {
   }
 
   shortStartMessage(plan) {
-    if (plan && plan.mode === "extra") {
-      return `충전금이 부족합니다. 추가 언어 요금 ${cost.formatKrw(plan.chargeKrw)}이 필요하지만 남은 충전금은 ${cost.formatKrw(plan.balance)}입니다.`;
-    }
-    const price = plan ? plan.firstHourKrw : 0;
+    const price = plan ? plan.chargeKrw : 0;
     const balance = plan ? plan.balance : 0;
-    return `충전금이 부족합니다. 첫 시간에 ${cost.formatKrw(price)}이 필요하지만 남은 충전금은 ${cost.formatKrw(balance)}입니다.`;
+    return `충전금이 부족합니다. 다음 30분에 ${cost.formatKrw(price)}이 필요하지만 남은 충전금은 ${cost.formatKrw(balance)}입니다.`;
   }
 
   liveRemaining() {
@@ -398,7 +439,7 @@ class Engine {
     const languages = this.prepaid.languages.slice();
     const balance = await this.readBalance(this.church.id);
     if (!this.running) return;
-    const half = cost.openHalfBlock({ balance, languages });
+    const half = cost.openHalfBlock({ balance, languages, extraInputs: this.extraInputsOn() });
     if (!half.ok) {
       this.prepaid = { ...this.prepaid, remainingSeconds: 0 };
       this.prepaidBudget = 0;
@@ -450,57 +491,64 @@ class Engine {
     this.stopPrepaidTimer();
     if (!this.prepaid || !this.church) return;
     const remaining = this.liveRemaining();
-    this.prepaid = { ...this.prepaid, remainingSeconds: remaining };
-    this.prepaidBudget = remaining;
+    const block = { ...this.prepaid, remainingSeconds: remaining };
+    const refund = cost.unusedRefundKrw(block);
+    if (refund <= 0) {
+      this.prepaid = { ...block, remainingSeconds: 0 };
+      this.prepaidBudget = 0;
+      this.prepaidAnchor = Date.now();
+      await this.writePrepaid(this.church.id, this.prepaid);
+      this.emitPrepaid();
+      return;
+    }
+    const balance = this.sessionCharge && this.sessionCharge.balance != null
+      ? this.sessionCharge.balance
+      : await this.readBalance(this.church.id);
+    const next = balance + refund;
+    const cleared = cost.clearedPrepaid(block);
+    await this.writeMoney(refund, next, cleared, "쓰지 않은 시간");
+    if (this.sessionCharge) {
+      this.sessionCharge.charged = Math.max(0, Math.round(Number(this.sessionCharge.charged) || 0) - refund);
+      this.sessionCharge.balance = next;
+    }
+    this.prepaid = cleared;
+    this.prepaidBudget = 0;
     this.prepaidAnchor = Date.now();
-    await this.writePrepaid(this.church.id, this.prepaid);
     this.emitPrepaid();
+    this.emitCharge(this.pricedUsage());
+    this.emit({
+      type: "log",
+      level: "info",
+      text: `쓰지 않은 ${cost.formatKrw(refund)}을 충전금으로 돌렸습니다.`,
+    });
   }
 
   async chargeOpening() {
     const languages = this.targets;
     const balance = await this.readBalance(this.church.id);
     const existing = await this.readPrepaid(this.church.id);
-    const plan = cost.planBroadcastStart({ balance, languages, prepaid: existing });
+    this.prepaid = existing;
+    const plan = cost.planBroadcastStart({
+      balance,
+      languages,
+      prepaid: existing,
+      extraInputs: this.extraInputsOn(),
+    });
+    if (!plan.ok && plan.refundKrw > 0) {
+      await this.writeMoney(plan.refundKrw, plan.balanceAfterRefund, plan.prepaid, "쓰지 않은 시간");
+      this.prepaid = null;
+    }
     if (!plan.ok) {
       const err = new Error(this.shortStartMessage(plan));
       err.short = true;
       throw err;
     }
-    let stored = plan.prepaid;
-    if (plan.charged > 0) {
-      const at = Date.now();
-      const entry = cost.ledgerEntry({
-        id: cost.ledgerId(at),
-        type: "charge",
-        deltaKrw: -plan.charged,
-        balanceAfter: plan.balance,
-        at,
-        who: this.church.accountUid || "",
-        note: plan.note,
-        churchId: this.church.id,
-      });
-      stored = await this.writeBilling(this.church.id, plan.balance, entry, plan.prepaid);
-    } else if (stored) {
-      stored = await this.writePrepaid(this.church.id, stored);
-    }
-    this.sessionCharge = {
-      ok: true,
-      running: true,
-      short: false,
-      charged: plan.charged,
-      balance: plan.balance,
-      halfKrw: plan.halfKrw,
-      languages: plan.paidLanguages,
-    };
-    this.armPrepaid(stored || plan.prepaid);
-    if (plan.noExtraCharge) {
-      this.emit({ type: "log", level: "info", text: `${cost.prepaidLabel(plan.remainingSeconds)}. 이번 시작은 추가 요금이 없습니다.` });
-    } else if (plan.mode === "extra") {
-      this.emit({ type: "log", level: "info", text: `추가 언어 요금 ${cost.formatKrw(plan.charged)}을 뺐습니다. 남은 시간은 그대로입니다.` });
-    } else {
-      this.emit({ type: "log", level: "info", text: `첫 시간 ${cost.formatKrw(plan.charged)}을 뺐습니다. ${cost.prepaidLabel(plan.remainingSeconds)}.` });
-    }
+    await this.applyStartPlan(plan);
+    this.emit({
+      type: "log",
+      level: "info",
+      text: `다음 30분 ${cost.formatKrw(plan.charged)}을 뺐습니다. ${cost.prepaidLabel(plan.remainingSeconds)}.`,
+    });
     return plan;
   }
 
@@ -728,38 +776,6 @@ class Engine {
     return code;
   }
 
-  async chargeChannelFees(extraIndexes) {
-    if (!this.paidChannels) this.paidChannels = new Set();
-    const balance = this.sessionCharge ? this.sessionCharge.balance : await this.readBalance(this.church.id);
-    const paid = [...this.paidChannels];
-    const plan = cost.channelFeePlan({ balance, channels: extraIndexes, paid });
-    const newly = plan.started.filter((index) => !this.paidChannels.has(index));
-    if (plan.charged > 0 && newly.length) {
-      const at = Date.now();
-      const entry = cost.ledgerEntry({
-        id: cost.ledgerId(at),
-        type: "charge",
-        deltaKrw: -plan.charged,
-        balanceAfter: plan.balance,
-        at,
-        who: this.church.accountUid || "",
-        note: `추가 채널 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}`,
-        churchId: this.church.id,
-      });
-      await this.writeBilling(this.church.id, plan.balance, entry, null);
-      this.sessionCharge.charged = Math.round(Number(this.sessionCharge.charged) || 0) + plan.charged;
-      this.sessionCharge.balance = plan.balance;
-      this.emitCharge(this.pricedUsage());
-      this.emit({
-        type: "log",
-        level: "info",
-        text: `추가 입력 ${newly.map((index) => this.channelFeeLabel(index)).join(", ")}에서 ${cost.formatKrw(plan.charged)}을 뺐습니다. 이 요금은 한 번만 빠집니다.`,
-      });
-    }
-    plan.started.forEach((index) => this.paidChannels.add(index));
-    return plan;
-  }
-
   async setChannelOn(churchId, index, on) {
     const i = Number(index);
     if (!Number.isInteger(i) || i < 0) throw new Error("채널이 올바르지 않습니다.");
@@ -791,15 +807,29 @@ class Engine {
       this.phoneOpenTasks.set(i, gate);
     }
     try {
-      if (this.running && i > 0 && !(this.paidChannels && this.paidChannels.has(i))) {
-        const plan = await this.chargeChannelFees([i]);
-        if (plan.blocked.includes(i)) {
+      const alreadyLive = !!(this.channelRows[i] && this.channelRows[i].on && this.channelSessions && this.channelSessions.has(i));
+      if (this.running && i > 0 && this.prepaid && !alreadyLive) {
+        const balance = this.sessionCharge ? this.sessionCharge.balance : await this.readBalance(this.church.id);
+        const plan = cost.planBroadcastStart({
+          balance,
+          languages: this.prepaid.languages || this.targets || [],
+          prepaid: this.prepaid,
+          extraInputs: this.extraInputsOn(i),
+          keepBlockOnShort: true,
+        });
+        if (!plan.ok) {
           this.channelRows[i].on = false;
           const message = `${this.channelFeeLabel(i)}은 충전금이 부족해 시작하지 못했습니다.`;
           this.emit({ type: "log", level: "error", text: message });
           this.emitPhones();
           return { index: i, on: false, blocked: true, message, balance: plan.balance };
         }
+        await this.applyStartPlan(plan);
+        this.emit({
+          type: "log",
+          level: "info",
+          text: `${this.channelFeeLabel(i)}을 반영해 다음 30분 ${cost.formatKrw(plan.charged)}을 뺐습니다.`,
+        });
       }
       this.channelRows[i].on = true;
       if (this.running) await this.openChannel(i);
@@ -1619,19 +1649,8 @@ class Engine {
     try {
       await this.chargeOpening();
       const requested = this.channelRows.map((row, index) => (row.on ? index : -1)).filter((index) => index >= 0);
-      const fees = await this.chargeChannelFees(requested.filter((index) => index > 0));
-      const active = new Set(fees.started);
-      if (requested.includes(0) || fees.blocked.length) active.add(0);
-      if (!active.size) active.add(0);
-      fees.blocked.forEach((index) => {
-        this.channelRows[index].on = false;
-        this.emit({
-          type: "log",
-          level: "error",
-          text: `${this.channelFeeLabel(index)}은 충전금이 부족해 시작하지 못했습니다.`,
-        });
-      });
-      for (const index of [...active].sort((a, b) => a - b)) {
+      if (!requested.length) requested.push(0);
+      for (const index of requested.sort((a, b) => a - b)) {
         this.channelRows[index].on = true;
         await this.openChannel(index);
       }

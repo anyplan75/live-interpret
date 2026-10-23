@@ -537,10 +537,10 @@ test("a phone is an extra input and the first input stays included", async () =>
   assert.equal(engine.sessionCharge.charged, 15000);
   const phone = await engine.setChannelOn("", 1, true);
   assert.equal(phone.on, true);
-  assert.equal(engine.sessionCharge.charged, 25000);
-  assert.equal(engine.sessionCharge.balance, 30000);
+  assert.equal(engine.sessionCharge.charged, 15000);
+  assert.equal(engine.sessionCharge.balance, 40000);
   await engine.setChannelOn("", 1, true);
-  assert.equal(engine.sessionCharge.charged, 25000);
+  assert.equal(engine.sessionCharge.charged, 15000);
   assert.deepEqual(opened, [0, 1, 1]);
 
   const deviceFed = [];
@@ -684,7 +684,7 @@ test("a phone that looks connected also feeds the translator", async () => {
     selected: 0,
   });
   assert.equal(macFed.length, 1);
-  assert.equal(engine.sessionCharge.balance, 30000);
+  assert.equal(engine.sessionCharge.balance, 40000);
   const round = pcmFromSignal(Buffer.from([9, 0, 8, 0]).toString("base64"));
   assert.equal(round.readInt16LE(0), 9);
   const answer = read("broadcast/phone/answer.html");

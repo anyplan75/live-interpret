@@ -401,6 +401,19 @@ test("phone audio is committed only after 100ms and stays CHO JUN", async () => 
       selected: 0,
     });
   }
+  assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
+  assert.equal(macSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
+  for (let i = 0; i < 26; i += 1) engine.pushPhonePcm("phoneCHOJUN01", piece);
+  for (let i = 0; i < 40; i += 1) {
+    engine._onPcm(frame, {
+      sampleRate: 24000,
+      nChannels: 1,
+      mode: "single",
+      deviceChannel: 0,
+      deviceChannels: 1,
+      selected: 0,
+    });
+  }
   await new Promise((resolve) => setImmediate(resolve));
 
   function bytesBeforeCommit(sent) {
@@ -410,9 +423,9 @@ test("phone audio is committed only after 100ms and stays CHO JUN", async () => 
       .filter((event) => event.type === "input_audio_buffer.append")
       .reduce((sum, event) => sum + Buffer.from(event.audio, "base64").length, 0);
   }
-  assert.ok(bytesBeforeCommit(phoneSent) >= 4800);
+  assert.ok(bytesBeforeCommit(phoneSent) >= 38400);
   assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 1);
-  assert.ok(bytesBeforeCommit(macSent) >= 4800);
+  assert.ok(bytesBeforeCommit(macSent) >= 38400);
   assert.notEqual(bytesBeforeCommit(phoneSent), bytesBeforeCommit(macSent));
   assert.equal(macSent.filter((event) => event.type === "input_audio_buffer.commit").length, 1);
 
