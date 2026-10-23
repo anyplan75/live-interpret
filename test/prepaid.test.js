@@ -134,7 +134,10 @@ test("broadcast time pauses on stop and the next block is charged only while liv
     engine.prepaidAnchor = Date.now();
     const beforeShort = updates.length;
     await engine.chargeNextBlock();
-    assert.equal(updates.length, beforeShort);
+    assert.equal(updates.length, beforeShort + 1);
+    assert.equal(String(updates.at(-1)[0]).endsWith("/billing/prepaid"), true);
+    assert.equal(updates.at(-1)[1].remainingSeconds, 0);
+    assert.equal(Object.prototype.hasOwnProperty.call(updates.at(-1)[1], "amountKrw"), false);
     assert.equal(balance, 1000);
     assert.equal(engine.prepaid.remainingSeconds, 0);
     assert.match(engine.pendingStopReason, /다음 30분/);
@@ -156,6 +159,52 @@ test("broadcast time pauses on stop and the next block is charged only while liv
     assert.deepEqual(engine.targets, ["en"]);
   } finally {
     firebase.get = original.get;
+    firebase.set = original.set;
+    firebase.update = original.update;
+  }
+});
+
+test("remaining time save writes only the countdown and hides a permission error", async () => {
+  const original = { set: firebase.set, update: firebase.update };
+  const updates = [];
+  const sets = [];
+  const logs = [];
+  firebase.set = async (rel, value) => { sets.push([rel, value]); };
+  firebase.update = async (rel, value) => { updates.push([rel, value]); };
+  const engine = new Engine((event) => logs.push(event), {});
+  try {
+    const stored = await engine.writePrepaid("grace-ab", {
+      remainingSeconds: 1700,
+      languageKey: "en",
+      kind: "half",
+      amountKrw: 8500,
+      extraCount: 2,
+      extraInputs: 1,
+    });
+    assert.equal(sets.length, 0);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0][0], "churches/grace-ab/billing/prepaid");
+    assert.deepEqual(Object.keys(updates[0][1]).sort(), ["remainingSeconds", "updatedAt"]);
+    assert.equal(updates[0][1].remainingSeconds, 1700);
+    assert.equal(stored.amountKrw, 8500);
+    assert.equal(stored.extraInputs, 1);
+    firebase.update = async () => {
+      throw new Error('Firebase 401: {"error": "Permission denied"}');
+    };
+    await engine.writePrepaid("grace-ab", {
+      remainingSeconds: 1690,
+      languageKey: "en",
+      kind: "half",
+      amountKrw: 8500,
+      extraCount: 2,
+      extraInputs: 1,
+    });
+    const text = logs.at(-1).text;
+    assert.match(text, /남은 시간 저장 실패/);
+    assert.equal(text.includes("Firebase"), false);
+    assert.equal(text.includes("Permission"), false);
+    assert.equal(text.includes("401"), false);
+  } finally {
     firebase.set = original.set;
     firebase.update = original.update;
   }

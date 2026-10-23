@@ -763,7 +763,7 @@ test("named phones join through data-channel messages without a certificate", as
     assert.deepEqual(joined.map((item) => item.name), ["민수", "영희", "철수"]);
     assert.equal(joined[0].spoken, "ko");
     assert.equal(joined[1].spoken, "en");
-    assert.equal(pcmCount, 1);
+    assert.equal(pcmCount, 2);
     assert.equal(server.info().channels[0].name, "철수");
     assert.equal(server.info().channels[0].connected, true);
     server.peerLeft("peer0001aa");
@@ -1042,6 +1042,71 @@ test("a server hello updates the mac phone card without a lan address", async ()
   assert.match(linkFn, /serverBase = base/);
   assert.match(read("broadcast/lib/phone-join.js"), /peers\.json\?shallow=true/);
   assert.match(read("broadcast/lib/phone-join.js"), /message\.type === "hello"/);
+});
+
+test("phone sound is played in arrival order, not dictionary order", async () => {
+  const { parseSseBlock } = require("../broadcast/lib/phone-join");
+  const played = [];
+  const server = new PhoneJoin({
+    onHello(phone) {
+      return { index: 1, name: phone.name, phoneId: phone.id, listening: true };
+    },
+    onPcm(_id, pcm) { played.push(Buffer.from(pcm)); },
+  });
+  await server.start({ signal: false });
+  const opened = await server.openSession();
+  const hello = JSON.stringify({
+    type: "hello",
+    name: "CHO JUN",
+    spoken: "ko",
+    connectionId: opened.connectionId,
+    phoneId: "phoneCHOJUN",
+  });
+  const first = Buffer.from([1, 0, 1, 0]);
+  const second = Buffer.from([2, 0, 2, 0]);
+  const old = Buffer.from([9, 0, 9, 0]);
+  server.takeIceEvent("peer0001aa", "put", JSON.stringify({
+    path: "/",
+    data: {
+      pcmoldoldold: JSON.stringify({ type: "pcm", pcm: old.toString("base64") }),
+      helloabc123: hello,
+    },
+  }));
+  assert.equal(server.info().channels[0].name, "CHO JUN");
+  assert.equal(played.length, 0);
+  const lateFirst = parseSseBlock([
+    "event: put",
+    `data: ${JSON.stringify({
+      path: "/pcmzzzzzzzz",
+      data: JSON.stringify({ type: "pcm", pcm: first.toString("base64") }),
+    })}`,
+    "",
+  ].join("\n"));
+  const lateSecond = parseSseBlock([
+    "event: put",
+    `data: ${JSON.stringify({
+      path: "/pcmaaaaaaaa",
+      data: JSON.stringify({ type: "pcm", pcm: second.toString("base64") }),
+    })}`,
+  ].join("\n"));
+  server.takeIceEvent("peer0001aa", lateFirst.event, lateFirst.data);
+  server.takeIceEvent("peer0001aa", lateSecond.event, lateSecond.data);
+  assert.equal(played.length, 2);
+  assert.equal(played[0][0], 1);
+  assert.equal(played[1][0], 2);
+  assert.ok("pcmaaaaaaaa" < "pcmzzzzzzzz");
+
+  const direct = Buffer.from([3, 0, 3, 0]);
+  const blocked = Buffer.from([8, 0, 8, 0]);
+  assert.equal(server.ingestPcm("peer0001aa", direct), true);
+  server.takeIceEvent("peer0001aa", "put", JSON.stringify({
+    path: "/pcmbbbbbbbb",
+    data: JSON.stringify({ type: "pcm", pcm: blocked.toString("base64") }),
+  }));
+  assert.equal(played.length, 3);
+  assert.equal(played[2][0], 3);
+  assert.equal(played.some((chunk) => chunk[0] === 8), false);
+  assert.equal(played.some((chunk) => chunk[0] === 9), false);
 });
 
 test("plain http hides the microphone and https exposes it", { timeout: 60000 }, async (t) => {

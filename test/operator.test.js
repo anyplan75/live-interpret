@@ -108,4 +108,7 @@ test("server rules let only the operator read every account and add credit", () 
   assert.equal(userText("Error invoking remote method 'operator:credit': Error: 충전할 금액을 적으세요"), "충전할 금액을 적으세요");
   assert.equal(userText("Error: 계정을 골라 주세요.\n    at processTicksAndRejections (node:internal/process:1:1)"), "계정을 골라 주세요.");
   assert.equal(userText(""), "다시 시도해 주세요.");
+  assert.equal(userText('Firebase 401: {"error": "Permission denied"}').includes("Firebase"), false);
+  assert.equal(userText('Firebase 401: {"error": "Permission denied"}').includes("Permission"), false);
+  assert.match(userText('Firebase 401: {"error": "Permission denied"}'), /다시 로그인/);
 });

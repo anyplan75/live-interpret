@@ -33,6 +33,9 @@
       body = korean ? korean[0].trim() : "";
     }
     if (!body) return "다시 시도해 주세요.";
+    if (/firebase\s+401|permission denied/i.test(body)) {
+      return "저장할 권한이 없습니다. 다시 로그인한 뒤 한 번 더 시도해 주세요.";
+    }
     return body;
   }
 

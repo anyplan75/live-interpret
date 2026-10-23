@@ -61,6 +61,17 @@ function encodeIce(candidate) {
   return text;
 }
 
+function parseSseBlock(block) {
+  let event = "put";
+  const data = [];
+  String(block || "").split("\n").forEach((line) => {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  });
+  if (!data.length) return null;
+  return { event, data: data.join("\n") };
+}
+
 function asBuffer(data) {
   if (Buffer.isBuffer(data)) return data;
   if (data instanceof ArrayBuffer) return Buffer.from(data);
@@ -385,13 +396,23 @@ class PhoneJoin {
 
   ingestPcm(peerId, data, via) {
     const row = this.peers.get(peerId);
-    if (!row || !row.phoneId) return false;
-    if (via !== "server" && row.serverAudio) return false;
     const buf = asBuffer(data);
     const even = buf.length - (buf.length % 2);
-    if (even < 2) return false;
-    if (via === "server") row.serverAudio = true;
-    this.onPcm(row.phoneId, even === buf.length ? buf : buf.subarray(0, even));
+    const pcm = even === buf.length ? buf : buf.subarray(0, even);
+    if (!row || !row.phoneId) {
+      if (pcm.length >= 2) this._queueEarlyPcm(peerId, pcm);
+      return false;
+    }
+    const now = Date.now();
+    // 데이터 채널(순서 그대로인 직접 통로)이 살아 있으면 서버 조각은 넣지 않습니다.
+    // 서버 조각이 하나라도 왔다고 직접 통로를 막으면, 말한 순서의 소리가 사라집니다.
+    if (via === "server") {
+      if (row.directAudioAt && now - row.directAudioAt < 1500) return false;
+    } else if (pcm.length >= 2) {
+      row.directAudioAt = now;
+    }
+    if (pcm.length < 2) return false;
+    this.onPcm(row.phoneId, pcm);
     return true;
   }
 
@@ -466,6 +487,12 @@ class PhoneJoin {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.iceAbort) {
+      for (const ctrl of this.iceAbort.values()) {
+        try { ctrl.abort(); } catch (_) { /* 이미 끊긴 소리 줄은 무시합니다 */ }
+      }
+      this.iceAbort.clear();
     }
     this.peers.clear();
   }
@@ -563,18 +590,7 @@ class PhoneJoin {
       const offer = await this._getSignal(`peers/${peerId}/offer.json`);
       if (offer && offer.sdp) this._onOffer(peerId, offer.sdp);
     }
-    const ices = await this._getSignal(`peers/${peerId}/phoneIce.json?shallow=true`);
-    if (!ices || typeof ices !== "object") return;
-    const ids = Object.keys(ices).sort().filter((iceId) => !this.seenIce.has(`${peerId}/${iceId}`));
-    const width = 4;
-    for (let i = 0; i < ids.length; i += width) {
-      const batch = ids.slice(i, i + width);
-      const loaded = await Promise.all(batch.map(async (iceId) => ({
-        iceId,
-        value: await this._getSignal(`peers/${peerId}/phoneIce/${iceId}.json`),
-      })));
-      loaded.forEach((item) => this._onPhoneIce(peerId, item.iceId, item.value));
-    }
+    this._ensureIceWatch(peerId);
   }
 
   _applyPath(path, data) {
@@ -655,6 +671,144 @@ class PhoneJoin {
     this._toLink({ type: "ice", peerId, ...parsed });
   }
 
+  /**
+   * 소리 조각 이름이 말한 순서가 아니라서, 이름순으로 모아 넣으면 말이 섞입니다.
+   * 서버가 새로 올리는 조각만 도착한 차례로 읽습니다. 이미 쌓인 목음은 재생하지 않습니다.
+   */
+  _ensureIceWatch(peerId) {
+    if (!PEER_RE.test(peerId || "") || this.stopped) return;
+    if (!this.iceWatch) this.iceWatch = new Set();
+    if (this.iceWatch.has(peerId)) return;
+    this.iceWatch.add(peerId);
+    this._iceLoop(peerId).catch((err) => this._fail(err));
+  }
+
+  async _iceLoop(peerId) {
+    while (!this.stopped) {
+      try {
+        await this._readIceStream(peerId);
+      } catch (err) {
+        if (this.stopped) return;
+        const name = err && err.name;
+        if (name === "AbortError") return;
+        this._fail(err);
+      }
+      await this._pause(1000);
+    }
+  }
+
+  _feedIceText(peerId, text) {
+    let buf = String(text || "");
+    let cut = buf.indexOf("\n\n");
+    let rest = "";
+    while (cut >= 0) {
+      const raw = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      const parsed = parseSseBlock(raw);
+      if (parsed) this.takeIceEvent(peerId, parsed.event, parsed.data);
+      cut = buf.indexOf("\n\n");
+    }
+    rest = buf;
+    return rest;
+  }
+
+  async _readIceStream(peerId) {
+    if (!this.databaseURL || !this.token || this.stopped) return;
+    const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+    if (ctrl) {
+      if (!this.iceAbort) this.iceAbort = new Map();
+      this.iceAbort.set(peerId, ctrl);
+    }
+    const url = this._signalUrl(`peers/${peerId}/phoneIce.json`);
+    if (process.versions && process.versions.electron) {
+      await this._readIceWithElectron(peerId, url, ctrl);
+      return;
+    }
+    const res = await netFetch(url, {
+      cache: "no-store",
+      headers: { Accept: "text/event-stream", "Cache-Control": "no-cache" },
+      signal: ctrl ? ctrl.signal : undefined,
+    });
+    if (!res.ok || !res.body || typeof res.body.getReader !== "function") {
+      throw new Error("휴대폰 소리 줄을 열지 못했습니다.");
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (!this.stopped) {
+      const step = await reader.read();
+      if (step.done) return;
+      buf += decoder.decode(step.value, { stream: true });
+      buf = this._feedIceText(peerId, buf);
+    }
+  }
+
+  _readIceWithElectron(peerId, url, ctrl) {
+    const { net } = require("electron");
+    return new Promise((resolve, reject) => {
+      const req = net.request({ url, method: "GET" });
+      req.setHeader("Accept", "text/event-stream");
+      req.setHeader("Cache-Control", "no-cache");
+      if (ctrl) ctrl.signal.addEventListener("abort", () => { try { req.abort(); } catch (_) { /* 이미 끊긴 요청은 무시합니다 */ } });
+      req.on("error", reject);
+      req.on("response", (res) => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error("휴대폰 소리 줄을 열지 못했습니다."));
+          return;
+        }
+        let buf = "";
+        res.on("data", (chunk) => {
+          buf += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+          buf = this._feedIceText(peerId, buf);
+        });
+        res.on("end", resolve);
+        res.on("aborted", resolve);
+        res.on("error", reject);
+      });
+      req.end();
+    });
+  }
+
+  /** 서버가 보낸 소리 줄 한 건. 새 조각은 도착 순서로 넣고, 처음 목록의 옛 소리는 넣지 않습니다. */
+  takeIceEvent(peerId, eventName, dataText) {
+    if (!PEER_RE.test(peerId || "")) return;
+    const name = String(eventName || "put");
+    if (name === "keep-alive" || name === "cancel" || name === "auth_revoked") return;
+    let body = null;
+    try { body = JSON.parse(String(dataText || "")); } catch (_) { return; }
+    if (!body || typeof body !== "object") return;
+    const path = String(body.path || "/");
+    const data = body.data;
+    if (path === "/") {
+      this._takeIceSnapshot(peerId, data, name === "patch");
+      return;
+    }
+    const iceId = path.split("/").filter(Boolean)[0];
+    if (!iceId) return;
+    this._onPhoneIce(peerId, iceId, data);
+  }
+
+  _takeIceSnapshot(peerId, data, patch) {
+    if (!data || typeof data !== "object") return;
+    const entries = Object.entries(data);
+    const freshPcm = entries.filter(([, value]) => {
+      const message = readServerMessage(value);
+      return message && message.type === "pcm";
+    });
+    if (patch && freshPcm.length === 1 && entries.length === 1) {
+      this._onPhoneIce(peerId, freshPcm[0][0], freshPcm[0][1]);
+      return;
+    }
+    entries.forEach(([iceId, value]) => {
+      const message = readServerMessage(value);
+      if (message && message.type === "pcm") {
+        this.seenIce.add(`${peerId}/${iceId}`);
+        return;
+      }
+      this._onPhoneIce(peerId, iceId, value);
+    });
+  }
+
   _fail(err) {
     const text = err && err.message ? err.message : String(err);
     const now = Date.now();
@@ -681,4 +835,5 @@ module.exports = {
   parseIce,
   encodeIce,
   pcmFromSignal,
+  parseSseBlock,
 };

@@ -28,6 +28,7 @@ const { createSubtitleBoard } = require("./subtitle-board");
 const { cleanDisplayName, cleanPhoneId } = require("./phone-name");
 const { createSessionWriter } = require("./files");
 const firebase = require("./firebase");
+const { userText } = require("./user-text");
 
 function cleanTargets(targets) {
   return [...new Set((targets || []).filter((code) => code !== "ko" && langByCode[code]))];
@@ -313,9 +314,13 @@ class Engine {
   async writePrepaid(churchId, block) {
     const stored = cost.firebasePrepaid(block, Date.now());
     try {
-      await firebase.set(`churches/${churchId}/billing/prepaid`, stored);
+      // 남은 초만 낮춥니다. 금액·언어를 다시 쓰면 서버 규칙이 거절하고 화면에 권한 오류가 남습니다.
+      await firebase.update(`churches/${churchId}/billing/prepaid`, {
+        remainingSeconds: stored.remainingSeconds,
+        updatedAt: stored.updatedAt,
+      });
     } catch (err) {
-      this.emit({ type: "log", level: "error", text: `남은 시간 저장 실패: ${err.message || err}` });
+      this.emit({ type: "log", level: "error", text: `남은 시간 저장 실패: ${userText(err)}` });
     }
     try {
       if (this.writeLocalPrepaid) await this.writeLocalPrepaid(churchId, stored);
@@ -395,7 +400,7 @@ class Engine {
           return this.stop();
         })
         .catch((err) => {
-          this.emit({ type: "log", level: "error", text: `남은 시간 갱신 실패: ${err.message || err}` });
+          this.emit({ type: "log", level: "error", text: `남은 시간 갱신 실패: ${userText(err)}` });
         });
     }, 1000);
   }
@@ -1763,7 +1768,7 @@ class Engine {
       try { await this.prepaidChain; } catch (_) { /* 남은 시간 저장이 이미 실패해도 종료는 계속합니다 */ }
     }
     try { await this.freezePrepaid(); } catch (err) {
-      this.emit({ type: "log", level: "error", text: `남은 시간 저장 실패: ${err.message || err}` });
+      this.emit({ type: "log", level: "error", text: `남은 시간 저장 실패: ${userText(err)}` });
     }
     const pipelines = [...this.channelSessions.values()].map((row) => row.pipeline).filter(Boolean);
     if (!pipelines.length && this.pipeline) pipelines.push(this.pipeline);
