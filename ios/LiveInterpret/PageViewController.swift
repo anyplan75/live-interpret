@@ -162,6 +162,9 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
     deinit {
         let center = NotificationCenter.default
         micObservers.forEach { center.removeObserver($0) }
+        if page == .lecture {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
     }
 
     /// 본인이 연 강연·회의 마이크만, 화면이 꺼져도 세션을 다시 살린다.
@@ -224,7 +227,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if page == .lecture && isMovingFromParent {
+        if page == .lecture && (isMovingFromParent || isBeingDismissed) {
             lectureMicStopped()
         }
     }
@@ -253,6 +256,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     func lectureMicOpened() {
         lectureMicOpen = true
+        keepLectureScreenAwake(true)
         publishLocalAddress()
         prepareLectureSession(active: true)
     }
@@ -283,7 +287,13 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     func lectureMicStopped() {
         lectureMicOpen = false
+        keepLectureScreenAwake(false)
         lectureSpeech.stop()
+    }
+
+    /// 강연·회의 마이크가 켜진 동안에는 화면이 스스로 어두워지거나 잠기지 않습니다.
+    private func keepLectureScreenAwake(_ awake: Bool) {
+        UIApplication.shared.isIdleTimerDisabled = awake
     }
 
     private func resumeLectureMic() {

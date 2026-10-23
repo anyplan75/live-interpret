@@ -1010,7 +1010,9 @@ test("qr join reaches the mac card immediately and the lecture mic stays up with
   assert.match(page, /holdMic/);
   assert.match(page, /mode: \.default/);
   assert.match(page, /isMovingFromParent/);
-  assert.doesNotMatch(page, /isIdleTimerDisabled\s*=\s*true/);
+  assert.match(page, /keepLectureScreenAwake\(true\)/);
+  assert.match(page, /keepLectureScreenAwake\(false\)/);
+  assert.match(page, /isIdleTimerDisabled = awake/);
 });
 
 test("a server hello updates the mac phone card without a lan address", async () => {
