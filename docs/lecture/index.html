@@ -15,20 +15,22 @@
 <body>
   <main>
     <h1>강연·회의 통역</h1>
-    <p class="hint">진행자가 알려 준 접속 번호, 이번 세션 4자리 암호, 이름, 말하는 언어를 입력하면 이 휴대폰이 송출 컴퓨터의 마이크가 됩니다. 이 암호는 계정 비밀번호가 아니고, 이번 강연·회의에만 씁니다. 연결 뒤에 진행자가 언어를 바꾸면 그 언어로 통역합니다.</p>
+    <p class="hint" id="lead">송출 컴퓨터에 나온 웹 마이크 주소를 연 뒤, 연결 번호를 입력하세요. 휴대폰 앱은 QR을 스캔해도 됩니다.</p>
 
     <section id="booth" class="card">
-      <form id="micForm">
-        <label for="joinId">접속 번호</label>
-        <input id="joinId" name="joinId" maxlength="8" autocapitalize="characters" autocomplete="off" enterkeyhint="next" required>
-        <label for="joinPin">4자리 암호</label>
-        <input id="joinPin" name="joinPin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="off" enterkeyhint="next" required>
+      <div id="needScan">
+        <form id="numberForm">
+          <label for="connectionNumber">연결 번호</label>
+          <input id="connectionNumber" name="connectionNumber" maxlength="11" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go" placeholder="6자리" required>
+          <button type="submit" id="joinNumber">이 번호로 들어가기</button>
+        </form>
+        <button type="button" id="scanQr">QR 스캔</button>
+      </div>
+      <form id="micForm" hidden>
         <label for="name">이름</label>
         <input id="name" name="name" maxlength="40" autocomplete="name" enterkeyhint="next" required>
         <label for="spoken">말하는 언어</label>
-        <select id="spoken" name="spoken" required>
-          <option value="">언어를 선택하세요</option>
-        </select>
+        <select id="spoken" name="spoken" required></select>
         <button type="submit" id="openMic">마이크 열기</button>
       </form>
       <p id="status"></p>
@@ -41,58 +43,563 @@
   <script src="../js/catalog.js"></script>
   <script src="../js/org-services.js"></script>
   <script src="../js/pcm-browser.js"></script>
-  <script src="../js/phone-offer.js"></script>
+  <script>
+/**
+ * 휴대폰이 보내는 WebRTC 마이크.
+ * 강연·회의 앱과 대면 통역의 상대 휴대폰이 같은 신호(phoneLinks)를 씁니다.
+ */
+(function (root) {
+  const LI = root.LI = root.LI || {};
+
+  function randomHex(bytes) {
+    const list = new Uint8Array(bytes);
+    crypto.getRandomValues(list);
+    return Array.from(list, (item) => item.toString(16).padStart(2, "0")).join("");
+  }
+
+  function rememberPhone(id) {
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(id || "")) return "";
+    try { localStorage.setItem("liveInterpretPhoneId", id); } catch (_) { /* 저장이 막혀도 이번 연결은 유지합니다 */ }
+    return id;
+  }
+
+  function storedPhone() {
+    try { return localStorage.getItem("liveInterpretPhoneId") || ""; } catch (_) { return ""; }
+  }
+
+  function applySignal(link, path, data) {
+    const parts = String(path || "/").split("/").filter(Boolean);
+    if (!parts.length && data && typeof data === "object") {
+      if (data.answer && data.answer.sdp) link.takeAnswer(data.answer.sdp);
+      if (data.macIce && typeof data.macIce === "object") {
+        Object.entries(data.macIce).forEach(([id, value]) => link.takeIce(id, value));
+      }
+      return;
+    }
+    if (parts[0] === "answer" && data && data.sdp) link.takeAnswer(data.sdp);
+    if (parts[0] === "macIce") {
+      if (parts.length === 1 && data && typeof data === "object") {
+        Object.entries(data).forEach(([id, value]) => link.takeIce(id, value));
+      } else if (parts.length === 2) link.takeIce(parts[1], data);
+    }
+  }
+
+  function watchSignal(link, peerUrl) {
+    const source = new EventSource(peerUrl);
+    const onEvent = (event) => {
+      let payload = null;
+      try { payload = JSON.parse(event.data); } catch (_) { return; }
+      if (!payload) return;
+      applySignal(link, payload.path, payload.data);
+    };
+    source.addEventListener("put", onEvent);
+    source.addEventListener("patch", onEvent);
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(peerUrl, { cache: "no-store" });
+        if (!res.ok) return;
+        applySignal(link, "/", await res.json());
+      } catch (_) { /* 다음 주기에서 다시 읽습니다 */ }
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+      source.close();
+    };
+  }
+
+  function numericCandidate(value) {
+    const host = (root.LIJoin && root.LIJoin.localAddress) || root.__liLocalAddress || "";
+    if (typeof value !== "string" || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return value;
+    return value.replace(/\b[A-Za-z0-9-]+\.local\b/g, host);
+  }
+
+  async function putJson(url, body) {
+    const res = await fetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("signal");
+  }
+
+  async function open(opts) {
+    const options = opts || {};
+    const token = options.token || "";
+    const name = options.name || "";
+    if (!/^[a-f0-9]{32}$/.test(token)) throw new Error("연결 토큰이 올바르지 않습니다.");
+    if (!name) throw new Error("이름을 입력해 주세요.");
+    const databaseURL = String(options.databaseURL || "").replace(/\/$/, "");
+    const rootPath = options.rootPath || "live-interpret";
+    const onStatus = options.onStatus || (() => {});
+    const onJson = options.onJson || (() => {});
+    const onLevel = options.onLevel || (() => {});
+    let phoneId = storedPhone();
+    let sending = true;
+    let audioContext = options.audioContext || null;
+    let mediaStream = null;
+    let active = null;
+    let reconnectTimer = null;
+    let closed = false;
+    let refused = false;
+    const pin = String(options.pin || "");
+
+    if (!audioContext) audioContext = new AudioContext();
+    await audioContext.resume();
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      video: false,
+    });
+    const source = audioContext.createMediaStreamSource(mediaStream);
+    // 출력을 0으로 두면 아이폰이 마이크 처리를 멈춰, 연결만 되고 소리가 안 간다.
+    const sink = audioContext.createMediaStreamDestination();
+    let serverBase = "";
+    let lineSeq = 0;
+    let pcmBusy = false;
+    const pcmQueue = [];
+    function bytesToBase64(bytes) {
+      let binary = "";
+      const step = 0x8000;
+      for (let i = 0; i < bytes.length; i += step) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+      }
+      return btoa(binary);
+    }
+    function postServer(idPrefix, message) {
+      if (!serverBase) return Promise.resolve();
+      const text = JSON.stringify(message);
+      if (!text || text.length > 2000) return Promise.resolve();
+      return putJson(`${serverBase}/phoneIce/${idPrefix}${randomHex(8)}.json`, text).catch(() => {});
+    }
+    function drainPcm() {
+      if (pcmBusy || !pcmQueue.length) return;
+      const next = pcmQueue.shift();
+      pcmBusy = true;
+      postServer("pcm", { type: "pcm", pcm: bytesToBase64(next) }).finally(() => {
+        pcmBusy = false;
+        drainPcm();
+      });
+    }
+    function sendLine(text) {
+      const body = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+      if (!body) return false;
+      lineSeq += 1;
+      const message = { type: "line", text: body, seq: lineSeq };
+      const current = active && active.channel;
+      if (current && current.readyState === "open") {
+        try { current.send(JSON.stringify(message)); } catch (_) { /* 서버 기록으로도 같은 글을 보냅니다 */ }
+      }
+      postServer("line", message);
+      return true;
+    }
+    function postServerPcm(pcm) {
+      if (!pcm || !pcm.length || !serverBase) return;
+      const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+      for (let i = 0; i < bytes.length; i += 1400) pcmQueue.push(bytes.slice(i, i + 1400));
+      if (pcmQueue.length > 12) pcmQueue.splice(0, pcmQueue.length - 12);
+      drainPcm();
+    }
+    const sendInput = (input) => {
+      let peak = 0;
+      for (let i = 0; i < input.length; i += 32) {
+        const value = Math.abs(input[i]);
+        if (value > peak) peak = value;
+      }
+      onLevel(Math.max(0, Math.min(100, Math.round(peak * 140))));
+      if (!sending) return;
+      const pcm = LI.pcm.downsampleFloatToPcm16(input, audioContext.sampleRate, 24000);
+      if (pcm.length) postServerPcm(pcm);
+      const current = active && active.channel;
+      if (!current || current.readyState !== "open" || current.bufferedAmount > 262144) return;
+      const copy = pcm.slice();
+      try { current.send(copy.buffer); } catch (_) { /* 서버로 올린 소리는 계속 갑니다 */ }
+    };
+    const workletSource = [
+      "class PcmCapture extends AudioWorkletProcessor {",
+      "  process(inputs) {",
+      "    const channel = inputs[0] && inputs[0][0];",
+      "    if (channel && channel.length) this.port.postMessage(channel.slice(0));",
+      "    return true;",
+      "  }",
+      "}",
+      "registerProcessor('pcm-capture', PcmCapture);",
+    ].join("\n");
+    try {
+      const workletUrl = options.workletUrl || URL.createObjectURL(new Blob([workletSource], { type: "application/javascript" }));
+      await audioContext.audioWorklet.addModule(workletUrl);
+      const node = new AudioWorkletNode(audioContext, "pcm-capture");
+      node.port.onmessage = (audioEvent) => sendInput(audioEvent.data);
+      source.connect(node);
+      node.connect(sink);
+    } catch (_) {
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (audioEvent) => sendInput(audioEvent.inputBuffer.getChannelData(0));
+      source.connect(processor);
+      processor.connect(sink);
+    }
+
+    // 마이크 자체는 스피커로 보내지 않는다. 아주 작은 반복 소리만 출력해,
+    // 화면이 꺼져도 아이폰이 이 마이크 처리를 멈추지 않게 한다.
+    let keepAlive = null;
+    function startKeepAlive() {
+      if (closed || keepAlive || !audioContext) return;
+      const rate = audioContext.sampleRate || 48000;
+      const buffer = audioContext.createBuffer(1, rate, rate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i += 1) data[i] = i % 2 === 0 ? 0.01 : -0.01;
+      const quiet = audioContext.createBufferSource();
+      quiet.buffer = buffer;
+      quiet.loop = true;
+      const gain = audioContext.createGain();
+      gain.gain.value = 0.00001;
+      quiet.connect(gain);
+      gain.connect(audioContext.destination);
+      quiet.start();
+      keepAlive = quiet;
+    }
+    async function hold() {
+      if (closed || !audioContext) return;
+      try { await audioContext.resume(); } catch (_) { /* 화면이 꺼진 뒤에도 다음 유지에서 다시 엽니다 */ }
+      startKeepAlive();
+    }
+    await hold();
+
+    function startLink() {
+      if (closed || active) return;
+      const peerId = randomHex(16);
+      const base = `${databaseURL}/${rootPath}/phoneLinks/${token}/peers/${peerId}`;
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        bundlePolicy: "max-bundle",
+      });
+      const channel = pc.createDataChannel("mic");
+      channel.binaryType = "arraybuffer";
+      const link = {
+        pc,
+        channel,
+        answered: false,
+        iceSeen: new Set(),
+        iceQueue: [],
+        stopWatch: () => {},
+        async takeAnswer(sdp) {
+          if (this.answered || typeof sdp !== "string" || !sdp) return;
+          this.answered = true;
+          await pc.setRemoteDescription({ type: "answer", sdp });
+          const queued = this.iceQueue.splice(0);
+          for (const ice of queued) {
+            try { await pc.addIceCandidate(ice); } catch (_) { /* 늦은 후보는 무시합니다 */ }
+          }
+        },
+        takeIce(iceId, value) {
+          if (this.iceSeen.has(iceId) || typeof value !== "string") return;
+          let body = null;
+          try { body = JSON.parse(value); } catch (_) { return; }
+          if (!body || typeof body.candidate !== "string" || !body.candidate) return;
+          if (/\btyp relay\b/.test(body.candidate)) return;
+          this.iceSeen.add(iceId);
+          const ice = {
+            candidate: body.candidate,
+            sdpMid: body.sdpMid || "0",
+            sdpMLineIndex: Number.isInteger(body.sdpMLineIndex) ? body.sdpMLineIndex : 0,
+          };
+          if (!this.answered) {
+            this.iceQueue.push(ice);
+            return;
+          }
+          pc.addIceCandidate(ice).catch(() => {});
+        },
+      };
+      active = link;
+      serverBase = base;
+      if (typeof options.onLink === "function") options.onLink({ serverBase, spoken: options.spoken || "", name });
+      postServer("hello", {
+        type: "hello",
+        name,
+        phoneId,
+        pin,
+        spoken: options.spoken ? String(options.spoken) : "",
+        connectionId: options.connectionId ? String(options.connectionId) : "",
+        role: options.role || "mic",
+      });
+      channel.onopen = () => {
+        const hello = { type: "hello", name, phoneId, pin, role: options.role || "mic" };
+        if (options.spoken) hello.spoken = String(options.spoken);
+        if (options.connectionId) hello.connectionId = String(options.connectionId);
+        channel.send(JSON.stringify(hello));
+        onStatus("연결하는 중입니다.");
+      };
+      channel.onmessage = (event) => {
+        if (typeof event.data !== "string") return;
+        let message = null;
+        try { message = JSON.parse(event.data); } catch (_) { return; }
+        if (!message || typeof message !== "object") return;
+        if (message.type === "joined") {
+          phoneId = rememberPhone(message.phoneId) || phoneId;
+          onStatus("연결되었습니다.");
+        } else if (message.type === "error") {
+          refused = true;
+          onStatus(message.message || "연결하지 못했습니다.");
+          try { pc.close(); } catch (_) { /* 거절된 연결은 닫습니다 */ }
+        }
+        onJson(message);
+      };
+      channel.onclose = () => {
+        if (active !== link) return;
+        link.stopWatch();
+        try { pc.close(); } catch (_) { /* 이미 닫힌 연결은 무시합니다 */ }
+        active = null;
+        if (closed || refused) return;
+        onStatus("연결이 끊겼습니다. 다시 연결합니다.");
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(startLink, 1500);
+      };
+      pc.onicecandidate = (event) => {
+        if (!event.candidate || !event.candidate.candidate) return;
+        if (/\btyp relay\b/.test(event.candidate.candidate)) return;
+        const payload = JSON.stringify({
+          candidate: numericCandidate(event.candidate.candidate),
+          sdpMid: event.candidate.sdpMid,
+          sdpMLineIndex: event.candidate.sdpMLineIndex,
+        });
+        if (payload.length > 2000) return;
+        putJson(`${base}/phoneIce/${randomHex(8)}.json`, payload).catch(() => {});
+      };
+      link.stopWatch = watchSignal(link, `${base}.json`);
+      pc.createOffer().then(async (offer) => {
+        await pc.setLocalDescription(offer);
+        await putJson(`${base}/offer.json`, { type: "offer", sdp: numericCandidate(offer.sdp) });
+      }).catch(() => {
+        onStatus("연결하지 못했습니다. 다시 시도해 주세요.");
+      });
+    }
+
+    startLink();
+    return {
+      setPaused(next) { sending = !next; },
+      get serverBase() { return serverBase; },
+      sendLine,
+      hold,
+      stop() {
+        closed = true;
+        clearTimeout(reconnectTimer);
+        if (keepAlive) {
+          try { keepAlive.stop(); } catch (_) { /* 이미 멈춘 유지 소리는 무시합니다 */ }
+          keepAlive = null;
+        }
+        if (active) {
+          active.stopWatch();
+          try { active.pc.close(); } catch (_) { /* 이미 닫힌 연결은 무시합니다 */ }
+        }
+        active = null;
+        if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop());
+        if (typeof options.onStop === "function") options.onStop();
+      },
+    };
+  }
+
+  LI.phoneOffer = { open, randomHex };
+})(typeof globalThis !== "undefined" ? globalThis : this);
+
+</script>
   <script src="sw-register.js"></script>
   <script>
     const statusEl = document.getElementById("status");
     const levelEl = document.getElementById("level");
     const openMic = document.getElementById("openMic");
-    const spokenSelect = document.getElementById("spoken");
+    const spokenEl = document.getElementById("spoken");
+    const needScan = document.getElementById("needScan");
+    const micForm = document.getElementById("micForm");
     let link = null;
-
-    (LI.catalog.languages || []).forEach((lang) => {
-      const option = document.createElement("option");
-      option.value = lang.code;
-      option.textContent = `${lang.flag} ${lang.name}`;
-      spokenSelect.append(option);
-    });
+    let slot = null;
+    let hearing = null;
+    let pendingLines = [];
 
     function say(text) { statusEl.textContent = text; }
+    function fillSpoken() {
+      spokenEl.innerHTML = "";
+      (LI.catalog.languages || []).forEach((lang) => {
+        const option = document.createElement("option");
+        option.value = lang.code;
+        option.textContent = `${lang.flag} ${lang.name}`;
+        spokenEl.append(option);
+      });
+      if (LI.catalog.langByCode.ko) spokenEl.value = "ko";
+    }
     function securePage() {
       return window.isSecureContext === true && (location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1");
     }
 
-    async function lookupToken(connectionId) {
-      const url = `${LI.catalog.firebase.databaseURL.replace(/\/$/, "")}/${LI.catalog.firebase.rootPath}/lectureJoins/${connectionId}.json`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("접속 번호를 확인하지 못했습니다. 잠시 뒤에 다시 시도해 주세요.");
-      const row = await res.json();
-      if (!row || !LI.orgServices.validToken(row.token)) {
-        throw new Error("접속 번호를 확인하거나, 진행자가 강연·회의를 시작했는지 확인해 주세요.");
-      }
-      return row.token;
+    document.getElementById("scanQr").addEventListener("click", () => {
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.scanLecture;
+      if (bridge) bridge.postMessage("scan");
+      else say("휴대폰 앱에서 QR 스캔을 눌러 주세요.");
+    });
+
+    function showSlot(next) {
+      slot = next;
+      needScan.hidden = true;
+      micForm.hidden = false;
+      say("이름과 말하는 언어를 입력한 뒤 마이크를 여세요.");
     }
+
+    function readSlot(connectionId, token) {
+      const id = String(connectionId || "").trim().toUpperCase();
+      const signal = String(token || "").trim().toLowerCase();
+      if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(id)) return null;
+      if (!/^[a-f0-9]{32}$/.test(signal)) return null;
+      return { connectionId: id, token: signal };
+    }
+
+    function speechLocale(code) {
+      const map = {
+        ko: "ko-KR", en: "en-US", ja: "ja-JP", zh: "zh-CN", "zh-CN": "zh-CN", "zh-TW": "zh-TW",
+        es: "es-ES", fr: "fr-FR", de: "de-DE", pt: "pt-BR", vi: "vi-VN", th: "th-TH", ru: "ru-RU", id: "id-ID",
+      };
+      return map[code] || "ko-KR";
+    }
+    function notifyMic(state) {
+      const bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lectureMic;
+      if (bridge) bridge.postMessage(state);
+    }
+
+    function nativeLectureMic() {
+      return !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.lectureMic);
+    }
+
+    function endHearing() {
+      const rec = hearing;
+      hearing = null;
+      if (!rec) return;
+      rec.onend = null;
+      try { rec.stop(); } catch (_) { /* 이미 멈춘 말하기 인식은 무시합니다 */ }
+    }
+
+    // 휴대폰 앱은 기기 인식이 글을 보냅니다. 브라우저만 이 페이지에서 말을 글로 바꿉니다.
+    function deliverLine(text) {
+      const body = String(text || "").replace(/\s+/g, " ").trim();
+      if (!body) return;
+      if (link && typeof link.sendLine === "function") {
+        if (link.sendLine(body)) say("말을 맥으로 보냈습니다.");
+        return;
+      }
+      pendingLines.push(body);
+      if (pendingLines.length > 8) pendingLines.shift();
+    }
+
+    function flushLines() {
+      const queued = pendingLines.splice(0);
+      queued.forEach((text) => deliverLine(text));
+    }
+
+    function beginHearing(spoken) {
+      endHearing();
+      if (nativeLectureMic()) return;
+      const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Ctor) {
+        say("이 브라우저는 말을 글로 바꾸지 못합니다. Chrome 또는 Safari에서 열어 주세요.");
+        return;
+      }
+      const rec = new Ctor();
+      rec.lang = speechLocale(spoken);
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          if (!event.results[i].isFinal) continue;
+          deliverLine(event.results[i][0] && event.results[i][0].transcript);
+        }
+      };
+      rec.onend = () => {
+        if (hearing !== rec) return;
+        try { rec.start(); } catch (_) { /* 다음 말이 있으면 다시 엽니다 */ }
+      };
+      try { rec.start(); } catch (_) {
+        say("말하기 인식을 시작하지 못했습니다. Chrome 또는 Safari에서 다시 열어 주세요.");
+        return;
+      }
+      hearing = rec;
+    }
+
+    window.LIJoin = {
+      applyScan(payload) {
+        const parsed = readSlot(payload && payload.connectionId, payload && payload.token);
+        if (!parsed) {
+          say("이 QR은 강연 참여 QR이 아닙니다.");
+          return false;
+        }
+        showSlot(parsed);
+        return true;
+      },
+      holdMic() {
+        if (link && typeof link.hold === "function") link.hold();
+      },
+      submitHeard(text) {
+        if (!link || typeof link.sendLine !== "function") return false;
+        return link.sendLine(text) === true;
+      },
+      setLocalAddress(ip) {
+        if (typeof ip !== "string" || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) return;
+        this.localAddress = ip;
+        window.__liLocalAddress = ip;
+      },
+    };
+
+    document.addEventListener("visibilitychange", () => {
+      if (window.LIJoin && window.LIJoin.holdMic) window.LIJoin.holdMic();
+    });
+
+    try { fillSpoken(); } catch (_) { /* 언어 목록이 늦게 와도 스캔 단추는 동작합니다 */ }
+    try {
+      const fromPage = LI.orgServices && LI.orgServices.parseLectureSlot && LI.orgServices.parseLectureSlot(location.href);
+      if (fromPage) showSlot(fromPage);
+    } catch (_) { /* 주소에 칸 정보가 없어도 스캔으로 들어옵니다 */ }
+
+    document.getElementById("numberForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const id = LI.orgServices.normalizeConnectionId(document.getElementById("connectionNumber").value);
+      if (!id) {
+        say("연결 번호 6자리를 확인해 주세요.");
+        return;
+      }
+      const joinButton = document.getElementById("joinNumber");
+      joinButton.disabled = true;
+      try {
+        const url = LI.orgServices.lectureJoinRecordUrl(
+          LI.catalog.firebase.databaseURL,
+          LI.catalog.firebase.rootPath,
+          id,
+        );
+        const res = await fetch(url, { cache: "no-store" });
+        const body = res.ok ? await res.json() : null;
+        const token = body && typeof body.token === "string" ? body.token : "";
+        if (!LI.orgServices.validToken(token)) {
+          say("이 연결 번호를 찾지 못했습니다. 송출 컴퓨터의 번호를 다시 확인해 주세요.");
+          return;
+        }
+        showSlot({ connectionId: id, token });
+      } catch (_) {
+        say("연결 번호를 확인하지 못했습니다. 다시 시도해 주세요.");
+      } finally {
+        joinButton.disabled = false;
+      }
+    });
 
     document.getElementById("micForm").addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (!slot) {
+        say("먼저 연결 번호를 입력하거나 QR을 스캔해 주세요.");
+        return;
+      }
       if (link) link.stop();
       link = null;
-      const connectionId = LI.orgServices.normalizeConnectionId(document.getElementById("joinId").value);
-      const pin = String(document.getElementById("joinPin").value || "").trim();
+      pendingLines = [];
+      endHearing();
       const name = LI.orgServices.cleanName(document.getElementById("name").value);
-      const spoken = String(spokenSelect.value || "").trim();
-      if (!connectionId) {
-        say("접속 번호 6자리를 확인해 주세요.");
-        return;
-      }
-      if (!LI.orgServices.validSessionPin(pin)) {
-        say("4자리 암호를 확인해 주세요.");
-        return;
-      }
       if (!name) {
         say("이름을 입력해 주세요.");
         return;
       }
+      const spoken = spokenEl.value;
       if (!spoken || !LI.catalog.langByCode[spoken]) {
         say("말하는 언어를 선택해 주세요.");
         return;
@@ -101,19 +608,22 @@
         say("이 페이지는 보안 연결이 아니라서 마이크를 열 수 없습니다.");
         return;
       }
+      beginHearing(spoken);
       openMic.disabled = true;
       try {
-        const token = await lookupToken(connectionId);
         let current = null;
         current = await LI.phoneOffer.open({
           databaseURL: LI.catalog.firebase.databaseURL,
           rootPath: LI.catalog.firebase.rootPath,
-          token,
+          token: slot.token,
           name,
-          pin,
           spoken,
-          connectionId,
+          connectionId: slot.connectionId,
           role: "lecture",
+          onStop() {
+            endHearing();
+            notifyMic("stop");
+          },
           onStatus: say,
           onLevel(width) { levelEl.style.width = `${width}%`; },
           onJson(message) {
@@ -125,8 +635,16 @@
           },
         });
         link = current;
+        flushLines();
+        notifyMic(JSON.stringify({
+          event: "open",
+          serverBase: current.serverBase || "",
+          locale: speechLocale(spoken),
+        }));
         say("마이크를 열었습니다. 송출 컴퓨터에 연결하는 중입니다.");
       } catch (err) {
+        endHearing();
+        pendingLines = [];
         openMic.disabled = false;
         const code = err && err.name;
         if (code === "NotAllowedError" || code === "PermissionDeniedError") {

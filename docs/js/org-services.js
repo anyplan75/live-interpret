@@ -98,6 +98,44 @@
     return `${publicBase(pagesBase)}/lecture/`;
   }
 
+  /** 브라우저가 연결 번호로 신호 열쇠를 찾는 주소. 열쇠 값은 이 주소에 넣지 않는다. */
+  function lectureJoinRecordUrl(databaseURL, rootPath, connectionId) {
+    const id = normalizeConnectionId(connectionId);
+    if (!id) throw new Error("연결 번호가 올바르지 않습니다.");
+    let parsed;
+    try { parsed = new URL(String(databaseURL || "")); }
+    catch (_) { throw new Error("자료 주소가 올바르지 않습니다."); }
+    if (parsed.protocol !== "https:") throw new Error("자료 주소는 https 여야 합니다.");
+    const root = String(rootPath || "live-interpret").replace(/^\/+|\/+$/g, "");
+    if (!/^[A-Za-z0-9_-]+$/.test(root)) throw new Error("자료 묶음 이름이 올바르지 않습니다.");
+    return `${parsed.origin}${parsed.pathname.replace(/\/$/, "")}/${root}/lectureJoins/${id}.json`;
+  }
+
+  /** 한 칸의 QR에 넣는 주소. c는 칸 번호, s는 신호 열쇠입니다. 비밀번호는 없습니다. */
+  function lectureSlotUrl(pagesBase, connectionId, token) {
+    const id = normalizeConnectionId(connectionId);
+    if (!id) throw new Error("참여 칸이 올바르지 않습니다.");
+    if (!validToken(token)) throw new Error("참여 토큰이 올바르지 않습니다.");
+    return `${lectureAppUrl(pagesBase)}?c=${id}&s=${token}`;
+  }
+
+  function parseLectureSlot(value, pagesBase) {
+    let parsed;
+    try { parsed = new URL(String(value || "")); } catch (_) { return null; }
+    if (parsed.protocol !== "https:") return null;
+    let expected;
+    try { expected = new URL(publicBase(pagesBase || "https://anyplan75.github.io/live-interpret")); }
+    catch (_) { return null; }
+    if (parsed.host !== expected.host) return null;
+    const root = expected.pathname.replace(/\/$/, "");
+    const path = parsed.pathname.replace(/\/$/, "");
+    if (path !== `${root}/lecture` && path !== `${root}/phone-booth`) return null;
+    const connectionId = normalizeConnectionId(parsed.searchParams.get("c"));
+    const token = String(parsed.searchParams.get("s") || "");
+    if (!connectionId || !validToken(token)) return null;
+    return { connectionId, token };
+  }
+
   function faceAppUrl(pagesBase) {
     return `${publicBase(pagesBase)}/face/`;
   }
@@ -530,6 +568,9 @@
     releaseConnection,
     publicBase,
     lectureAppUrl,
+    lectureJoinRecordUrl,
+    lectureSlotUrl,
+    parseLectureSlot,
     faceAppUrl,
     faceJoinUrl,
     serviceNode,
