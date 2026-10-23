@@ -112,3 +112,34 @@ test("server rules let only the operator read every account and add credit", () 
   assert.equal(userText('Firebase 401: {"error": "Permission denied"}').includes("Permission"), false);
   assert.match(userText('Firebase 401: {"error": "Permission denied"}'), /다시 로그인/);
 });
+
+test("the phone opens the same operator screen and does not store a password", () => {
+  const session = fs.readFileSync(path.join(root, "ios/LiveInterpret/OperatorSession.swift"), "utf8");
+  const board = fs.readFileSync(path.join(root, "ios/LiveInterpret/OperatorViewController.swift"), "utf8");
+  const signIn = fs.readFileSync(path.join(root, "ios/LiveInterpret/SignInViewController.swift"), "utf8");
+  const home = fs.readFileSync(path.join(root, "ios/LiveInterpret/HomeViewController.swift"), "utf8");
+  assert.match(session, /anyplan@me\.com/);
+  assert.match(session, /isOperatorAccount/);
+  assert.match(session, /admin\/uid/);
+  assert.match(session, /balanceLabel/);
+  assert.match(session, /남은 시간/);
+  assert.match(session, /최근 사용 없음/);
+  assert.match(session, /선불 잔액/);
+  assert.match(session, /phone-firebase-env/);
+  assert.doesNotMatch(session, /AIza/);
+  assert.doesNotMatch(session, /password"\s*:\s*"/);
+  assert.doesNotMatch(`${session}\n${board}\n${signIn}`, /password\s*=\s*["']/);
+  assert.match(board, /계정 사용/);
+  assert.match(board, /남은 잔액/);
+  assert.match(board, /최근 사용/);
+  assert.match(board, /선불 잔액 더하기/);
+  assert.match(board, /충전할 금액을 적으세요/);
+  assert.match(board, /userFacing/);
+  assert.doesNotMatch(board, /NSError|Firebase 401|console\.log|print\(/);
+  const empty = board.slice(board.indexOf("func addCredit"), board.indexOf("private func signOut"));
+  assert.match(empty, /messageLabel\.text = "충전할 금액을 적으세요"/);
+  assert.match(signIn, /isOperatorEmail/);
+  assert.match(signIn, /이 계정은 운영 화면을 열 수 없습니다/);
+  assert.match(home, /OperatorViewController\(session:/);
+  assert.doesNotMatch(home, /계정 사용/);
+});

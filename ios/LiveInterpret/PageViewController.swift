@@ -33,6 +33,14 @@ enum LocalAddress {
     }
 }
 
+/// 대면통역 페이지가 마이크를 열거나, 상대의 통역 문장이 나오면 앱에 알립니다.
+final class FaceAudioBridge: NSObject, WKScriptMessageHandler {
+    weak var owner: PageViewController?
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        owner?.faceAudioMessage(message.body as? String ?? "")
+    }
+}
+
 /// 고른 입구의 공개 페이지를 그대로 연다. 통역 계산은 이 화면이 다시 만들지 않는다.
 final class LectureScanBridge: NSObject, WKScriptMessageHandler {
     weak var owner: PageViewController?
@@ -62,10 +70,13 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
     private let page: PhonePage
     private let webView: WKWebView
     private let lectureBridge = LectureScanBridge()
+    private let faceBridge = FaceAudioBridge()
+    private let faceSpeech = FaceSpeech()
     private let spinner = UIActivityIndicatorView(style: .large)
     private let errorLabel = UILabel()
     private var lectureSlot: FaceLink.LectureSlot?
     private var lectureMicOpen = false
+    private var faceMicOpen = false
     private let lectureSpeech = LectureSpeech()
     private var micObservers: [NSObjectProtocol] = []
 
@@ -100,9 +111,18 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
             configuration.userContentController.add(lectureBridge, name: "scanLecture")
             configuration.userContentController.add(lectureBridge, name: "lectureMic")
         }
+        if page == .face {
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: FaceSpeech.pageHook,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+            configuration.userContentController.add(faceBridge, name: "faceAudio")
+        }
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init(nibName: nil, bundle: nil)
         lectureBridge.owner = self
+        faceBridge.owner = self
     }
 
     required init?(coder: NSCoder) { nil }
@@ -151,6 +171,7 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
             errorLabel.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -24),
             errorLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
+        watchAudioRoute()
         if page == .lecture {
             watchLectureMic()
             loadBundledLecture()
@@ -162,9 +183,10 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
     deinit {
         let center = NotificationCenter.default
         micObservers.forEach { center.removeObserver($0) }
-        if page == .lecture {
+        if page == .lecture || page == .face {
             UIApplication.shared.isIdleTimerDisabled = false
         }
+        faceSpeech.stop()
     }
 
     /// 본인이 연 강연·회의 마이크만, 화면이 꺼져도 세션을 다시 살린다.
@@ -230,27 +252,69 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
         if page == .lecture && (isMovingFromParent || isBeingDismissed) {
             lectureMicStopped()
         }
+        if page == .face && (isMovingFromParent || isBeingDismissed) {
+            faceMicChanged(open: false)
+            faceSpeech.stop()
+        }
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
 
     /// 대면 통역 페이지의 마이크 요청이 시스템에 닿기 전에 재생·녹음 세션을 연다.
+    /// 블루투스 마이크가 있으면 그 마이크를 고르고, 블루투스 출력이 있으면 스피커로 돌리지 않습니다.
     private func prepareMicrophone() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
-        try? session.setActive(true)
+        PhoneAudioRoute.apply(face: true, active: true)
     }
 
     /// 강연·회의는 음성 통화 모드를 쓰지 않는다. 그 모드는 화면이 꺼지면 마이크를 멈춘다.
+    /// 블루투스 마이크가 연결되어 있으면 휴대폰 마이크 대신 그 마이크로 듣습니다.
     private func prepareLectureSession(active: Bool) {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(
-            .playAndRecord,
-            mode: .default,
-            options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
-        )
-        if active {
-            try? session.setActive(true)
+        PhoneAudioRoute.apply(face: false, active: active)
+    }
+
+    private func watchAudioRoute() {
+        micObservers.append(NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyCurrentRoute()
+        })
+    }
+
+    private func applyCurrentRoute() {
+        if page == .lecture {
+            prepareLectureSession(active: lectureMicOpen)
+            if lectureMicOpen {
+                lectureSpeech.noteRouteChange()
+            }
+            return
+        }
+        if !PhoneAudioRoute.bluetoothOutputConnected() {
+            faceSpeech.stop()
+        }
+        prepareMicrophone()
+    }
+
+    func faceAudioMessage(_ body: String) {
+        guard let data = body.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let event = object["event"] as? String else { return }
+        if event == "mic" {
+            faceMicChanged(open: (object["open"] as? Bool) == true)
+            return
+        }
+        if event == "speak" {
+            faceSpeech.speak(text: object["text"] as? String ?? "", lang: object["lang"] as? String ?? "")
+        }
+    }
+
+    /// 대면통역 마이크가 켜진 동안에는 화면이 스스로 어두워지거나 잠기지 않습니다.
+    private func faceMicChanged(open: Bool) {
+        faceMicOpen = open
+        UIApplication.shared.isIdleTimerDisabled = open
+        if open {
+            prepareMicrophone()
         }
     }
 

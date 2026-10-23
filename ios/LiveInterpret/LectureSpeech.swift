@@ -70,6 +70,19 @@ final class LectureSpeech {
         }
     }
 
+    /// 블루투스 마이크로 바뀌면 소리 표본 속도가 달라지므로, 듣는 줄을 다시 붙입니다.
+    func noteRouteChange() {
+        guard running else { return }
+        if tapped {
+            engine.inputNode.removeTap(onBus: 0)
+            tapped = false
+        }
+        if engine.isRunning {
+            engine.stop()
+        }
+        beginEngine()
+    }
+
     func stop() {
         running = false
         listenGeneration += 1

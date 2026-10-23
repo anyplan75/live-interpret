@@ -1008,11 +1008,24 @@ test("qr join reaches the mac card immediately and the lecture mic stays up with
   assert.match(page, /lectureMic/);
   assert.match(page, /didEnterBackgroundNotification/);
   assert.match(page, /holdMic/);
-  assert.match(page, /mode: \.default/);
+  const route = read("ios/LiveInterpret/PhoneAudioRoute.swift");
+  const faceSpeech = read("ios/LiveInterpret/FaceSpeech.swift");
+  assert.match(route, /\.default/);
+  assert.match(route, /bluetoothHFP/);
+  assert.match(route, /setPreferredInput/);
+  assert.match(route, /overrideOutputAudioPort\(\.none\)/);
+  assert.match(page, /PhoneAudioRoute\.apply\(face: false/);
+  assert.match(page, /PhoneAudioRoute\.apply\(face: true/);
+  assert.match(page, /noteRouteChange/);
   assert.match(page, /isMovingFromParent/);
   assert.match(page, /keepLectureScreenAwake\(true\)/);
   assert.match(page, /keepLectureScreenAwake\(false\)/);
   assert.match(page, /isIdleTimerDisabled = awake/);
+  assert.match(page, /faceMicChanged\(open: false\)/);
+  assert.match(page, /isIdleTimerDisabled = open/);
+  assert.match(faceSpeech, /AVSpeechSynthesizer/);
+  assert.match(faceSpeech, /bluetoothOutputConnected/);
+  assert.doesNotMatch(faceSpeech, /overrideOutputAudioPort\(\.speaker\)/);
 });
 
 test("a server hello updates the mac phone card without a lan address", async () => {
