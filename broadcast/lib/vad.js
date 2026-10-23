@@ -1,7 +1,10 @@
 const { rmsInt16, peakInt16 } = require("./audio-util");
 
-/** 소리 막대가 움직이기 시작하는 봉우리. 평균이 낮아도 이 높이면 말로 봅니다. */
-const METER_PEAK = 0.02;
+/**
+ * 화면 소리 막대와 같은 기준입니다.
+ * 막대 너비는 봉우리 × 140 을 반올림한 퍼센트라서, 1%만 그려져도 말로 봅니다.
+ */
+const METER_PEAK = 0.5 / 140;
 
 function concat(chunks) {
   if (!chunks.length) return Buffer.alloc(0);

@@ -273,3 +273,46 @@ test("speech session keeps deltas when the transcript is empty and ignores a lat
   assert.deepEqual(finals, ["주님께 감사드립니다", "파일로 받은 말", "셋째 말"]);
   assert.equal(sent.filter((event) => event.type === "input_audio_buffer.commit").length, 3);
 });
+
+test("a moving phone bar asks for words before the sound goes quiet", async () => {
+  const { SpeechSession } = require("../broadcast/lib/stt");
+  const { speakerCaption } = require("../docs/js/speaker-lines");
+  const lines = [];
+  const sent = [];
+  const session = new SpeechSession({
+    apiKey: "sk-test",
+    sensitivity: "normal",
+    onFinal: (text) => lines.push(text),
+    fetchImpl: async () => ({ ok: true, json: async () => ({ text: "파일로 받은 말" }) }),
+  });
+  session.ready = true;
+  session.ws = { readyState: 1, send: (data) => sent.push(JSON.parse(data)), close() {} };
+  const loud = Buffer.alloc(700 * 2);
+  loud.writeInt16LE(8000, 0);
+  for (let i = 0; i < 40; i += 1) session.push(loud);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(sent.some((event) => event.type === "input_audio_buffer.commit"));
+  session.handleMessage(JSON.stringify({ type: "input_audio_buffer.committed", item_id: "phone1" }));
+  session.handleMessage(JSON.stringify({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "phone1",
+    transcript: "안녕하세요",
+  }));
+  for (let i = 0; i < 6; i += 1) await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(lines.includes("안녕하세요"));
+  assert.equal(speakerCaption("CHO JUN", "안녕하세요"), "CHO JUN: 안녕하세요");
+
+  const softSent = [];
+  const soft = new SpeechSession({
+    apiKey: "sk-test",
+    sensitivity: "normal",
+    onFinal: () => {},
+    fetchImpl: async () => ({ ok: true, json: async () => ({ text: "" }) }),
+  });
+  soft.ready = true;
+  soft.ws = { readyState: 1, send: (data) => softSent.push(JSON.parse(data)), close() {} };
+  const quiet = Buffer.alloc(700 * 2);
+  quiet.writeInt16LE(400, 0);
+  soft.push(quiet);
+  assert.ok(softSent.some((event) => event.type === "input_audio_buffer.append"));
+});

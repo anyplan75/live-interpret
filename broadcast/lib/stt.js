@@ -47,6 +47,9 @@ class SpeechSession {
     this.streamed = false;
     this.startedAt = 0;
     this.closed = false;
+    this.askedSamples = 0;
+    this.wordAsk = null;
+    this.partialCommitted = false;
     this.uttGen = 0;
     this.interimTimer = null;
     this.inflight = null;
@@ -318,6 +321,12 @@ class SpeechSession {
       this.sendAppend(evt.append);
       this.streamed = true;
     }
+    if (evt.started) this.askedSamples = 0;
+    if (this.vad.speechSamples < this.askedSamples) this.askedSamples = 0;
+    const askEvery = Math.round(this.vad.sampleRate * 0.8);
+    if (!evt.finished && !this.paused && this.vad.speechSamples - this.askedSamples >= askEvery) {
+      this.requestWords(evt.current);
+    }
     if (this.mode === "file" && evt.speaking && evt.current) this.scheduleFileInterim(evt.current, this.uttGen);
     if (!evt.finished) return;
     this.uttGen += 1;
@@ -326,6 +335,7 @@ class SpeechSession {
     const audio = evt.utterance;
     const streamed = this.streamed;
     this.streamed = false;
+    this.askedSamples = 0;
     this.paused = true;
     const run = this.consume(audio, streamed)
       .catch((err) => this.onError(err.message || String(err)))
@@ -349,10 +359,11 @@ class SpeechSession {
     let metered = !!streamed;
     if (this.mode === "realtime" && this.ready) {
       try {
-        if (!streamed && audio && audio.length) {
+        if (!streamed && !this.partialCommitted && audio && audio.length) {
           this.sendAppend(audio);
           metered = true;
         }
+        this.partialCommitted = false;
         const text = await this.commitAndWait(8000);
         if (text && text.trim()) return text.trim();
       } catch (err) {
@@ -360,6 +371,37 @@ class SpeechSession {
       }
     }
     return this.postFile(audio, !metered);
+  }
+
+  /**
+   * 조용해질 때까지 기다리지 않습니다.
+   * 말이 이어지는 동안에도 인식기에 지금까지의 소리를 확정하라고 물어, 글을 화면에 올립니다.
+   */
+  requestWords(audio) {
+    if (this.wordAsk || this.closed || this.paused) return;
+    const snapshot = audio && audio.length ? Buffer.from(audio) : null;
+    const canRealtime = this.canStream();
+    if (!canRealtime && (!snapshot || snapshot.length < 4800)) return;
+    this.askedSamples = this.vad.speechSamples;
+    this.wordAsk = (async () => {
+      this.paused = true;
+      try {
+        let text = "";
+        if (canRealtime) {
+          text = await this.commitAndWait(5000);
+          this.partialCommitted = true;
+        } else {
+          text = await this.postFile(snapshot, true);
+        }
+        const shown = String(text || "").trim();
+        if (shown) this.onFinal(shown);
+      } catch (err) {
+        if (!this.closed && this.mode === "realtime") this.switchToFile(err.message || String(err));
+      } finally {
+        this.wordAsk = null;
+        this.release();
+      }
+    })();
   }
 
   commitAndWait(ms) {

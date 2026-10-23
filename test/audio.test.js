@@ -66,10 +66,14 @@ test("vad returns one utterance after speech and silence", () => {
   const meter = quietAverage.push(lowAverage);
   assert.equal(meter.speaking, true);
   assert.ok(meter.append && meter.append.length > 0);
-  const belowMeter = new UtteranceVad({ sampleRate: 24000, threshold: 0.016 });
+  const movingBar = new UtteranceVad({ sampleRate: 24000, threshold: 0.016 });
   const softer = Buffer.alloc(700 * 2);
   softer.writeInt16LE(400, 200);
-  assert.equal(belowMeter.push(softer).speaking, false);
+  assert.equal(movingBar.push(softer).speaking, true);
+  const still = new UtteranceVad({ sampleRate: 24000, threshold: 0.016 });
+  const hidden = Buffer.alloc(700 * 2);
+  hidden.writeInt16LE(80, 200);
+  assert.equal(still.push(hidden).speaking, false);
 });
 
 test("a missing saved input uses the default mic and hides RtApiCore disconnect text", () => {
