@@ -347,6 +347,15 @@ test("admin shows both prices and the church app shows only the church price", (
   assert.match(prepaid[".validate"], /languageKey/);
   assert.match(prepaid[".validate"], /'hour'/);
   assert.match(prepaid[".validate"], /'half'/);
+  assert.match(prepaid[".validate"], /5000 \+ 1000 \* newData\.child\('extraCount'\)\.val\(\)/);
+  assert.match(prepaid[".validate"], /1500 \* 24/);
+  assert.match(prepaid[".validate"], /% 1500 == 0/);
+  assert.match(prepaid[".validate"], /10000 \+ 2000 \* newData\.child\('extraCount'\)\.val\(\)/);
+  assert.match(prepaid[".validate"], /3000 \* 24/);
+  assert.match(prepaid[".validate"], /% 3000 == 0/);
+  assert.match(prepaid[".validate"], /7500 \+ 2500 \* newData\.child\('extraCount'\)\.val\(\)/);
+  assert.match(prepaid[".validate"], /remainingSeconds'\)\.val\(\) == 0/);
+  assert.doesNotMatch(prepaid[".validate"], /extraInputs'\)\.isNumber\(\)/);
   assert.match(billing.balance[".validate"], /newData\.val\(\) < data\.val\(\)/);
   assert.match(billing.balance[".validate"], /deltaKrw/);
   assert.match(billing.balance[".validate"], /admin\/uid/);
