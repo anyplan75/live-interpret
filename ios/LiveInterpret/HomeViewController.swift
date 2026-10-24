@@ -9,19 +9,12 @@ enum ShellColor {
 }
 
 /// 첫 화면. 강연·회의와 대면통역 중 하나를 고른다.
+/// 계정 사용 화면은 맥 앱에만 둔다. 이 폰 앱에는 넣지 않는다.
 final class HomeViewController: UIViewController {
-    private var openedOperator = false
-
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = ShellColor.background
         navigationItem.title = "실시간 통역"
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "로그인",
-            style: .plain,
-            target: self,
-            action: #selector(openSignIn)
-        )
         applyNavigationStyle()
 
         let hint = UILabel()
@@ -55,37 +48,7 @@ final class HomeViewController: UIViewController {
         ])
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        guard !openedOperator, navigationController?.topViewController === self else { return }
-        Task { [weak self] in
-            guard let session = await PhoneOperator.restore() else { return }
-            await MainActor.run {
-                guard let self, self.navigationController?.topViewController === self else { return }
-                self.openedOperator = true
-                self.navigationController?.pushViewController(OperatorViewController(session: session), animated: false)
-            }
-        }
-    }
-
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
-
-    /// 운영 계정으로 이미 들어와 있으면 그 화면을 엽니다. 다른 계정은 그 화면을 보지 않습니다.
-    @objc private func openSignIn() {
-        Task { [weak self] in
-            if let session = await PhoneOperator.restore() {
-                await MainActor.run {
-                    guard let self else { return }
-                    self.openedOperator = true
-                    self.navigationController?.pushViewController(OperatorViewController(session: session), animated: true)
-                }
-                return
-            }
-            await MainActor.run {
-                self?.navigationController?.pushViewController(SignInViewController(), animated: true)
-            }
-        }
-    }
 
     private func applyNavigationStyle() {
         let appearance = UINavigationBarAppearance()

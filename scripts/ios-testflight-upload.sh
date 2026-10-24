@@ -110,6 +110,14 @@ if ! grep -q 'QR 스캔' "$JOIN_HTML"; then
   echo "입장 화면에 QR 스캔이 없습니다." >&2
   exit 1
 fi
+if grep -q 'id="micForm" hidden' "$JOIN_HTML"; then
+  echo "이름과 마이크 입력칸이 숨겨져 있습니다." >&2
+  exit 1
+fi
+if grep -R -a -q -e 'anyplan@me.com' -e 'OperatorViewController' "$ARCHIVE_PATH/Products"; then
+  echo "폰 앱 안에 운영자 화면이 남아 있습니다." >&2
+  exit 1
+fi
 if grep -q '접속 번호' "$JOIN_HTML" || grep -q 'id="joinId"' "$JOIN_HTML"; then
   echo "옛 암호 입력 화면이 앱 안에 있습니다." >&2
   exit 1

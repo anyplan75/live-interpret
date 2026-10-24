@@ -6,5 +6,6 @@ out/
 user-data/
 .electron-cache/
 .env
+secrets/
 build/ios-phone/
 build/ios-sim/

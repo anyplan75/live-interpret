@@ -94,9 +94,6 @@ test("server rules let only the operator read every account and add credit", () 
   assert.match(page, /id="operatorCredit"/);
   assert.match(page, /id="testPeriod"/);
   assert.match(page, /테스트 기간/);
-  const phone = fs.readFileSync(path.join(root, "ios/LiveInterpret/OperatorViewController.swift"), "utf8");
-  assert.match(phone, /테스트 기간/);
-  assert.doesNotMatch(phone, /교회|설교/);
   assert.doesNotMatch(page, /교회/);
   const actions = html.slice(html.indexOf('id="broadcastActions"'), html.indexOf('id="costCard"'));
   assert.match(actions, /id="start">시작</);
@@ -122,33 +119,30 @@ test("server rules let only the operator read every account and add credit", () 
   assert.match(userText('Firebase 401: {"error": "Permission denied"}'), /다시 로그인/);
 });
 
-test("the phone opens the same operator screen and does not store a password", () => {
-  const session = fs.readFileSync(path.join(root, "ios/LiveInterpret/OperatorSession.swift"), "utf8");
-  const board = fs.readFileSync(path.join(root, "ios/LiveInterpret/OperatorViewController.swift"), "utf8");
-  const signIn = fs.readFileSync(path.join(root, "ios/LiveInterpret/SignInViewController.swift"), "utf8");
+test("the phone store app has no operator screen and the lecture form stays visible", () => {
   const home = fs.readFileSync(path.join(root, "ios/LiveInterpret/HomeViewController.swift"), "utf8");
-  assert.match(session, /anyplan@me\.com/);
-  assert.match(session, /isOperatorAccount/);
-  assert.match(session, /admin\/uid/);
-  assert.match(session, /balanceLabel/);
-  assert.match(session, /남은 시간/);
-  assert.match(session, /최근 사용 없음/);
-  assert.match(session, /선불 잔액/);
-  assert.match(session, /phone-firebase-env/);
-  assert.doesNotMatch(session, /AIza/);
-  assert.doesNotMatch(session, /password"\s*:\s*"/);
-  assert.doesNotMatch(`${session}\n${board}\n${signIn}`, /password\s*=\s*["']/);
-  assert.match(board, /계정 사용/);
-  assert.match(board, /남은 잔액/);
-  assert.match(board, /최근 사용/);
-  assert.match(board, /선불 잔액 더하기/);
-  assert.match(board, /충전할 금액을 적으세요/);
-  assert.match(board, /userFacing/);
-  assert.doesNotMatch(board, /NSError|Firebase 401|console\.log|print\(/);
-  const empty = board.slice(board.indexOf("func addCredit"), board.indexOf("private func signOut"));
-  assert.match(empty, /messageLabel\.text = "충전할 금액을 적으세요"/);
-  assert.match(signIn, /isOperatorEmail/);
-  assert.match(signIn, /이 계정은 운영 화면을 열 수 없습니다/);
-  assert.match(home, /OperatorViewController\(session:/);
-  assert.doesNotMatch(home, /계정 사용/);
+  const project = fs.readFileSync(path.join(root, "ios/LiveInterpret.xcodeproj/project.pbxproj"), "utf8");
+  const lecture = fs.readFileSync(path.join(root, "docs/lecture/index.html"), "utf8");
+  const face = fs.readFileSync(path.join(root, "docs/face/index.html"), "utf8");
+  const removed = [
+    "ios/LiveInterpret/OperatorViewController.swift",
+    "ios/LiveInterpret/OperatorSession.swift",
+    "ios/LiveInterpret/SignInViewController.swift",
+  ];
+  for (const rel of removed) assert.equal(fs.existsSync(path.join(root, rel)), false);
+  const swift = fs.readdirSync(path.join(root, "ios/LiveInterpret"))
+    .filter((name) => name.endsWith(".swift"))
+    .map((name) => fs.readFileSync(path.join(root, "ios/LiveInterpret", name), "utf8"))
+    .join("\n");
+  assert.doesNotMatch(swift, /anyplan@me\.com|OperatorViewController|SignInViewController|OperatorSession/);
+  assert.doesNotMatch(project, /OperatorViewController|SignInViewController|OperatorSession|phone-firebase-env/);
+  assert.match(home, /강연·회의와 대면통역/);
+  assert.doesNotMatch(home, /로그인/);
+  assert.match(lecture, /id="micForm"/);
+  assert.doesNotMatch(lecture, /id="micForm"[^>]*hidden/);
+  assert.match(lecture, /id="scanQr"/);
+  assert.match(face, /signInWithEmailAndPassword/);
+  assert.equal(fs.existsSync(path.join(root, "docs/js/phone-firebase-env.js")), true);
+  const mac = fs.readFileSync(path.join(root, "broadcast/lib/operator.js"), "utf8");
+  assert.match(mac, /anyplan@me\.com/);
 });

@@ -15,7 +15,7 @@
 <body>
   <main>
     <h1>강연·회의 통역</h1>
-    <p class="hint" id="lead">송출 컴퓨터에 나온 웹 마이크 주소를 연 뒤, 연결 번호를 입력하세요. 휴대폰 앱은 QR을 스캔해도 됩니다.</p>
+    <p class="hint" id="lead">이름, 말하는 언어, 마이크는 바로 보입니다. 송출 컴퓨터와 연결할 때는 QR을 스캔하거나 연결 번호를 입력하세요.</p>
 
     <section id="booth" class="card">
       <div id="needScan">
@@ -26,7 +26,7 @@
         </form>
         <button type="button" id="scanQr">QR 스캔</button>
       </div>
-      <form id="micForm" hidden>
+      <form id="micForm">
         <label for="name">이름</label>
         <input id="name" name="name" maxlength="40" autocomplete="name" enterkeyhint="next" required>
         <label for="spoken">말하는 언어</label>

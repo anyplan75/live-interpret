@@ -16,10 +16,6 @@
 		A1000000000000000000000B /* LectureSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001D /* LectureSpeech.swift */; };
 		A1000000000000000000000C /* PhoneAudioRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001E /* PhoneAudioRoute.swift */; };
 		A1000000000000000000000D /* FaceSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000001F /* FaceSpeech.swift */; };
-		A1000000000000000000000E /* OperatorSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000002A /* OperatorSession.swift */; };
-		A1000000000000000000000F /* SignInViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000002B /* SignInViewController.swift */; };
-		A10000000000000000000010 /* OperatorViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000002C /* OperatorViewController.swift */; };
-		A1000000000000000000002E /* phone-firebase-env.js in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000002D /* phone-firebase-env.js */; };
 		A10000000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000017 /* Assets.xcassets */; };
 		A10000000000000000000008 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000018 /* LaunchScreen.storyboard */; };
 		A10000000000000000000009 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000019 /* PrivacyInfo.xcprivacy */; };
@@ -36,10 +32,6 @@
 		A1000000000000000000001D /* LectureSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LectureSpeech.swift; sourceTree = "<group>"; };
 		A1000000000000000000001E /* PhoneAudioRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneAudioRoute.swift; sourceTree = "<group>"; };
 		A1000000000000000000001F /* FaceSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceSpeech.swift; sourceTree = "<group>"; };
-		A1000000000000000000002A /* OperatorSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperatorSession.swift; sourceTree = "<group>"; };
-		A1000000000000000000002B /* SignInViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInViewController.swift; sourceTree = "<group>"; };
-		A1000000000000000000002C /* OperatorViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperatorViewController.swift; sourceTree = "<group>"; };
-		A1000000000000000000002D /* phone-firebase-env.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; name = phone-firebase-env.js; path = "../../docs/js/phone-firebase-env.js"; sourceTree = "<group>"; };
 		A10000000000000000000017 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000018 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A10000000000000000000019 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -79,10 +71,6 @@
 				A1000000000000000000001D /* LectureSpeech.swift */,
 				A1000000000000000000001E /* PhoneAudioRoute.swift */,
 				A1000000000000000000001F /* FaceSpeech.swift */,
-				A1000000000000000000002A /* OperatorSession.swift */,
-				A1000000000000000000002B /* SignInViewController.swift */,
-				A1000000000000000000002C /* OperatorViewController.swift */,
-				A1000000000000000000002D /* phone-firebase-env.js */,
 				A10000000000000000000017 /* Assets.xcassets */,
 				A10000000000000000000018 /* LaunchScreen.storyboard */,
 				A10000000000000000000019 /* PrivacyInfo.xcprivacy */,
@@ -162,7 +150,6 @@
 				A10000000000000000000008 /* LaunchScreen.storyboard in Resources */,
 				A10000000000000000000009 /* PrivacyInfo.xcprivacy in Resources */,
 				A1000000000000000000000A /* index.html in Resources */,
-				A1000000000000000000002E /* phone-firebase-env.js in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -182,9 +169,6 @@
 				A1000000000000000000000B /* LectureSpeech.swift in Sources */,
 				A1000000000000000000000C /* PhoneAudioRoute.swift in Sources */,
 				A1000000000000000000000D /* FaceSpeech.swift in Sources */,
-				A1000000000000000000000E /* OperatorSession.swift in Sources */,
-				A1000000000000000000000F /* SignInViewController.swift in Sources */,
-				A10000000000000000000010 /* OperatorViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -231,7 +215,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = ZJYZ656BL8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LiveInterpret/Info.plist;
@@ -256,7 +240,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 17;
+				CURRENT_PROJECT_VERSION = 18;
 				DEVELOPMENT_TEAM = ZJYZ656BL8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = LiveInterpret/Info.plist;
