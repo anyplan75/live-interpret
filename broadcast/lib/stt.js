@@ -47,9 +47,6 @@ class SpeechSession {
     this.streamed = false;
     this.startedAt = 0;
     this.closed = false;
-    this.askedSamples = 0;
-    this.wordAsk = null;
-    this.partialCommitted = false;
     this.sinceCommit = Buffer.alloc(0);
     this.uttSent = 0;
     this.uttGen = 0;
@@ -298,11 +295,6 @@ class SpeechSession {
     return Math.round(this.vad.sampleRate * 0.1) * 2;
   }
 
-  /** 말이 한 덩어리가 되는 0.8초. 0.1초만 끊으면 인식기가 빈 글을 돌려줍니다. */
-  phraseBytes() {
-    return Math.round(this.vad.sampleRate * 0.8) * 2;
-  }
-
   sendAppend(pcm) {
     if (!pcm || !pcm.length) return false;
     if (this.onAudio) this.onAudio(pcm);
@@ -352,13 +344,6 @@ class SpeechSession {
     }
     const snapshot = evt.current || (evt.finished ? evt.utterance : null);
     if (snapshot && this.appendUnsent(snapshot)) this.streamed = true;
-    if (evt.started) this.askedSamples = 0;
-    if (this.vad.speechSamples < this.askedSamples) this.askedSamples = 0;
-    const askEvery = Math.round(this.vad.sampleRate * 0.8);
-    const pending = this.sinceCommit ? this.sinceCommit.length : 0;
-    if (!evt.finished && !this.paused && pending >= this.phraseBytes() && this.vad.speechSamples - this.askedSamples >= askEvery) {
-      this.requestWords(snapshot);
-    }
     if (this.mode === "file" && evt.speaking && evt.current) this.scheduleFileInterim(evt.current, this.uttGen);
     if (!evt.finished) return;
     this.uttGen += 1;
@@ -367,7 +352,6 @@ class SpeechSession {
     const audio = evt.utterance;
     const streamed = this.streamed;
     this.streamed = false;
-    this.askedSamples = 0;
     this.paused = true;
     const run = this.consume(audio, streamed)
       .catch((err) => this.onError(err.message || String(err)))
@@ -394,56 +378,13 @@ class SpeechSession {
         if (audio && audio.length && this.appendUnsent(audio)) metered = true;
         if ((this.sinceCommit ? this.sinceCommit.length : 0) >= this.minCommitBytes()) {
           const text = await this.commitAndWait(8000);
-          this.partialCommitted = false;
           if (text && text.trim()) return text.trim();
-        } else if (this.partialCommitted) {
-          this.partialCommitted = false;
-          return "";
         }
       } catch (err) {
         this.switchToFile(err.message || String(err));
       }
     }
-    if (this.partialCommitted) {
-      this.partialCommitted = false;
-      return "";
-    }
     return this.postFile(audio, !metered);
-  }
-
-  /**
-   * 말이 이어지는 동안 0.8초 분량이 쌓이면 그 버퍼를 인식기에 확정합니다.
-   * 0.1초보다 짧은 버퍼는 확정하지 않습니다. 말이 끝나면 0.1초 이상인 나머지를 확정합니다.
-   */
-  requestWords(audio) {
-    if (this.wordAsk || this.closed || this.paused) return;
-    const snapshot = audio && audio.length ? Buffer.from(audio) : null;
-    const canRealtime = this.canStream();
-    const pending = Math.max(this.sinceCommit ? this.sinceCommit.length : 0, snapshot ? snapshot.length : 0);
-    if (pending < this.phraseBytes()) return;
-    if (!canRealtime && (!snapshot || snapshot.length < this.phraseBytes())) return;
-    this.askedSamples = this.vad.speechSamples;
-    this.wordAsk = (async () => {
-      this.paused = true;
-      try {
-        let text = "";
-        if (canRealtime) {
-          if (snapshot) this.appendUnsent(snapshot);
-          const had = this.sinceCommit ? this.sinceCommit.length : 0;
-          text = await this.commitAndWait(5000);
-          if (had >= this.minCommitBytes() && (!this.sinceCommit || !this.sinceCommit.length)) this.partialCommitted = true;
-        } else {
-          text = await this.postFile(snapshot, true);
-        }
-        const shown = String(text || "").trim();
-        if (shown) this.onFinal(shown);
-      } catch (err) {
-        if (!this.closed && this.mode === "realtime") this.switchToFile(err.message || String(err));
-      } finally {
-        this.wordAsk = null;
-        this.release();
-      }
-    })();
   }
 
   commitAndWait(ms) {

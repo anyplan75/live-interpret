@@ -277,7 +277,7 @@ test("speech session keeps deltas when the transcript is empty and ignores a lat
   assert.equal(sent.filter((event) => event.type === "input_audio_buffer.commit").length, 3);
 });
 
-test("a moving phone bar asks for words before the sound goes quiet", async () => {
+test("a mac mic waits for a quiet gap before it cuts a line", async () => {
   const { SpeechSession } = require("../broadcast/lib/stt");
   const { speakerCaption } = require("../docs/js/speaker-lines");
   const lines = [];
@@ -293,6 +293,10 @@ test("a moving phone bar asks for words before the sound goes quiet", async () =
   const loud = Buffer.alloc(700 * 2);
   loud.writeInt16LE(8000, 0);
   for (let i = 0; i < 40; i += 1) session.push(loud);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
+  const gap = Buffer.alloc(700 * 2);
+  for (let i = 0; i < 24; i += 1) session.push(gap);
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(sent.some((event) => event.type === "input_audio_buffer.commit"));
   session.handleMessage(JSON.stringify({ type: "input_audio_buffer.committed", item_id: "phone1" }));
@@ -406,6 +410,19 @@ test("phone audio is committed only after 100ms and stays CHO JUN", async () => 
   for (let i = 0; i < 26; i += 1) engine.pushPhonePcm("phoneCHOJUN01", piece);
   for (let i = 0; i < 40; i += 1) {
     engine._onPcm(frame, {
+      sampleRate: 24000,
+      nChannels: 1,
+      mode: "single",
+      deviceChannel: 0,
+      deviceChannels: 1,
+      selected: 0,
+    });
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(macSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
+  const quiet = Buffer.alloc(480 * 2);
+  for (let i = 0; i < 35; i += 1) {
+    engine._onPcm(quiet, {
       sampleRate: 24000,
       nChannels: 1,
       mode: "single",
