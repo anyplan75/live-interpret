@@ -50,8 +50,22 @@ class SpeechSession {
     this.sinceCommit = Buffer.alloc(0);
     this.uttSent = 0;
     this.uttGen = 0;
+    this.outputToken = 0;
     this.interimTimer = null;
     this.inflight = null;
+  }
+
+  /** 끄기 직전에 쌓인 소리는 글로 확정하지 않습니다. 다음 말은 새로 듣습니다. */
+  dropUtterance() {
+    this.outputToken = (this.outputToken || 0) + 1;
+    this.vad.reset();
+    this.sinceCommit = Buffer.alloc(0);
+    this.uttSent = 0;
+    this.streamed = false;
+    this.partial = "";
+    if (this.interimTimer) clearTimeout(this.interimTimer);
+    this.interimTimer = null;
+    this.send({ type: "input_audio_buffer.clear" });
   }
 
   setSensitivity(level) {
@@ -363,10 +377,12 @@ class SpeechSession {
   }
 
   async consume(audio, streamed) {
+    const token = this.outputToken || 0;
     let text = "";
     try {
       text = await this.recognize(audio, streamed);
     } finally {
+      if ((this.outputToken || 0) !== token) return;
       this.onFinal(String(text || "").trim());
     }
   }

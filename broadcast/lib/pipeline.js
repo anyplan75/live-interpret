@@ -128,6 +128,14 @@ class Pipeline {
     this.pushLive(false);
   }
 
+  /** 아직 줄로 내리지 않은 듣는 말은 버립니다. 이미 쌓인 듣는 말은 그대로 둡니다. */
+  forgetDraft() {
+    const had = !!String(this.interim || "").trim();
+    this.interim = "";
+    this.spoken = "";
+    if (had) this.onLive("");
+  }
+
   /** 발화가 끝났습니다. 140자를 넘긴 앞부분은 근처 경계에서 번역하고, 나머지는 듣는 말로 내립니다. 인식 결과가 비면 보여 주던 말을 그대로 남깁니다. */
   onFinalChunk(text) {
     if (this.stopped) return;

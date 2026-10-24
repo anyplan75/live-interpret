@@ -460,3 +460,96 @@ test("phone audio is committed only after 100ms and stays CHO JUN", async () => 
   assert.equal(phoneScreen.some((line) => line.startsWith("이종찬")), false);
   assert.equal(phoneSent.filter((event) => event.type === "input_audio_buffer.commit").length, 0);
 });
+
+test("turning one input off keeps the broadcast and drops only that line", () => {
+  const { Engine } = require("../broadcast/lib/engine");
+  const engine = Object.create(Engine.prototype);
+  const heard = [];
+  const pushed = [];
+  const phonePipeline = {
+    speaker: "CHO JUN",
+    forgot: false,
+    onFinalChunk(text) { heard.push({ name: this.speaker, text }); },
+    forgetDraft() { this.forgot = true; },
+  };
+  const macSpeech = {
+    dropped: false,
+    push(buf) { pushed.push(buf); },
+    dropUtterance() { this.dropped = true; },
+  };
+  engine.channelRows = [
+    { on: true, source: "device", name: "이종찬", showName: true },
+    {
+      on: true,
+      source: "phone",
+      phoneId: "phoneCHOJUN01",
+      connectionId: "A9MVHT",
+      name: "CHO JUN",
+      showName: true,
+      connected: true,
+    },
+  ];
+  engine.channelSessions = new Map([
+    [0, { captionLive: true, speech: macSpeech, pipeline: { forgetDraft() {} } }],
+    [1, { captionLive: true, pipeline: phonePipeline }],
+  ]);
+  engine.emitPhones = () => {};
+  engine.resolvePhoneId = (id) => id;
+  engine.emit = (event) => heard.push(event);
+  engine.lastLevelAt = Date.now();
+
+  const off = engine.setInputLive(1, false);
+  assert.equal(off.on, true);
+  assert.equal(off.captionLive, false);
+  assert.equal(engine.channelRows[1].on, true);
+  assert.equal(phonePipeline.forgot, true);
+  engine.hearPhoneLine("phoneCHOJUN01", "안녕하세요");
+  assert.equal(heard.some((row) => row.text === "안녕하세요"), false);
+
+  engine.setPhoneDisplay("A9MVHT", { name: "김민수" });
+  assert.equal(phonePipeline.speaker, "김민수");
+  engine.setInputLive(1, true);
+  engine.hearPhoneLine("phoneCHOJUN01", "다시 시작합니다");
+  assert.equal(heard.at(-1).name, "김민수");
+  assert.equal(heard.at(-1).text, "다시 시작합니다");
+
+  engine.setInputLive(0, false);
+  assert.equal(engine.channelRows[0].on, true);
+  assert.equal(macSpeech.dropped, true);
+  const frame = Buffer.alloc(480 * 2);
+  frame.writeInt16LE(8000, 0);
+  const info = {
+    sampleRate: 24000,
+    nChannels: 1,
+    mode: "single",
+    deviceChannel: 0,
+    deviceChannels: 1,
+    selected: 0,
+  };
+  engine._onPcm(frame, info);
+  assert.equal(pushed.length, 0);
+  engine.setInputLive(0, true);
+  engine._onPcm(frame, info);
+  assert.equal(pushed.length, 1);
+  assert.doesNotMatch(Engine.prototype.setInputLive.toString(), /setChannelOn|planBroadcastStart|chargeOpening/);
+});
+
+test("the live rows show a korean on off control only while broadcasting", () => {
+  const root = path.join(__dirname, "..");
+  const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
+  const css = fs.readFileSync(path.join(root, "broadcast/renderer/styles.css"), "utf8");
+  const fn = renderer.slice(renderer.indexOf("function renderPhoneLevels"), renderer.indexOf("function webMicAddress"));
+  assert.match(fn, /끄기/);
+  assert.match(fn, /켜기/);
+  assert.match(fn, /꺼짐/);
+  assert.match(fn, /켜짐/);
+  assert.match(fn, /문제가 있는 입력만 끌 수 있습니다/);
+  assert.match(fn, /setInputLive/);
+  assert.doesNotMatch(fn, /setChannelOn/);
+  assert.match(renderer, /captionLive: state\.running \? prev\.captionLive !== false : true/);
+  assert.match(css, /\.live-mic\.broadcast/);
+  assert.match(css, /\.live-mic\.live/);
+  assert.match(css, /\.live-mic\.off/);
+  assert.match(fs.readFileSync(path.join(root, "broadcast/preload.js"), "utf8"), /setInputLive/);
+  assert.match(fs.readFileSync(path.join(root, "broadcast/main.js"), "utf8"), /input:live/);
+});

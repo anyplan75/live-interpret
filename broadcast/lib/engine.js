@@ -683,11 +683,11 @@ class Engine {
       }
       if (info.mode === "single") {
         const session = this.deviceSpeechSession(info.deviceChannel) || this.deviceSpeechSession(0);
-        if (session) session.speech.push(resampleInt16(buffer, rate, 24000));
+        if (session && session.captionLive !== false) session.speech.push(resampleInt16(buffer, rate, 24000));
         return;
       }
       this.channelSessions.forEach((session, index) => {
-        if (!session || session.source === "phone" || index >= info.nChannels) return;
+        if (!session || session.source === "phone" || index >= info.nChannels || session.captionLive === false) return;
         const mono = extractChannel(buffer, info.nChannels, index);
         session.speech.push(resampleInt16(mono, rate, 24000));
       });
@@ -878,6 +878,26 @@ class Engine {
     return { index: i, on: true, charged: 0 };
   }
 
+  /** 방송은 유지한 채 이 입력만 자막과 받아 적기에서 뺍니다. 요금은 바꾸지 않습니다. */
+  setInputLive(index, on) {
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0 || !this.channelRows || !this.channelRows[i]) {
+      throw new Error("입력을 찾지 못했습니다.");
+    }
+    const live = on !== false;
+    this.channelRows[i].captionLive = live;
+    const session = this.channelSessions && this.channelSessions.get(i);
+    if (session) {
+      session.captionLive = live;
+      if (!live) {
+        if (session.speech && session.speech.dropUtterance) session.speech.dropUtterance();
+        if (session.pipeline && session.pipeline.forgetDraft) session.pipeline.forgetDraft();
+      }
+    }
+    this.emitPhones();
+    return { index: i, on: !!this.channelRows[i].on, captionLive: live };
+  }
+
   channelBroadcastBits() {
     return {
       apiKey: this.sessionApiKey,
@@ -987,8 +1007,16 @@ class Engine {
       extraKeywords: bits.extraKeywords,
       sensitivity: bits.sensitivity,
       language: spoken,
-      onInterim: (text) => pipeline.onInterim(text),
-      onFinal: (text) => pipeline.onFinalChunk(text),
+      onInterim: (text) => {
+        const current = this.channelSessions && this.channelSessions.get(index);
+        if (current && current.captionLive === false) return;
+        pipeline.onInterim(text);
+      },
+      onFinal: (text) => {
+        const current = this.channelSessions && this.channelSessions.get(index);
+        if (current && current.captionLive === false) return;
+        pipeline.onFinalChunk(text);
+      },
       onStatus: (text) => this.emit({ type: "log", level: "info", text }),
       onError: (text) => this.emit({ type: "log", level: "error", text }),
       onAudio: index === 0 ? (pcm) => {
@@ -998,7 +1026,15 @@ class Engine {
       } : null,
     });
     await speech.start();
-    const session = { speech, pipeline, spoken, index, source: phone ? "phone" : "device", name: speaker };
+    const session = {
+      speech,
+      pipeline,
+      spoken,
+      index,
+      source: phone ? "phone" : "device",
+      name: speaker,
+      captionLive: row.captionLive !== false,
+    };
     this.channelSessions.set(index, session);
     if (!this.speech) {
       this.speech = speech;
@@ -1063,6 +1099,7 @@ class Engine {
       connected: row.source === "phone" ? row.connected !== false : true,
       signal: row.source === "phone" ? !!row.signal : false,
       showName: row.showName !== false,
+      captionLive: row.captionLive !== false,
     }));
   }
 
@@ -1382,6 +1419,7 @@ class Engine {
     }
     if (index < 0) return;
     const row = this.channelRows[index];
+    if (row.captionLive === false) return;
     const who = row.showName === false ? "" : cleanDisplayName(row.name);
     const session = this.channelSessions && this.channelSessions.get(index);
     if (session && session.pipeline && typeof session.pipeline.onFinalChunk === "function") {
@@ -1710,6 +1748,9 @@ class Engine {
     this.speech = null;
     try {
       await this.chargeOpening();
+      this.channelRows.forEach((row) => {
+        if (row) row.captionLive = true;
+      });
       const requested = this.channelRows.map((row, index) => (row.on ? index : -1)).filter((index) => index >= 0);
       if (!requested.length) requested.push(0);
       for (const index of requested.sort((a, b) => a - b)) {

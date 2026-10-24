@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   setSpoken: (spoken) => ask("spoken:set", spoken),
   setChannelSpoken: (index, spoken) => ask("channel:spoken", index, spoken),
   setChannelOn: (index, on) => ask("channel:on", index, on),
+  setInputLive: (index, on) => ask("input:live", index, on),
   setShowPreacherName: (on) => ask("preacher:show-name", on),
   setSourceStyle: (key, style) => ask("source-style:set", key, style),
   setChannelCaption: (index, patch) => ask("channel:caption", index, patch),

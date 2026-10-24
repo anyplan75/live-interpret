@@ -150,6 +150,7 @@ function ensureChannels(count) {
       showName: prev.showName !== false,
       phoneId: "",
       connected: true,
+      captionLive: state.running ? prev.captionLive !== false : true,
     });
   }
   state.channels = rows.concat(phones);
@@ -783,6 +784,13 @@ function liveMicName(row, index) {
   return "";
 }
 
+function captionNameActive(row, index) {
+  if (!row) return false;
+  if (row.source === "phone") return row.showName !== false && !!String(row.name || "").trim();
+  if (!captionChecked(row, index)) return false;
+  return !!liveMicName(row, index);
+}
+
 function renderPhoneLevels() {
   const root = document.getElementById("phoneLevels");
   if (!root) return;
@@ -790,6 +798,14 @@ function renderPhoneLevels() {
   const keep = active && active.dataset && active.dataset.liveSense && root.contains(active)
     ? active.dataset.liveSense
     : "";
+  const keepName = active && active.dataset && active.dataset.liveName && root.contains(active)
+    ? {
+      key: active.dataset.liveName,
+      value: active.value,
+      start: active.selectionStart,
+      end: active.selectionEnd,
+    }
+    : null;
   root.innerHTML = "";
   const items = [];
   (state.channels || []).forEach((row, index) => {
@@ -807,15 +823,43 @@ function renderPhoneLevels() {
     });
   });
   root.hidden = items.length === 0;
+  if (state.running && items.length) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "문제가 있는 입력만 끌 수 있습니다. 방송은 계속되고, 끈 입력은 자막과 받아 적기에 들어가지 않습니다.";
+    root.append(hint);
+  }
   items.forEach((item) => {
+    const live = item.row.captionLive !== false;
     const line = document.createElement("div");
     line.className = "live-mic";
+    if (state.running) {
+      line.classList.add("broadcast");
+      if (!live) line.classList.add("off");
+      else if (captionNameActive(item.row, item.index)) line.classList.add("live");
+    }
     const label = document.createElement("span");
     label.className = "live-mic-label";
     label.textContent = item.label;
-    const name = document.createElement("span");
-    name.className = "live-mic-name";
-    name.textContent = item.name || item.label;
+    let name;
+    if (state.running && !live) {
+      name = document.createElement("input");
+      name.type = "text";
+      name.maxLength = 40;
+      name.className = "live-mic-name";
+      name.dataset.liveName = item.key;
+      name.value = item.name;
+      name.setAttribute("aria-label", `${item.label} 이름`);
+      name.addEventListener("change", () => {
+        const next = name.value.trim();
+        if (!next && item.phone) return;
+        saveLiveName(item, name.value);
+      });
+    } else {
+      name = document.createElement("span");
+      name.className = "live-mic-name";
+      name.textContent = item.name || item.label;
+    }
     const meter = document.createElement("div");
     meter.className = "meter";
     meter.setAttribute("aria-label", `${item.label} 소리 크기`);
@@ -843,13 +887,87 @@ function renderPhoneLevels() {
       rememberStyle(item.key, next);
       paintGlances();
     });
-    line.append(label, name, meter, sense);
+    if (!state.running) {
+      line.append(label, name, meter, sense);
+      root.append(line);
+      return;
+    }
+    const stateLabel = document.createElement("span");
+    stateLabel.className = "live-mic-state";
+    stateLabel.textContent = live ? "켜짐" : "꺼짐";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "ghost live-toggle";
+    toggle.textContent = live ? "끄기" : "켜기";
+    toggle.setAttribute("aria-label", `${item.label} ${live ? "끄기" : "켜기"}`);
+    toggle.addEventListener("click", async () => {
+      const turningOn = item.row.captionLive === false;
+      if (turningOn) {
+        const field = line.querySelector("input.live-mic-name");
+        if (field) {
+          const saved = await saveLiveName(item, field.value);
+          if (!saved) return;
+        }
+      }
+      await setInputLive(item.index, turningOn);
+    });
+    line.append(label, name, stateLabel, toggle, meter, sense);
     root.append(line);
   });
   if (keep) {
     const again = root.querySelector(`[data-live-sense="${CSS.escape(keep)}"]`);
     if (again) again.focus();
   }
+  if (keepName) {
+    const again = root.querySelector(`[data-live-name="${CSS.escape(keepName.key)}"]`);
+    if (again) {
+      again.value = keepName.value;
+      again.focus();
+      if (Number.isInteger(keepName.start) && Number.isInteger(keepName.end)) {
+        try { again.setSelectionRange(keepName.start, keepName.end); } catch (_) { /* 선택 범위가 없으면 그대로 둡니다 */ }
+      }
+    }
+  }
+}
+
+async function saveLiveName(item, raw) {
+  const next = String(raw || "").trim().slice(0, 40);
+  if (!item) return false;
+  if (item.phone) {
+    if (!next) {
+      log("이름을 입력해 주세요.", "error");
+      return false;
+    }
+    if (!item.row || !item.row.connectionId) {
+      log("휴대폰을 찾지 못했습니다.", "error");
+      return false;
+    }
+    if (next === String(item.row.name || "").trim()) return true;
+    await applyPhoneDisplay(item.row.connectionId, { name: next });
+    return true;
+  }
+  let stored = next;
+  if (item.index === 0 && stored === preacherDisplayName()) stored = "";
+  const row = state.channels[item.index];
+  if (row && stored === String(row.name || "").trim()) return true;
+  await applyChannelCaption(item.index, { name: stored });
+  return true;
+}
+
+async function setInputLive(index, on) {
+  const row = state.channels[index];
+  if (!row) return;
+  const previous = row.captionLive !== false;
+  row.captionLive = on !== false;
+  renderPhoneLevels();
+  try {
+    const result = await window.broadcast.setInputLive(index, on !== false);
+    if (result && state.channels[index]) state.channels[index].captionLive = result.captionLive !== false;
+  } catch (err) {
+    if (state.channels[index]) state.channels[index].captionLive = previous;
+    log(visibleError(err), "error");
+  }
+  renderPhoneLevels();
 }
 
 function webMicAddress() {
@@ -1016,6 +1134,7 @@ function mapChannel(row) {
     connected: !(row && row.source === "phone") || row.connected !== false,
     signal: !!(row && row.source === "phone" && row.signal),
     showName: !(row && row.showName === false),
+    captionLive: !(row && row.captionLive === false),
   };
 }
 
@@ -1171,6 +1290,12 @@ function setRunning(running) {
   document.getElementById("start").disabled = running || !(state.church && state.church.active);
   document.getElementById("stop").disabled = !running;
   document.getElementById("showSession").disabled = !state.settings.sessionDir && !running;
+  if (!running) {
+    (state.channels || []).forEach((row) => {
+      if (row) row.captionLive = true;
+    });
+  }
+  renderPhoneLevels();
   deviceEl.disabled = running;
   document.getElementById("pickFolder").disabled = running;
   document.getElementById("pickBulletin").disabled = running;

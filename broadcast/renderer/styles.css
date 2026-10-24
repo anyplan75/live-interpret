@@ -348,13 +348,45 @@ details.fold-inner[open] > summary { margin-bottom: 8px; }
 
 .live-mic {
   display: grid;
-  grid-template-columns: 72px minmax(72px, 1fr) minmax(80px, 1.4fr) 118px;
+  grid-template-columns: 72px minmax(72px, 1fr) minmax(70px, 1.2fr) 108px;
   gap: 8px;
   align-items: center;
   background: #121a24;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px 10px;
+}
+
+.live-mic.broadcast {
+  grid-template-columns: 72px minmax(72px, 1fr) 42px 52px minmax(70px, 1.2fr) 108px;
+}
+
+.live-mic.live {
+  border-color: #1f8f6a;
+  background: rgba(31, 143, 106, 0.28);
+}
+
+.live-mic.off {
+  border-color: #6e3b3b;
+  background: #241416;
+}
+
+.live-mic-state {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.live-mic.live .live-mic-state { color: #b7ebc8; }
+.live-mic.off .live-mic-state { color: #e7b4b4; }
+
+.live-mic .live-toggle {
+  padding: 6px 8px;
+}
+
+.live-mic input.live-mic-name {
+  width: 100%;
+  font-weight: 800;
+  padding: 6px 8px;
 }
 
 .live-mic-label,
