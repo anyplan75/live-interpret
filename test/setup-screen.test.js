@@ -13,7 +13,7 @@ test("a single registered speaker is selected and a saved choice stays", () => {
   assert.equal(preacherToSelect([{ id: "kim" }, { id: "lee" }], "lee"), "lee");
   assert.equal(preacherToSelect([{ id: "kim" }], "missing"), "kim");
   assert.equal(preacherToSelect([], "kim"), "");
-  assert.deepEqual(SESSION_KINDS, ["설교", "강의", "연설", "행사"]);
+  assert.deepEqual(SESSION_KINDS, ["강의", "연설", "행사"]);
 });
 
 test("incomplete setup lists every missing choice at once", () => {
@@ -32,6 +32,13 @@ test("incomplete setup lists every missing choice at once", () => {
     targets: [],
     deviceKey: "core:0",
   }), ["저장 폴더", "내용", "번역할 언어"]);
+  assert.deepEqual(missingSetup({
+    folder: "/tmp/talks",
+    preacherId: "kim",
+    sessionKind: "설교",
+    targets: ["en"],
+    deviceKey: "core:0",
+  }), ["내용"]);
   assert.deepEqual(missingSetup({
     folder: "/tmp/talks",
     folderReady: false,
@@ -174,7 +181,7 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(settingsBlock, /id="channels"/);
   assert.match(settingsBlock, /id="pickBulletin"/);
   assert.match(settingsBlock, /id="subtitleStyleCard"/);
-  assert.match(settingsBlock, /value="설교"/);
+  assert.doesNotMatch(settingsBlock, /value="설교"/);
   assert.match(settingsBlock, /value="강의"/);
   assert.match(settingsBlock, /value="연설"/);
   assert.match(settingsBlock, /value="행사"/);

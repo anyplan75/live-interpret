@@ -2,7 +2,7 @@
   "name": "live-interpret",
   "version": "0.1.0",
   "private": true,
-  "description": "여러 교회의 예배를 입력 채널로 받아 실시간 통역 자막을 보내는 방송실 앱",
+  "description": "방송실 마이크와 휴대폰 입력을 받아 실시간 통역 자막을 보내는 앱",
   "main": "desktop.js",
   "author": "anyplan75",
   "repository": {
