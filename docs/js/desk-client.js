@@ -1,6 +1,6 @@
 /**
  * 웹 통역 설정.
- * 방송실이 올린 room/status 를 보고, room/desired 에 시작·언어·이름·켜짐을 적습니다.
+ * 방송실이 올린 room/status 를 보고, room/desired 에 시작·언어·이름·감도·말투를 적습니다.
  * 로그인 열쇠는 주소에 남기지 않고 이 탭 저장소에만 둡니다.
  */
 (function () {
@@ -252,6 +252,127 @@
   }
 
   let inputKey = "";
+  let heardKey = "";
+  let cardKey = "";
+  let logKey = "";
+  let gapKey = "";
+
+  function fieldIdle(id) {
+    return document.activeElement !== document.getElementById(id);
+  }
+
+  function langLabel(code) {
+    const row = languages.find((lang) => lang.code === code);
+    return row ? row.name : code;
+  }
+
+  function paintOps(status) {
+    const row = status || {};
+    const onAir = document.getElementById("onAir");
+    const running = row.running === true;
+    onAir.hidden = !running;
+    document.getElementById("start").disabled = running;
+    document.getElementById("stop").disabled = !running;
+    const kind = document.getElementById("sessionKind");
+    if (fieldIdle("sessionKind") && kind.value !== (row.sessionKind || "")) kind.value = row.sessionKind || "";
+    const name = document.getElementById("preacherName");
+    if (fieldIdle("preacherName")) name.value = row.preacherName || "";
+    const sense = document.getElementById("sensitivity");
+    if (fieldIdle("sensitivity")) sense.value = row.sensitivity || "normal";
+    const speech = row.speech || {};
+    if (fieldIdle("traits")) document.getElementById("traits").value = speech.traits || "";
+    if (fieldIdle("fixes")) document.getElementById("fixes").value = speech.fixes || "";
+    if (fieldIdle("terms")) document.getElementById("terms").value = speech.terms || "";
+    const phones = document.getElementById("phoneCount");
+    if (fieldIdle("phoneCount")) phones.value = String(row.phoneCount || 0);
+    const folder = document.getElementById("folderLine");
+    folder.textContent = row.folderReady
+      ? `기록 폴더가 준비되었습니다.${row.folderLabel ? ` ${row.folderLabel}` : ""}`
+      : "기록 폴더는 방송실 앱에서 고릅니다. 폴더가 준비되기 전에는 시작할 수 없습니다.";
+    const gaps = Array.isArray(row.gaps) ? row.gaps : [];
+    const nextGaps = gaps.join("|");
+    if (nextGaps !== gapKey) {
+      gapKey = nextGaps;
+      const list = document.getElementById("setupGaps");
+      list.innerHTML = "";
+      gaps.forEach((gap) => {
+        const item = document.createElement("li");
+        item.textContent = gap === "입력 장치" ? "입력 장치 (방송실에서 고름)" : gap;
+        list.append(item);
+      });
+      list.hidden = gaps.length === 0;
+    }
+    document.getElementById("confirmStart").disabled = gaps.length > 0;
+    document.getElementById("bulletinMsg").textContent = row.bulletinLabel || "아직 올린 진행자료가 없습니다.";
+    const spokenName = langLabel(row.spoken || spoken);
+    const targets = (row.targets || []).map(langLabel).join(", ") || "번역 없음";
+    document.getElementById("confirmLangs").textContent = `말하는 언어 ${spokenName}. 번역 ${targets}.`;
+    document.getElementById("confirmBalance").textContent = `남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}.`;
+    if (running) document.getElementById("startConfirm").hidden = true;
+  }
+
+  function paintBoard(status) {
+    const board = status && status.board ? status.board : { live: "", heard: [], cards: [] };
+    document.getElementById("live").textContent = board.live || "대기 중...";
+    const heard = Array.isArray(board.heard) ? board.heard : [];
+    const nextHeard = JSON.stringify(heard);
+    if (nextHeard !== heardKey) {
+      heardKey = nextHeard;
+      const stack = document.getElementById("koStack");
+      stack.innerHTML = "";
+      heard.forEach((item) => {
+        const block = document.createElement("article");
+        block.className = "ko-line";
+        const line = document.createElement("p");
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = "듣는 말";
+        line.append(tag, document.createTextNode(item.body || ""));
+        block.append(line);
+        (item.fixes || []).forEach((fix) => {
+          const corrected = document.createElement("p");
+          corrected.className = "corrected";
+          const fixTag = document.createElement("span");
+          fixTag.className = "tag";
+          fixTag.textContent = "교정";
+          corrected.append(fixTag, document.createTextNode(fix));
+          block.append(corrected);
+        });
+        stack.append(block);
+      });
+      stack.scrollTop = stack.scrollHeight;
+    }
+    const cards = Array.isArray(board.cards) ? board.cards : [];
+    const nextCards = JSON.stringify(cards);
+    if (nextCards !== cardKey) {
+      cardKey = nextCards;
+      const box = document.getElementById("cards");
+      box.innerHTML = "";
+      cards.forEach((item) => {
+        const card = document.createElement("article");
+        card.className = "card";
+        const title = document.createElement("p");
+        title.textContent = langLabel(item.lang);
+        const body = document.createElement("p");
+        body.textContent = item.body || "";
+        card.append(title, body);
+        box.append(card);
+      });
+    }
+    const logs = status && Array.isArray(status.logs) ? status.logs : [];
+    const nextLogs = JSON.stringify(logs);
+    if (nextLogs !== logKey) {
+      logKey = nextLogs;
+      const log = document.getElementById("log");
+      log.innerHTML = "";
+      logs.forEach((item) => {
+        const line = document.createElement("p");
+        if (item.level === "error") line.className = "error";
+        line.textContent = item.body || "";
+        log.append(line);
+      });
+    }
+  }
 
   function paintInputs(status) {
     const rows = status && Array.isArray(status.inputs) ? status.inputs : [];
@@ -317,6 +438,8 @@
     if (latest.spoken) spoken = latest.spoken;
     paintMoney(latest);
     paintLanguages();
+    paintOps(latest);
+    paintBoard(latest);
     paintInputs(latest);
   }
 
@@ -462,12 +585,42 @@
   document.getElementById("signOut").addEventListener("click", () => signOut().catch(() => {}));
   document.getElementById("operatorSignOut").addEventListener("click", () => signOut().catch(() => {}));
 
-  document.getElementById("start").addEventListener("click", async () => {
+  function speechPatch() {
+    return {
+      sensitivity: document.getElementById("sensitivity").value,
+      speech: {
+        traits: document.getElementById("traits").value,
+        fixes: document.getElementById("fixes").value,
+        terms: document.getElementById("terms").value,
+      },
+    };
+  }
+
+  async function sendPatch(patch) {
     try {
-      await command({ running: true, spoken, targets: [...chosen] });
+      await command(patch);
     } catch (err) {
       notice.textContent = personText(err);
     }
+  }
+
+  document.getElementById("start").addEventListener("click", () => {
+    document.getElementById("startConfirm").hidden = false;
+  });
+
+  document.getElementById("confirmCancel").addEventListener("click", () => {
+    document.getElementById("startConfirm").hidden = true;
+  });
+
+  document.getElementById("confirmStart").addEventListener("click", () => {
+    sendPatch({
+      running: true,
+      spoken,
+      targets: [...chosen],
+      sessionKind: document.getElementById("sessionKind").value,
+      preacherName: document.getElementById("preacherName").value,
+      ...speechPatch(),
+    });
   });
 
   document.getElementById("stop").addEventListener("click", async () => {
@@ -478,11 +631,55 @@
     }
   });
 
-  document.getElementById("showName").addEventListener("change", async (event) => {
+  document.getElementById("showName").addEventListener("change", (event) => {
+    sendPatch({ showName: event.target.checked });
+  });
+
+  document.getElementById("sessionKind").addEventListener("change", (event) => {
+    sendPatch({ sessionKind: event.target.value });
+  });
+
+  document.getElementById("preacherName").addEventListener("change", (event) => {
+    sendPatch({ preacherName: event.target.value });
+  });
+
+  document.getElementById("sensitivity").addEventListener("change", () => {
+    sendPatch(speechPatch());
+  });
+
+  ["traits", "fixes", "terms"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => sendPatch(speechPatch()));
+  });
+
+  document.getElementById("phoneCount").addEventListener("change", (event) => {
+    const count = Math.max(0, Math.min(8, Math.round(Number(event.target.value) || 0)));
+    event.target.value = String(count);
+    sendPatch({ phoneCount: count });
+  });
+
+  document.getElementById("pickBulletin").addEventListener("change", async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    const msg = document.getElementById("bulletinMsg");
     try {
-      await command({ showName: event.target.checked });
+      const bitmap = await createImageBitmap(file);
+      const scale = Math.min(1, 900 / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.62));
+      if (!blob) throw new Error("진행자료 사진을 올리지 못했습니다.");
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+      const image = btoa(binary);
+      if (image.length > 160000) throw new Error("진행자료 사진이 너무 큽니다. 더 작은 사진을 올려 주세요.");
+      msg.textContent = "진행자료를 방송실로 보내는 중입니다.";
+      await command({ sheet: { name: "진행자료", image } });
     } catch (err) {
-      notice.textContent = personText(err);
+      msg.textContent = personText(err);
     }
   });
 

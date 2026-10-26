@@ -57,6 +57,19 @@ test("status keeps connection facts and drops secrets", () => {
   assert.equal(status.inputs[0].code, "A9MVHT");
   assert.equal(JSON.stringify(status).includes("secret"), false);
   assert.equal(JSON.stringify(status).includes("password"), false);
+  const board = room.publicStatus({
+    updatedAt: 1,
+    online: true,
+    running: false,
+    sessionKind: "설교",
+    board: { live: "지금", heard: [{ id: "1", body: "듣는 말", fixes: ["교정"], text: "숨김" }] },
+    text: "자막 원문",
+    logs: [{ level: "info", body: "방송을 기다리는 중입니다." }],
+  });
+  assert.equal(board.sessionKind, "");
+  assert.equal(board.board.heard[0].body, "듣는 말");
+  assert.equal(JSON.stringify(board).includes("자막 원문"), false);
+  assert.equal(board.phaseLabel, "대기");
 });
 
 test("a stream patch updates one field and a put replaces the record", () => {

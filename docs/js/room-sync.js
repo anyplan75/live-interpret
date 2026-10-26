@@ -22,6 +22,90 @@
     return LANG.test(code) ? code : fallback;
   }
 
+  const KINDS = ["강의", "연설", "행사"];
+  const GAPS = ["저장 폴더", "강연자", "내용", "번역할 언어", "입력 장치"];
+
+  function cleanSensitivity(value) {
+    return value === "high" || value === "low" ? value : "normal";
+  }
+
+  function cleanKind(value) {
+    const kind = String(value || "");
+    return KINDS.includes(kind) ? kind : "";
+  }
+
+  function cleanCount(value) {
+    const count = Math.round(Number(value));
+    if (!Number.isFinite(count) || count < 0) return 0;
+    return Math.min(8, count);
+  }
+
+  function cleanNote(value, max) {
+    return String(value || "").replace(/[<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+  }
+
+  function cleanSpeech(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    return {
+      traits: cleanNote(src.traits, 400),
+      fixes: cleanNote(src.fixes, 800),
+      terms: cleanNote(src.terms, 800),
+    };
+  }
+
+  function cleanSheet(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const image = String(raw.image || "");
+    if (!/^[A-Za-z0-9+/]+=*$/.test(image) || image.length < 80 || image.length > 160000) return null;
+    return { name: cleanName(raw.name) || "진행자료", image };
+  }
+
+  function cleanBoard(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    const heard = [];
+    (Array.isArray(src.heard) ? src.heard : []).slice(-8).forEach((item) => {
+      const body = cleanNote(item && item.body, 280);
+      if (!body) return;
+      const fixes = [];
+      (Array.isArray(item && item.fixes) ? item.fixes : []).slice(-3).forEach((fix) => {
+        const row = cleanNote(fix, 280);
+        if (row) fixes.push(row);
+      });
+      heard.push({
+        id: cleanNote(item && item.id, 24) || String(heard.length + 1),
+        body,
+        fixes,
+      });
+    });
+    const cards = [];
+    (Array.isArray(src.cards) ? src.cards : []).slice(-8).forEach((item) => {
+      const lang = cleanLang(item && item.lang, "");
+      const body = cleanNote(item && item.body, 280);
+      if (!lang || !body) return;
+      cards.push({ lang, body });
+    });
+    return { live: cleanNote(src.live, 280), heard, cards };
+  }
+
+  function cleanLogs(raw) {
+    const logs = [];
+    (Array.isArray(raw) ? raw : []).slice(-12).forEach((item) => {
+      const body = cleanNote(item && item.body, 180);
+      if (!body) return;
+      logs.push({ level: item && item.level === "error" ? "error" : "info", body });
+    });
+    return logs;
+  }
+
+  function cleanGaps(raw) {
+    const gaps = [];
+    (Array.isArray(raw) ? raw : []).forEach((item) => {
+      const gap = String(item || "");
+      if (GAPS.includes(gap) && !gaps.includes(gap)) gaps.push(gap);
+    });
+    return gaps;
+  }
+
   function cleanInput(item) {
     const key = String(item && item.key || "");
     if (!PHONE_KEY.test(key) && !MIC_KEY.test(key)) return null;
@@ -47,7 +131,7 @@
       const row = cleanInput(item);
       if (row && !inputs.some((kept) => kept.key === row.key)) inputs.push(row);
     });
-    return {
+    const next = {
       rev: Math.max(0, Math.round(Number(src.rev) || 0)),
       running: src.running === true,
       spoken,
@@ -55,6 +139,14 @@
       showName: src.showName !== false,
       inputs,
     };
+    if (Object.prototype.hasOwnProperty.call(src, "sensitivity")) next.sensitivity = cleanSensitivity(src.sensitivity);
+    if (Object.prototype.hasOwnProperty.call(src, "sessionKind")) next.sessionKind = cleanKind(src.sessionKind);
+    if (Object.prototype.hasOwnProperty.call(src, "phoneCount")) next.phoneCount = cleanCount(src.phoneCount);
+    if (Object.prototype.hasOwnProperty.call(src, "preacherName")) next.preacherName = cleanName(src.preacherName);
+    if (Object.prototype.hasOwnProperty.call(src, "speech")) next.speech = cleanSpeech(src.speech);
+    const sheet = cleanSheet(src.sheet);
+    if (sheet) next.sheet = sheet;
+    return next;
   }
 
   function actionsFor(appliedRev, desired) {
@@ -64,8 +156,39 @@
     const actions = [
       { type: "showName", on: next.showName },
       { type: "languages", spoken: next.spoken, targets: next.targets.slice() },
-      { type: "running", on: next.running },
     ];
+    if (Object.prototype.hasOwnProperty.call(next, "sessionKind")) {
+      actions.push({ type: "kind", sessionKind: next.sessionKind });
+    }
+    if (Object.prototype.hasOwnProperty.call(next, "sensitivity") && !next.speech) {
+      actions.push({ type: "sensitivity", sensitivity: next.sensitivity });
+    }
+    if (Object.prototype.hasOwnProperty.call(next, "phoneCount")) {
+      actions.push({ type: "phones", phoneCount: next.phoneCount });
+    }
+    if (Object.prototype.hasOwnProperty.call(next, "preacherName")) {
+      actions.push({ type: "preacher", name: next.preacherName });
+    }
+    if (next.speech) {
+      actions.push({
+        type: "speech",
+        traits: next.speech.traits,
+        fixes: next.speech.fixes,
+        terms: next.speech.terms,
+        sensitivity: next.sensitivity || next.speech.sensitivity || "normal",
+      });
+    }
+    if (next.sheet) actions.push({ type: "sheet", name: next.sheet.name, image: next.sheet.image });
+    const running = {
+      type: "running",
+      on: next.running,
+      spoken: next.spoken,
+      targets: next.targets.slice(),
+    };
+    if (Object.prototype.hasOwnProperty.call(next, "sessionKind")) running.sessionKind = next.sessionKind;
+    if (Object.prototype.hasOwnProperty.call(next, "sensitivity")) running.sensitivity = next.sensitivity;
+    if (Object.prototype.hasOwnProperty.call(next, "preacherName")) running.preacherName = next.preacherName;
+    actions.push(running);
     next.inputs.forEach((input) => actions.push({ type: "input", ...input }));
     return { rev: next.rev, actions };
   }
@@ -73,12 +196,16 @@
   function withRev(current, patch) {
     const base = cleanDesired(current);
     const extra = patch && typeof patch === "object" ? patch : {};
-    return cleanDesired({
+    const merged = {
       ...base,
       ...extra,
       inputs: Object.prototype.hasOwnProperty.call(extra, "inputs") ? extra.inputs : base.inputs,
       rev: base.rev + 1,
-    });
+    };
+    if (Object.prototype.hasOwnProperty.call(extra, "speech")) merged.speech = extra.speech;
+    else if (!Object.prototype.hasOwnProperty.call(base, "speech")) delete merged.speech;
+    if (!Object.prototype.hasOwnProperty.call(extra, "sheet")) delete merged.sheet;
+    return cleanDesired(merged);
   }
 
   function roundLevel(value) {
@@ -132,6 +259,19 @@
       spoken,
       targets,
       inputs,
+      phaseLabel: src.running === true ? "방송 중" : "대기",
+      folderReady: src.folderReady === true,
+      folderLabel: cleanName(src.folderLabel),
+      deviceReady: src.deviceReady === true,
+      gaps: cleanGaps(src.gaps),
+      sensitivity: cleanSensitivity(src.sensitivity),
+      sessionKind: cleanKind(src.sessionKind),
+      phoneCount: cleanCount(src.phoneCount),
+      preacherName: cleanName(src.preacherName),
+      speech: cleanSpeech(src.speech),
+      bulletinLabel: cleanNote(src.bulletinLabel, 120),
+      board: cleanBoard(src.board),
+      logs: cleanLogs(src.logs),
     };
   }
 

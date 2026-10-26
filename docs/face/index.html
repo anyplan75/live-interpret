@@ -127,6 +127,9 @@
   <script src="sw-register.js"></script>
   <script>
     const params = new URLSearchParams(location.search);
+    if (params.get("app") === "1") {
+      document.querySelectorAll(".install").forEach((node) => { node.hidden = true; });
+    }
     const invite = params.get("s") || "";
     const guestMode = LI.orgServices.guestJoin(invite).ok;
     const gate = document.getElementById("gate");

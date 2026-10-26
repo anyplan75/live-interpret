@@ -14,6 +14,7 @@ const { PhoneJoin, pcmFromSignal } = require("./lib/phone-join");
 const { useFolder, releaseFolder } = require("./lib/folder-access");
 const operator = require("./lib/operator");
 const roomSync = require("./lib/room-sync");
+const setupReady = require("./lib/setup-ready");
 const orgServices = require("../docs/js/org-services");
 const cost = require("./lib/cost");
 const { userText } = require("./lib/user-text");
@@ -97,6 +98,20 @@ function stageSummary(churchId) {
   } catch (_) {
     return null;
   }
+}
+
+function bulletinStatusLabel(churchId) {
+  const staged = stageSummary(churchId);
+  if (!staged) return "아직 올린 진행자료가 없습니다.";
+  const extracted = staged.extracted;
+  if (!extracted) return `${staged.fileName} 사진을 저장했습니다.`;
+  const bits = [];
+  if (Array.isArray(extracted.songTitles) && extracted.songTitles.length) {
+    bits.push(extracted.songTitles.slice(0, 3).join(", "));
+  }
+  if (extracted.preacherName) bits.push(extracted.preacherName);
+  if (extracted.scripture) bits.push(extracted.scripture);
+  return bits.length ? `${staged.fileName}: ${bits.join(" · ")}`.slice(0, 120) : `${staged.fileName} 분석을 마쳤습니다.`;
 }
 
 function publicChurch(church) {
@@ -204,7 +219,71 @@ function writeLocalPrepaid(churchId, block) {
 }
 
 const peaks = new Map();
+const hearingBoard = { live: "", heard: [], cards: [] };
+const hearingLogs = [];
 let publishRoom = () => {};
+
+function clipHearing(value, max) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function rememberHearing(payload) {
+  if (!payload || typeof payload !== "object") return;
+  if (payload.type === "live") {
+    hearingBoard.live = clipHearing(payload.text, 280);
+    return;
+  }
+  if (payload.type === "heard") {
+    const body = clipHearing(payload.text, 280);
+    if (!body) return;
+    const id = clipHearing(payload.id, 24) || String(hearingBoard.heard.length + 1);
+    if (!hearingBoard.heard.some((item) => item.id === id)) {
+      hearingBoard.heard.push({ id, body, fixes: [] });
+      if (hearingBoard.heard.length > 8) hearingBoard.heard.shift();
+    }
+    hearingBoard.live = "";
+    return;
+  }
+  if (payload.type === "line") {
+    const body = clipHearing(payload.text, 280);
+    const raw = clipHearing(payload.raw, 280);
+    const spoken = engine && engine.spoken ? engine.spoken : "ko";
+    if (!payload.lang || payload.lang === spoken) {
+      if (body && raw && body !== raw) {
+        const id = clipHearing(payload.heardId, 24);
+        let row = hearingBoard.heard.find((item) => item.id === id);
+        if (!row) {
+          row = { id: id || `h${hearingBoard.heard.length + 1}`, body: raw || body, fixes: [] };
+          hearingBoard.heard.push(row);
+          if (hearingBoard.heard.length > 8) hearingBoard.heard.shift();
+        }
+        if (!row.fixes.includes(body)) {
+          row.fixes.push(body);
+          if (row.fixes.length > 3) row.fixes.shift();
+        }
+      }
+      return;
+    }
+    if (body) {
+      const lang = String(payload.lang).slice(0, 12);
+      hearingBoard.cards.push({ lang, body });
+      if (hearingBoard.cards.length > 8) hearingBoard.cards.shift();
+    }
+    return;
+  }
+  if (payload.type === "log") {
+    const body = userText(payload.text || "").slice(0, 180);
+    if (!body || /firebase|permission denied|error:/i.test(body)) return;
+    hearingLogs.push({ level: payload.level === "error" ? "error" : "info", body });
+    if (hearingLogs.length > 12) hearingLogs.shift();
+  }
+}
+
+function clearHearing() {
+  hearingBoard.live = "";
+  hearingBoard.heard = [];
+  hearingBoard.cards = [];
+}
 
 function openSettingsApp() {
   const page = "https://anyplan75.github.io/live-interpret/desk/";
@@ -222,6 +301,7 @@ function openSettingsApp() {
 }
 
 function send(payload) {
+  rememberHearing(payload);
   if (payload && payload.type === "level" && Number.isInteger(payload.channel)) {
     peaks.set(payload.channel, Number(payload.peak) || 0);
   }
@@ -397,6 +477,18 @@ function registerIpc() {
     if (engine.sessionCharge && engine.sessionCharge.balance != null) cachedBalance = engine.sessionCharge.balance;
     const remaining = engine.remainingNow();
     const charged = engine.sessionCharge ? engine.sessionCharge.charged : 0;
+    const saved = readSettings();
+    const publicKind = ["강의", "연설", "행사"].includes(saved.sessionKind) ? saved.sessionKind : "";
+    const deviceKey = (engine.device && engine.device.key) || saved.deviceKey || "";
+    const gaps = setupReady.missingSetup({
+      folder: saved.folder || "",
+      folderReady: openSavedFolder(saved),
+      preacherId: saved.preacherId || "",
+      sessionKind: publicKind,
+      targets: engine.outputs || [],
+      deviceKey,
+    });
+    const speech = saved.deskSpeech && typeof saved.deskSpeech === "object" ? saved.deskSpeech : {};
     const status = roomSync.publicStatus({
       updatedAt: Date.now(),
       online: true,
@@ -409,6 +501,22 @@ function registerIpc() {
       spoken: engine.spoken || "ko",
       targets: engine.outputs || [],
       inputs: roomInputs(),
+      folderReady: !gaps.includes("저장 폴더"),
+      folderLabel: saved.folder ? path.basename(saved.folder) : "",
+      deviceReady: !gaps.includes("입력 장치"),
+      gaps,
+      sensitivity: saved.sensitivity || engine.sessionSensitivity || "normal",
+      sessionKind: publicKind,
+      phoneCount: phoneJoin ? phoneJoin.phoneCount : (Number(saved.phoneCount) || 0),
+      preacherName: engine.preacherName || saved.preacherName || "",
+      speech: {
+        traits: speech.traits || "",
+        fixes: speech.corrections || "",
+        terms: speech.terms || "",
+      },
+      bulletinLabel: bulletinStatusLabel(roomChurchId),
+      board: hearingBoard,
+      logs: hearingLogs,
     });
     try {
       await firebase.set(`churches/${roomChurchId}/room/status`, status);
@@ -446,6 +554,112 @@ function registerIpc() {
     }
   }
 
+  function applyDeskStyle(action) {
+    const saved = readSettings();
+    const prev = saved.deskSpeech && typeof saved.deskSpeech === "object" ? saved.deskSpeech : {};
+    const sensitivity = action.sensitivity === "high" || action.sensitivity === "low"
+      ? action.sensitivity
+      : (saved.sensitivity || "normal");
+    const style = {
+      traits: action.type === "speech" ? String(action.traits || "") : String(prev.traits || ""),
+      corrections: action.type === "speech" ? String(action.fixes || "") : String(prev.corrections || ""),
+      terms: action.type === "speech" ? String(action.terms || "") : String(prev.terms || ""),
+      sensitivity,
+    };
+    engine.sessionSensitivity = sensitivity;
+    const keys = new Set(["device:0"]);
+    (engine.publicChannels ? engine.publicChannels() : []).forEach((row, index) => {
+      if (row && row.source === "phone" && row.connectionId) keys.add(`phone:${row.connectionId}`);
+      else keys.add(`device:${index}`);
+    });
+    keys.forEach((key) => engine.applySourceStyle(key, style));
+    writeSettings({
+      sensitivity,
+      deskSpeech: { traits: style.traits, corrections: style.corrections, terms: style.terms },
+    });
+  }
+
+  function applyPreacherName(name) {
+    const next = String(name || "").trim().slice(0, 40);
+    engine.preacherName = next;
+    engine.setShowPreacherName(engine.showPreacherName !== false);
+    writeSettings({ preacherName: next });
+  }
+
+  async function applySheet(action) {
+    const church = await requireChurch();
+    const dir = bulletinDir(church.id);
+    fs.mkdirSync(dir, { recursive: true });
+    const incoming = path.join(dir, "incoming.jpg");
+    fs.writeFileSync(incoming, Buffer.from(action.image, "base64"));
+    let stored = null;
+    try {
+      stored = bulletinLib.stageBulletin(dir, incoming);
+    } catch (_) {
+      note("진행자료 사진을 올리지 못했습니다.");
+      return;
+    } finally {
+      try { fs.rmSync(incoming, { force: true }); } catch (_) { /* 임시 사진은 없어도 됩니다 */ }
+    }
+    fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify({
+      path: stored.absolutePath,
+      fileName: stored.fileName,
+    }));
+    const key = await cachePlatformKey();
+    if (!key) {
+      note("진행자료 사진을 저장했습니다. 이 컴퓨터에 번역 키가 없어 분석은 나중에 합니다.");
+      return;
+    }
+    try {
+      const extracted = await bulletinLib.analyzeBulletinImage({
+        apiKey: key,
+        model: church.model,
+        imagePath: stored.absolutePath,
+      });
+      bulletinLib.writeExtractionFile(dir, stored.fileName, extracted);
+      note("진행자료 분석을 마쳤습니다.");
+    } catch (_) {
+      note("진행자료 사진은 저장했습니다. 분석은 다시 시도해 주세요.");
+    }
+  }
+
+  async function applyPhoneCount(count) {
+    await ensureAuth();
+    if (!phoneJoin) throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
+    const next = Math.max(0, Math.min(8, Math.round(Number(count) || 0)));
+    if (phoneJoin.countChosen && phoneJoin.phoneCount === next) {
+      writeSettings({ phoneCount: next });
+      return phoneJoin.info();
+    }
+    if (!/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) await phoneJoin.start();
+    if (!/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) {
+      throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
+    }
+    let changed;
+    try {
+      changed = phoneJoin.setPhoneCount(next);
+    } catch (err) {
+      send({ type: "phone-join", info: phoneJoin.info() });
+      throw err;
+    }
+    try {
+      for (const connectionId of changed.added) {
+        await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
+      }
+      for (const connectionId of changed.removed) {
+        try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 없는 칸은 넘어갑니다 */ }
+      }
+    } catch (_) {
+      changed.added.forEach((connectionId) => phoneJoin.dropDesk(connectionId));
+      send({ type: "phone-join", info: phoneJoin.info() });
+      throw new Error("휴대폰 QR을 만들지 못했습니다. 다시 시도해 주세요.");
+    }
+    await phoneJoin.refreshQrs();
+    writeSettings({ phoneCount: next });
+    send({ type: "phone-join", info: phoneJoin.info() });
+    return phoneJoin.info();
+  }
+
   async function applyDesired(raw) {
     if (applying || !roomChurchId) return;
     const plan = roomSync.actionsFor(appliedRev, raw);
@@ -455,9 +669,21 @@ function registerIpc() {
       for (const action of plan.actions) {
         if (action.type === "showName") engine.setShowPreacherName(action.on);
         else if (action.type === "languages") await engine.setTargets(roomChurchId, action.targets, action.spoken);
+        else if (action.type === "kind" && action.sessionKind) writeSettings({ sessionKind: action.sessionKind });
+        else if (action.type === "sensitivity" || action.type === "speech") applyDeskStyle(action);
+        else if (action.type === "phones") await applyPhoneCount(action.phoneCount);
+        else if (action.type === "preacher") applyPreacherName(action.name);
+        else if (action.type === "sheet") await applySheet(action);
         else if (action.type === "input") await applyInput(action);
-        else if (action.type === "running" && action.on && !engine.running) await beginBroadcast({});
-        else if (action.type === "running" && !action.on && engine.running) await endBroadcast();
+        else if (action.type === "running" && action.on && !engine.running) {
+          await beginBroadcast({
+            sessionKind: action.sessionKind,
+            spoken: action.spoken,
+            targets: action.targets,
+            sensitivity: action.sensitivity,
+            preacherName: action.preacherName,
+          });
+        } else if (action.type === "running" && !action.on && engine.running) await endBroadcast();
       }
       appliedRev = plan.rev;
     } catch (err) {
@@ -719,36 +945,7 @@ function registerIpc() {
     }
   });
   ipcMain.handle("platform:keyStatus", async () => ({ configured: Boolean(resolveKey()) }));
-  ipcMain.handle("phone:set-count", async (_event, count) => {
-    await ensureAuth();
-    if (!phoneJoin) throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
-    if (!/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) await phoneJoin.start();
-    if (!/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) {
-      throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
-    }
-    let changed;
-    try {
-      changed = phoneJoin.setPhoneCount(count);
-    } catch (err) {
-      send({ type: "phone-join", info: phoneJoin.info() });
-      throw err;
-    }
-    try {
-      for (const connectionId of changed.added) {
-        await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
-      }
-      for (const connectionId of changed.removed) {
-        try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 없는 칸은 넘어갑니다 */ }
-      }
-    } catch (err) {
-      changed.added.forEach((connectionId) => phoneJoin.dropDesk(connectionId));
-      send({ type: "phone-join", info: phoneJoin.info() });
-      throw new Error("휴대폰 QR을 만들지 못했습니다. 다시 시도해 주세요.");
-    }
-    await phoneJoin.refreshQrs();
-    send({ type: "phone-join", info: phoneJoin.info() });
-    return phoneJoin.info();
-  });
+  ipcMain.handle("phone:set-count", async (_event, count) => applyPhoneCount(count));
   ipcMain.handle("phone:add-channel", async () => {
     if (!phoneJoin || !phoneJoin.sessionOpen) {
       throw new Error("방송을 시작한 뒤에 휴대폰 채널을 추가할 수 있습니다.");
@@ -886,10 +1083,11 @@ function registerIpc() {
     if (!catalog.isPreacherId(preacherId)) {
       throw new Error("등록된 이름이 없습니다. 관리 페이지에서 이름을 먼저 등록해 주세요.");
     }
-    const kinds = ["강의", "연설", "행사", "설교"];
+    const kinds = ["강의", "연설", "행사"];
     const sessionKind = kinds.includes(opts && opts.sessionKind)
       ? opts.sessionKind
       : (kinds.includes(saved.sessionKind) ? saved.sessionKind : "강의");
+    const deskSpeech = saved.deskSpeech && typeof saved.deskSpeech === "object" ? saved.deskSpeech : {};
     if (!engine.capture.opened) {
       const key = (opts && opts.deviceKey) || saved.deviceKey || "";
       if (key) engine.monitor(key, Number(opts && opts.channel) || 0);
@@ -905,6 +1103,12 @@ function registerIpc() {
       targets,
       deviceKey: (opts && opts.deviceKey) || saved.deviceKey || (engine.device && engine.device.key) || "",
       sensitivity: (opts && opts.sensitivity) || saved.sensitivity || "normal",
+      speechStyle: {
+        traits: deskSpeech.traits || "",
+        corrections: deskSpeech.corrections || "",
+        terms: deskSpeech.terms || "",
+        sensitivity: (opts && opts.sensitivity) || saved.sensitivity || "normal",
+      },
       showPreacherName: engine.showPreacherName !== false,
       channels: engine.publicChannels(),
       bulletinPath: staged ? staged.path : "",
@@ -920,6 +1124,11 @@ function registerIpc() {
         channels: started.channels || [],
       };
     }
+    if (opts && opts.preacherName) {
+      engine.preacherName = String(opts.preacherName).slice(0, 40);
+      engine.setShowPreacherName(engine.showPreacherName !== false);
+    }
+    clearHearing();
     if (phoneJoin) {
       let opened = [];
       try {

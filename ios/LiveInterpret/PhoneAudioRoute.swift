@@ -19,7 +19,7 @@ enum PhoneAudioRoute {
         }
     }
 
-    /// 강연·회의는 일반 모드, 대면통역은 서로 마주 보는 통화 모드를 유지합니다.
+    /// 대면통역은 서로 마주 보는 통화 모드를 유지합니다.
     /// 마이크를 열 때만 소리 길을 실제로 켭니다.
     static func apply(face: Bool, active: Bool) {
         let session = AVAudioSession.sharedInstance()

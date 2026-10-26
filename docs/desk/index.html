@@ -6,16 +6,27 @@
   <title>통역 설정</title>
   <link rel="stylesheet" href="../css/phone-app.css">
   <style>
-    main { max-width: 720px; }
+    main { max-width: 880px; }
     header.top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
     .cost-head { text-align: right; color: #f6d56b; font-weight: 800; }
-    .row { display: flex; gap: 8px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
     .row button { width: auto; flex: 1; }
     button.danger { background: #9b3b3b; }
     .langs label, .check { font-weight: 700; }
     .langs label { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
     .langs input, .check input { width: auto; }
     article.card button { width: auto; }
+    .pill { display: inline-block; margin-top: 8px; padding: 6px 12px; border-radius: 999px; background: #c4514b; color: #fff; font-weight: 800; }
+    .live { min-height: 48px; margin: 8px 0; padding: 12px; border-radius: 12px; background: #3a3114; color: #f6d56b; font-weight: 700; }
+    .ko-stack, .log, .grid { display: flex; flex-direction: column; gap: 8px; }
+    .ko-line { padding: 8px 0; border-bottom: 1px solid #243041; }
+    .tag { display: inline-block; margin-right: 8px; color: #9fb0c3; font-size: 13px; }
+    .corrected { color: #d7e6f5; }
+    .log p { margin: 0; color: #c9d5e2; }
+    .log .error { color: #f0b4b4; }
+    .setup-gaps { margin: 8px 0 0; padding-left: 18px; }
+    textarea { min-height: 72px; }
+    input[type="file"] { width: auto; }
   </style>
   <script>
     // 방송실이 넘겨 준 로그인 열쇠는 주소 조각에만 있다가, 바로 이 탭 저장소로 옮기고 주소에서는 지웁니다.
@@ -43,7 +54,8 @@
     <header class="top">
       <div>
         <h1>통역 설정</h1>
-        <p class="hint">방송실에 연결된 마이크와 휴대폰을 보고, 시작과 언어와 이름을 바꿉니다. 장치는 고르지 않습니다.</p>
+        <p class="hint">지금 듣는 말과 교정, 시작과 언어와 이름을 여기서 봅니다. 마이크 장치와 기록 폴더 고르기는 방송실 앱에서 합니다.</p>
+        <div id="onAir" class="pill" hidden>방송 중</div>
       </div>
       <div class="cost-head" id="costHead" hidden>
         <div>남은 충전금 <span id="balanceCost" class="cost-figure">불러오는 중</span></div>
@@ -71,12 +83,81 @@
           <button type="button" class="danger" id="stop">종료</button>
           <button type="button" class="ghost" id="signOut">로그아웃</button>
         </div>
+        <p class="hint" id="folderLine">기록 폴더는 방송실 앱에서 고릅니다.</p>
+        <ul id="setupGaps" class="setup-gaps" hidden></ul>
+      </section>
+
+      <section class="card" id="startConfirm" hidden>
+        <h2>방송 시작 확인</h2>
+        <p id="confirmLangs"></p>
+        <p id="confirmBalance"></p>
+        <p class="hint">준비가 끝나기 전에는 시작확인을 누를 수 없습니다. 입력 장치와 기록 폴더는 방송실 앱에서 맞춥니다.</p>
+        <div class="row">
+          <button type="button" id="confirmStart">시작확인</button>
+          <button type="button" class="ghost" id="confirmCancel">취소</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 id="heardTitle">지금 듣는 말</h2>
+        <p class="hint">노란 칸은 지금 듣는 말입니다. 끝난 말은 아래에 쌓이고, 교정은 그 말 바로 아래에 붙습니다.</p>
+        <div id="live" class="live">대기 중...</div>
+        <div id="koStack" class="ko-stack"></div>
+        <h2>안내</h2>
+        <div id="log" class="log"></div>
+        <div id="cards" class="grid"></div>
+      </section>
+
+      <section class="card">
+        <h2>내용</h2>
+        <label for="sessionKind">종류</label>
+        <select id="sessionKind">
+          <option value="">선택</option>
+          <option value="강의">강의</option>
+          <option value="연설">연설</option>
+          <option value="행사">행사</option>
+        </select>
+        <label for="preacherName">이름</label>
+        <input id="preacherName" maxlength="40" placeholder="자막에 보일 이름">
         <label class="check"><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
       </section>
+
+      <section class="card">
+        <h2>말투와 감도</h2>
+        <p class="hint">감도는 방송 중에도 바로 적용됩니다.</p>
+        <label for="sensitivity">인식 감도</label>
+        <select id="sensitivity">
+          <option value="high">감도 높음</option>
+          <option value="normal" selected>감도 보통</option>
+          <option value="low">감도 낮음</option>
+        </select>
+        <label for="traits">말투</label>
+        <textarea id="traits"></textarea>
+        <label for="fixes">교정</label>
+        <textarea id="fixes"></textarea>
+        <label for="terms">용어</label>
+        <textarea id="terms"></textarea>
+      </section>
+
       <section class="card">
         <h2>오늘 번역할 언어</h2>
         <div id="langs" class="langs"></div>
       </section>
+
+      <section class="card">
+        <h2>휴대폰 수</h2>
+        <label for="phoneCount">대수</label>
+        <input id="phoneCount" type="number" min="0" max="8" step="1" value="0">
+        <p class="hint">0이면 휴대폰 없이 시작합니다. 8대까지 고를 수 있습니다. QR과 연결 번호는 방송실 화면에 나옵니다.</p>
+      </section>
+
+      <section class="card">
+        <h2>진행자료</h2>
+        <p class="hint">큐시트나 순서지 사진을 올리면 방송실 컴퓨터에 저장하고 분석합니다.</p>
+        <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+        <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
+      </section>
+
       <section class="card">
         <h2>연결된 입력</h2>
         <div id="inputs"></div>

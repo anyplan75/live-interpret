@@ -1,14 +1,14 @@
 import AVFoundation
 import UIKit
 
-/// 송출 컴퓨터나 상대 휴대폰에 나온 QR을 읽는다.
+/// 상대 휴대폰에 나온 QR을 읽는다.
 /// 카메라는 QR을 읽거나 사람이 닫기를 누를 때까지 켜 둔다.
 /// 앱 자체는 닫지 않는다. 읽은 뒤에는 이 화면만 닫고 아래 화면으로 돌아간다.
 final class QrScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var onLink: ((URL, @escaping (Bool) -> Void) -> Void)?
     var hintText = "QR을 비추세요."
     var accept: (String) -> URL? = { FaceLink.joinURL(from: $0) }
-    /// 강연·회의는 이미 마이크용 소리 설정을 쓰고 있다. 여기서 다시 바꾸면 앱이 꺼진다.
+    /// 이미 마이크용 소리 설정을 쓰고 있으면 여기서 다시 바꾸지 않습니다.
     var keepsCurrentAudio = false
 
     private let session = AVCaptureSession()

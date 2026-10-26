@@ -14,6 +14,16 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(page, /id="stop"/);
   assert.match(page, /id="langs"/);
   assert.match(page, /id="showName"/);
+  assert.match(page, /id="onAir"/);
+  assert.match(page, /id="confirmStart"/);
+  assert.match(page, /id="live"/);
+  assert.match(page, /id="koStack"/);
+  assert.match(page, /id="log"/);
+  assert.match(page, /id="sensitivity"/);
+  assert.match(page, /id="sessionKind"/);
+  assert.match(page, /id="phoneCount"/);
+  assert.match(page, /id="pickBulletin"/);
+  assert.match(page, /이번 방송 차감/);
   assert.match(page, /id="operator"/);
   assert.match(page, /id="testPeriod"/);
   assert.match(page, /남은 충전금/);
@@ -23,6 +33,8 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /room\/desired/);
   assert.match(client, /room\/status/);
   assert.match(client, /withRev/);
+  assert.match(client, /id="live"|getElementById\("live"\)/);
+  assert.match(client, /confirmStart/);
   assert.match(client, /sessionStorage/);
   assert.doesNotMatch(page, /id="device"|설교|교회/);
   assert.doesNotMatch(client, /console\.(log|info|debug)/);

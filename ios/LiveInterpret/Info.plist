@@ -35,13 +35,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>강연·회의와 대면 통역에서 QR을 읽기 위해 카메라가 필요합니다.</string>
+	<string>대면 통역에서 QR을 읽기 위해 카메라가 필요합니다.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>같은 장소의 송출 컴퓨터나 상대 휴대폰과 통역을 연결하기 위해 로컬 네트워크를 사용합니다.</string>
+	<string>같은 장소의 상대 휴대폰과 통역을 연결하기 위해 로컬 네트워크를 사용합니다.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>강연·회의와 대면 통역에서 말을 듣기 위해 마이크가 필요합니다. 음성은 이 앱에 저장하지 않습니다.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>강연·회의에서 말한 내용을 글자로 만들어 송출 컴퓨터에 보내기 위해 음성 인식이 필요합니다. 음성은 이 앱에 저장하지 않습니다.</string>
+	<string>대면 통역에서 말을 듣기 위해 마이크가 필요합니다. 음성은 이 앱에 저장하지 않습니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

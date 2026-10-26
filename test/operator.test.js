@@ -120,7 +120,7 @@ test("server rules let only the operator read every account and add credit", () 
 });
 
 test("the phone store app has no operator screen and the lecture form stays visible", () => {
-  const home = fs.readFileSync(path.join(root, "ios/LiveInterpret/HomeViewController.swift"), "utf8");
+  const scene = fs.readFileSync(path.join(root, "ios/LiveInterpret/SceneDelegate.swift"), "utf8");
   const project = fs.readFileSync(path.join(root, "ios/LiveInterpret.xcodeproj/project.pbxproj"), "utf8");
   const lecture = fs.readFileSync(path.join(root, "docs/lecture/index.html"), "utf8");
   const face = fs.readFileSync(path.join(root, "docs/face/index.html"), "utf8");
@@ -136,8 +136,9 @@ test("the phone store app has no operator screen and the lecture form stays visi
     .join("\n");
   assert.doesNotMatch(swift, /anyplan@me\.com|OperatorViewController|SignInViewController|OperatorSession/);
   assert.doesNotMatch(project, /OperatorViewController|SignInViewController|OperatorSession|phone-firebase-env/);
-  assert.match(home, /강연·회의와 대면통역/);
-  assert.doesNotMatch(home, /로그인/);
+  assert.match(scene, /PageViewController\(page: \.face\)/);
+  assert.doesNotMatch(scene, /HomeViewController|강연/);
+  assert.equal(fs.existsSync(path.join(root, "ios/LiveInterpret/HomeViewController.swift")), false);
   assert.match(lecture, /id="micForm"/);
   assert.doesNotMatch(lecture, /id="micForm"[^>]*hidden/);
   assert.match(lecture, /id="scanQr"/);
