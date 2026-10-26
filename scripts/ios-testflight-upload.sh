@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 아이폰 시험 설치(TestFlight)용으로만 올린다.
-# 강연·회의와 대면통역 페이지를 여는 껍데기를 서명해 업로드한다.
+# 대면 통역 웹 페이지만 여는 껍데기를 서명해 업로드한다.
 # 맥 앱스토어 빌드는 만들지 않는다. 비밀 열쇠는 출력하지 않는다.
 set -euo pipefail
 
@@ -97,37 +97,35 @@ xcodebuild archive \
   CODE_SIGN_IDENTITY="" \
   2>&1 | redact_log
 
-JOIN_HTML="$(find "$ARCHIVE_PATH/Products" -name 'index.html' -print -quit)"
-if [[ -z "$JOIN_HTML" ]]; then
-  echo "강연·회의 입장 화면이 앱 안에 없습니다." >&2
+APP_DIR="$(find "$ARCHIVE_PATH/Products" -type d -name 'LiveInterpret.app' -print -quit)"
+if [[ -z "$APP_DIR" ]]; then
+  echo "아이폰 앱 묶음이 없습니다." >&2
   exit 1
 fi
-if ! grep -q '말하는 언어' "$JOIN_HTML"; then
-  echo "입장 화면에 말하는 언어가 없습니다." >&2
+
+# 대면만 남긴 껍데기다. 강연·회의 화면 HTML 이나 강연 전용 소스는 없어야 한다.
+if find "$APP_DIR" -name 'index.html' | grep -q .; then
+  echo "앱 안에 웹 HTML이 남아 있습니다. 대면은 원격 페이지만 엽니다." >&2
   exit 1
 fi
-if ! grep -q 'QR 스캔' "$JOIN_HTML"; then
-  echo "입장 화면에 QR 스캔이 없습니다." >&2
+if grep -R -a -q -e 'LectureSpeech' -e 'HomeViewController' -e '/lecture/' "$APP_DIR"; then
+  echo "폰 앱 안에 강연·회의 화면이 남아 있습니다." >&2
   exit 1
 fi
-if grep -q 'id="micForm" hidden' "$JOIN_HTML"; then
-  echo "이름과 마이크 입력칸이 숨겨져 있습니다." >&2
+if ! grep -R -a -q '대면통역' "$APP_DIR"; then
+  echo "대면통역 화면이 앱 안에 없습니다." >&2
   exit 1
 fi
-if grep -R -a -q -e 'anyplan@me.com' -e 'OperatorViewController' "$ARCHIVE_PATH/Products"; then
+if ! grep -R -a -q 'live-interpret/face' "$APP_DIR"; then
+  echo "대면 통역 주소가 앱 안에 없습니다." >&2
+  exit 1
+fi
+if grep -R -a -q -e 'anyplan@me.com' -e 'OperatorViewController' "$APP_DIR"; then
   echo "폰 앱 안에 운영자 화면이 남아 있습니다." >&2
   exit 1
 fi
-if grep -q '접속 번호' "$JOIN_HTML" || grep -q 'id="joinId"' "$JOIN_HTML"; then
-  echo "옛 암호 입력 화면이 앱 안에 있습니다." >&2
-  exit 1
-fi
-if ! grep -q 'postServer("hello"' "$JOIN_HTML"; then
-  echo "입장 화면이 서버 가입 기록을 올리지 않습니다." >&2
-  exit 1
-fi
-if ! grep -q 'postServer("pcm"' "$JOIN_HTML"; then
-  echo "입장 화면이 서버 소리 기록을 올리지 않습니다." >&2
+if grep -R -a -q -e '설교' -e '교회' "$APP_DIR"; then
+  echo "폰 앱 안에 교회·설교 말이 남아 있습니다." >&2
   exit 1
 fi
 
@@ -140,8 +138,8 @@ xcodebuild -exportArchive \
   -exportPath "$EXPORT_DIR" \
   -allowProvisioningUpdates \
   -authenticationKeyPath "$KEY_PATH" \
-  -authenticationKeyID "$ASC_KEY_ID" \
   -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+  -authenticationKeyID "$ASC_KEY_ID" \
   2>&1 | redact_log
 
 IPA="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.ipa' -print -quit)"

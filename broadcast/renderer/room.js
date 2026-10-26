@@ -7,6 +7,15 @@ const deviceEl = document.getElementById("device");
 const levels = new Map();
 let lastChannels = [];
 
+function personText(err) {
+  let text = err && err.message ? String(err.message) : (err == null ? "" : String(err));
+  text = text.replace(/auth=[^&\s]+/gi, "").replace(/refresh_token=[^&\s]+/gi, "").trim();
+  if (!text || /firebase|permission denied|401|error:|https?:|at\s+\S/i.test(text)) {
+    return "";
+  }
+  return text.slice(0, 180);
+}
+
 function say(text) {
   signInMsg.textContent = text || "";
 }
@@ -167,7 +176,7 @@ document.getElementById("signIn").addEventListener("click", async () => {
     await restoreDevice();
     await refreshPhones();
   } catch (err) {
-    say(err && err.message ? err.message : "다시 로그인해 주세요.");
+    say(personText(err) || "다시 로그인해 주세요.");
   }
 });
 
@@ -175,7 +184,7 @@ document.getElementById("signOut").addEventListener("click", async () => {
   try {
     await window.broadcast.signOut();
   } catch (err) {
-    document.getElementById("phoneMsg").textContent = err && err.message ? err.message : "다시 시도해 주세요.";
+    document.getElementById("phoneMsg").textContent = personText(err) || "다시 시도해 주세요.";
     return;
   }
   studio.hidden = true;
@@ -189,7 +198,7 @@ document.getElementById("pickFolder").addEventListener("click", async () => {
 
 document.getElementById("openSettings").addEventListener("click", () => {
   window.broadcast.openSettings().catch(() => {
-    document.getElementById("phoneMsg").textContent = "설정 앱을 열지 못했습니다. 다시 시도해 주세요.";
+    document.getElementById("phoneMsg").textContent = "설정 페이지를 열지 못했습니다. 다시 시도해 주세요.";
   });
 });
 
@@ -205,18 +214,7 @@ deviceEl.addEventListener("change", async () => {
     for (let index = 0; index < count; index += 1) rows.push({ index, source: "device", name: "" });
     paintMeters(rows);
   } catch (err) {
-    document.getElementById("phoneMsg").textContent = err && err.message ? err.message : "마이크를 열지 못했습니다.";
-  }
-});
-
-document.getElementById("phoneCount").addEventListener("change", async () => {
-  const count = Math.max(0, Math.min(8, Number(document.getElementById("phoneCount").value) || 0));
-  document.getElementById("phoneCount").value = String(count);
-  try {
-    await window.broadcast.setPhoneCount(count);
-    await refreshPhones();
-  } catch (err) {
-    document.getElementById("phoneMsg").textContent = err && err.message ? err.message : "휴대폰 수를 바꾸지 못했습니다.";
+    document.getElementById("phoneMsg").textContent = personText(err) || "마이크를 열지 못했습니다.";
   }
 });
 

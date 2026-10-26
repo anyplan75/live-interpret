@@ -7,7 +7,7 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.SetupReady = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const SESSION_KINDS = ["설교", "강의", "연설", "행사"];
+  const SESSION_KINDS = ["강의", "연설", "행사"];
 
   function missingSetup(input) {
     const source = input && typeof input === "object" ? input : {};

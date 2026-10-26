@@ -70,6 +70,13 @@ test("status keeps connection facts and drops secrets", () => {
   assert.equal(board.board.heard[0].body, "듣는 말");
   assert.equal(JSON.stringify(board).includes("자막 원문"), false);
   assert.equal(board.phaseLabel, "대기");
+  const kept = room.publicStatus({
+    updatedAt: 1,
+    online: true,
+    running: false,
+    sessionKind: "강의",
+  });
+  assert.equal(kept.sessionKind, "강의");
 });
 
 test("a stream patch updates one field and a put replaces the record", () => {
@@ -100,10 +107,11 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.match(openSettings, /https:\/\/anyplan75\.github\.io\/live-interpret\/desk\//);
   assert.match(openSettings, /shell\.openExternal/);
   assert.doesNotMatch(openSettings, /spawn\(/);
-  assert.doesNotMatch(roomHtml, /id="start"|id="operator"|설교|교회/);
+  assert.doesNotMatch(roomHtml, /id="start"|id="operator"|설교|교회|id="phoneCount"/);
   assert.match(roomHtml, /id="device"/);
   assert.match(roomHtml, /id="phoneDesks"/);
   assert.match(roomHtml, /연결 번호/);
+  assert.match(roomHtml, /통역 설정 페이지/);
   assert.match(settingsHtml, /id="start"/);
   assert.match(settingsHtml, /id="stop"/);
   assert.match(settingsHtml, /id="langs"/);
