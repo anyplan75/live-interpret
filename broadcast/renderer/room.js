@@ -80,7 +80,9 @@ function paintDesks(info) {
     const card = document.createElement("article");
     card.className = "card";
     const title = document.createElement("h3");
-    title.textContent = desk.connected ? `휴대폰 ${index + 1} 연결됨` : `휴대폰 ${index + 1} 아직 연결되지 않았습니다`;
+    title.textContent = desk.connected
+      ? `휴대폰 ${index + 1} 연결됨`
+      : (desk.joining ? `휴대폰 ${index + 1} 연결중` : `휴대폰 ${index + 1} 아직 연결되지 않았습니다`);
     const code = document.createElement("p");
     code.textContent = desk.connectionId ? `연결 번호 ${desk.connectionId}` : "연결 번호 준비 중";
     card.append(title, code);

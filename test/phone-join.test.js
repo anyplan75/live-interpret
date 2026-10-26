@@ -815,6 +815,8 @@ test("each phone slot has its own lecture QR", async () => {
   const parsed = org.parseLectureSlot(url);
   assert.equal(parsed.connectionId, info.channels[0].connectionId);
   assert.equal(parsed.token, token);
+  const indexUrl = `https://anyplan75.github.io/live-interpret/lecture/index.html?c=${info.channels[0].connectionId}&s=${token}`;
+  assert.equal(org.parseLectureSlot(indexUrl).connectionId, info.channels[0].connectionId);
   assert.equal(org.parseLectureSlot(`https://evil.example/lecture/?c=${info.channels[0].connectionId}&s=${token}`), null);
   assert.equal(info.channels[0].qrDataUrl.includes(token), false);
   await server.stop();
@@ -1234,4 +1236,54 @@ test("plain http hides the microphone and https exposes it", { timeout: 60000 },
   assert.equal(insecure.hasMedia, false);
   assert.equal(insecure.protocol, "http:");
   assert.match(publicMicUrl("https://anyplan75.github.io/live-interpret", "b".repeat(32)), /^https:\/\/anyplan75\.github\.io\/live-interpret\/mic\/\?s=b{32}$/);
+});
+
+test("the mac and the lecture page share one joined signal", async () => {
+  const puts = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const server = new PhoneJoin({
+    onHello: (phone) => ({ index: 2, name: phone.name, phoneId: phone.id }),
+  });
+  server.forceJoinedWrite = true;
+  server.databaseURL = "https://example.test";
+  server.token = "cd".repeat(16);
+  server._put = (suffix, body) => {
+    puts.push({ suffix, body });
+    return gate;
+  };
+  server.setPhoneCount(1);
+  const connectionId = server.desks[0].connectionId;
+  server.ingestText("peer0001aa", JSON.stringify({
+    type: "hello",
+    name: "민수",
+    spoken: "ko",
+    connectionId,
+    phoneId: "phone0001",
+  }));
+  assert.equal(server.info().channels[0].connected, false);
+  assert.equal(server.info().channels[0].joining, true);
+  assert.equal(puts.length, 1);
+  assert.match(puts[0].suffix, /^peers\/peer0001aa\/joined\.json$/);
+  assert.equal(puts[0].body.type, "joined");
+  assert.equal(puts[0].body.name, "민수");
+  assert.equal(puts[0].body.phoneId, "phone0001");
+  release();
+  await gate;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(server.info().channels[0].connected, true);
+  assert.equal(server.info().channels[0].joining, false);
+
+  const lecture = read("docs/lecture/index.html");
+  assert.match(lecture, /parts\[0\] === "joined"/);
+  assert.match(lecture, /takeJoined/);
+  assert.match(lecture, /if \(!current\.joined\) say\("마이크를 열었습니다/);
+  assert.match(lecture, /parseLectureSlot\(location\.href\)/);
+  const rules = JSON.parse(read("firebase/live-interpret.rules.json"));
+  const joined = rules["live-interpret"].phoneLinks.$token.peers.$peerId.joined;
+  assert.match(joined[".write"], /'joined'/);
+  assert.doesNotMatch(joined[".write"], /auth/);
+  const room = read("broadcast/renderer/room.js");
+  assert.match(room, /연결중/);
+  assert.match(room, /연결됨/);
 });

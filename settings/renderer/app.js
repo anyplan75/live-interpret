@@ -57,7 +57,7 @@ let inputKey = "";
 
 function paintInputs(status) {
   const rows = status && Array.isArray(status.inputs) ? status.inputs : [];
-  const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.code}|${row.live}|${row.name}`).join(";");
+  const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.joining}|${row.code}|${row.live}|${row.name}`).join(";");
   if (nextKey === inputKey && inputs.childElementCount) {
     rows.forEach((row) => {
       const fill = inputs.querySelector(`[data-level="${row.key}"]`);
@@ -78,7 +78,7 @@ function paintInputs(status) {
     const card = document.createElement("article");
     card.className = "card";
     const title = document.createElement("p");
-    const state = row.connected ? "연결됨" : "아직 연결되지 않았습니다";
+    const state = row.connected ? "연결됨" : (row.joining ? "연결중" : "아직 연결되지 않았습니다");
     title.textContent = `${row.title} ${state}${row.code ? ` · 연결 번호 ${row.code}` : ""}`;
     const name = document.createElement("input");
     name.value = row.name || "";

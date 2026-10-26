@@ -1,6 +1,5 @@
 require("./lib/load-env");
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu } = require("electron");
-const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const catalog = require("./lib/catalog");
@@ -208,17 +207,18 @@ const peaks = new Map();
 let publishRoom = () => {};
 
 function openSettingsApp() {
-  const args = [];
-  if (process.defaultApp && process.argv[1]) args.push(path.resolve(process.argv[1]));
-  args.push("--settings");
-  const sessionDir = app.getPath("userData");
-  args.push(`--session-dir=${sessionDir}`);
-  const child = spawn(process.execPath, args, {
-    detached: true,
-    stdio: "ignore",
-    env: { ...process.env, LIVE_INTERPRET_SESSION_DIR: sessionDir },
-  });
-  child.unref();
+  const page = "https://anyplan75.github.io/live-interpret/desk/";
+  const session = secrets.readSession(userDir());
+  const refresh = session && typeof session.refreshToken === "string" ? session.refreshToken : "";
+  let target = page;
+  if (refresh) {
+    const hash = new URLSearchParams();
+    hash.set("r", refresh);
+    if (session.email) hash.set("e", session.email);
+    if (session.localId) hash.set("u", session.localId);
+    target = `${page}#${hash.toString()}`;
+  }
+  shell.openExternal(target).catch(() => {});
 }
 
 function send(payload) {
@@ -348,6 +348,7 @@ function registerIpc() {
           level: peaks.get(row.index) || 0,
           live: row.captionLive !== false,
           connected: !!row.connected,
+          joining: false,
           showName: row.showName !== false,
           joinUrl: joinUrl(row.connectionId),
         });
@@ -377,6 +378,7 @@ function registerIpc() {
         level: 0,
         live: true,
         connected: !!desk.connected,
+        joining: !!desk.joining,
         showName: desk.showName !== false,
         joinUrl: joinUrl(desk.connectionId),
       });

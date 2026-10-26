@@ -52,6 +52,7 @@
       "docs/js/catalog.js",
       "docs/js/languages.js",
       "docs/js/org-services.js",
+      "docs/js/room-sync.js",
       "docs/js/cost.js",
       "docs/js/speaker-lines.js",
       "package.json"

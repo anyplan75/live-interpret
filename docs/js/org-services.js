@@ -122,7 +122,7 @@ function claimConnection(holderPeerId, peerId) {
     catch (_) { return null; }
     if (parsed.host !== expected.host) return null;
     const root = expected.pathname.replace(/\/$/, "");
-    const path = parsed.pathname.replace(/\/$/, "");
+    const path = parsed.pathname.replace(/\/index\.html$/i, "").replace(/\/$/, "");
     if (path !== `${root}/lecture` && path !== `${root}/phone-booth`) return null;
     const connectionId = normalizeConnectionId(parsed.searchParams.get("c"));
     const token = String(parsed.searchParams.get("s") || "");

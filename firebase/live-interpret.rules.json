@@ -63,6 +63,10 @@
                 ".write": "!data.exists() && $iceId.matches(/^[A-Za-z0-9_-]{8,32}$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 2000",
                 ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2000"
               }
+            },
+            "joined": {
+              ".write": "newData.hasChildren(['type', 'phoneId', 'name', 'channel']) && newData.child('type').val() === 'joined' && newData.child('phoneId').isString() && newData.child('phoneId').val().matches(/^[A-Za-z0-9_-]{8,64}$/) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 40 && newData.child('channel').isNumber() && newData.child('channel').val() >= -1 && newData.child('channel').val() <= 16 && !newData.child('password').exists() && !newData.child('text').exists() && !newData.child('pin').exists()",
+              ".validate": "newData.hasChildren(['type', 'phoneId', 'name', 'channel']) && newData.child('type').val() === 'joined' && newData.child('phoneId').isString() && newData.child('phoneId').val().matches(/^[A-Za-z0-9_-]{8,64}$/) && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 40 && newData.child('channel').isNumber() && newData.child('channel').val() >= -1 && newData.child('channel').val() <= 16 && !newData.child('password').exists() && !newData.child('text').exists() && !newData.child('pin').exists()"
             }
           }
         }

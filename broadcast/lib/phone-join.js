@@ -133,7 +133,8 @@ class PhoneJoin {
       spoken: desk.spoken,
       phoneId: desk.phoneId,
       channelIndex: desk.channelIndex,
-      connected: Boolean(desk.holderPeerId),
+      connected: Boolean(desk.holderPeerId && desk.ready),
+      joining: Boolean(desk.holderPeerId && !desk.ready),
       loginError: desk.loginError || "",
       qrDataUrl: desk.qrDataUrl || "",
     }));
@@ -322,6 +323,7 @@ class PhoneJoin {
     const seat = orgServices.claimConnection(desk.holderPeerId, peerId);
     if (seat.replaced) this._retirePeer(seat.replaced);
     desk.holderPeerId = seat.holderPeerId;
+    desk.ready = false;
     const requested = cleanPhoneId(message.phoneId) || crypto.randomBytes(16).toString("hex");
     row.phoneId = requested;
     desk.name = name;
@@ -334,7 +336,10 @@ class PhoneJoin {
       joined = this.onHello({ id: requested, name, spoken, connectionId }) || {};
     } catch (err) {
       row.phoneId = "";
-      if (desk.holderPeerId === peerId) desk.holderPeerId = "";
+      if (desk.holderPeerId === peerId) {
+        desk.holderPeerId = "";
+        desk.ready = false;
+      }
       this._refuse(peerId, err.message || "연결하지 못했습니다.", desk);
       return;
     }
@@ -392,15 +397,42 @@ class PhoneJoin {
     desk.loginError = accepted.loginError || "";
     desk.showName = true;
     if (!desk.loginError) this.loginError = "";
-    this._send(peerId, {
+    const signal = {
       type: "joined",
       phoneId,
       name: desk.name,
-      channel: desk.channelIndex,
-    });
+      channel: Number.isInteger(desk.channelIndex) ? desk.channelIndex : -1,
+    };
+    this._send(peerId, signal);
     this._send(peerId, { type: "state", listening: !!accepted.listening });
+    this._publishJoined(peerId, desk, signal);
     this._notify();
     this._flushEarlyLines(peerId);
+  }
+
+  /**
+   * 휴대폰과 맥이 같이 보는 연결 완료 기록.
+   * 데이터 통로(직접 통로)의 joined 와 같은 내용입니다.
+   * 설치본에서는 이 기록이 저장된 뒤에만 연결됨으로 보입니다.
+   */
+  _publishJoined(peerId, desk, signal) {
+    const live = this.forceJoinedWrite === true || !!(process.versions && process.versions.electron);
+    if (this.forceJoinedWrite === false || !live || !this.databaseURL || !this.token) {
+      desk.ready = true;
+      return;
+    }
+    desk.ready = false;
+    const body = {
+      type: "joined",
+      phoneId: signal.phoneId,
+      name: signal.name,
+      channel: signal.channel,
+    };
+    Promise.resolve(this._put(`peers/${peerId}/joined.json`, body)).then(() => {
+      if (desk.holderPeerId !== peerId) return;
+      desk.ready = true;
+      this._notify();
+    }).catch(() => { /* 기록이 저장되기 전에는 연결됨으로 보이지 않습니다 */ });
   }
 
   /** 휴대폰이 알아들은 한 줄. 소리 조각 순서와 상관없이 그 글을 그대로 맥 화면에 올립니다. */
@@ -465,7 +497,10 @@ class PhoneJoin {
     if (!row || !row.phoneId) return;
     const phoneId = row.phoneId;
     const desk = this.desks.find((item) => item.holderPeerId === peerId);
-    if (desk) desk.holderPeerId = "";
+    if (desk) {
+      desk.holderPeerId = "";
+      desk.ready = false;
+    }
     const still = [...this.peers.values()].some((item) => item.phoneId === phoneId);
     if (!still) this.onLeave(phoneId);
     this._notify();

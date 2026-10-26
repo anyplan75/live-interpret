@@ -83,6 +83,10 @@ test("the broadcast window is hardware only and the settings window owns start",
   const entry = fs.readFileSync(path.join(root, "desktop.js"), "utf8");
   assert.match(entry, /--settings/);
   assert.match(entry, /broadcast\/main\.js/);
+  const openSettings = main.slice(main.indexOf("function openSettingsApp"), main.indexOf("function send"));
+  assert.match(openSettings, /https:\/\/anyplan75\.github\.io\/live-interpret\/desk\//);
+  assert.match(openSettings, /shell\.openExternal/);
+  assert.doesNotMatch(openSettings, /spawn\(/);
   assert.doesNotMatch(roomHtml, /id="start"|id="operator"|설교|교회/);
   assert.match(roomHtml, /id="device"/);
   assert.match(roomHtml, /id="phoneDesks"/);

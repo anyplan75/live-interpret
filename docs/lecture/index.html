@@ -74,8 +74,10 @@
       if (data.macIce && typeof data.macIce === "object") {
         Object.entries(data.macIce).forEach(([id, value]) => link.takeIce(id, value));
       }
+      if (data.joined && typeof link.takeJoined === "function") link.takeJoined(data.joined);
       return;
     }
+    if (parts[0] === "joined" && typeof link.takeJoined === "function") link.takeJoined(data);
     if (parts[0] === "answer" && data && data.sdp) link.takeAnswer(data.sdp);
     if (parts[0] === "macIce") {
       if (parts.length === 1 && data && typeof data === "object") {
@@ -142,7 +144,13 @@
     let reconnectTimer = null;
     let closed = false;
     let refused = false;
+    let joinedSeen = false;
     const pin = String(options.pin || "");
+    function reportStatus(text) {
+      if (text === "연결되었습니다.") joinedSeen = true;
+      if (joinedSeen && text === "연결하는 중입니다.") return;
+      onStatus(text);
+    }
 
     if (!audioContext) audioContext = new AudioContext();
     await audioContext.resume();
@@ -290,6 +298,13 @@
             try { await pc.addIceCandidate(ice); } catch (_) { /* 늦은 후보는 무시합니다 */ }
           }
         },
+        takeJoined(message) {
+          if (this.joined || !message || message.type !== "joined") return;
+          this.joined = true;
+          phoneId = rememberPhone(message.phoneId) || phoneId;
+          reportStatus("연결되었습니다.");
+          onJson(message);
+        },
         takeIce(iceId, value) {
           if (this.iceSeen.has(iceId) || typeof value !== "string") return;
           let body = null;
@@ -326,7 +341,7 @@
         if (options.spoken) hello.spoken = String(options.spoken);
         if (options.connectionId) hello.connectionId = String(options.connectionId);
         channel.send(JSON.stringify(hello));
-        onStatus("연결하는 중입니다.");
+        reportStatus("연결하는 중입니다.");
       };
       channel.onmessage = (event) => {
         if (typeof event.data !== "string") return;
@@ -334,8 +349,7 @@
         try { message = JSON.parse(event.data); } catch (_) { return; }
         if (!message || typeof message !== "object") return;
         if (message.type === "joined") {
-          phoneId = rememberPhone(message.phoneId) || phoneId;
-          onStatus("연결되었습니다.");
+          link.takeJoined(message);
         } else if (message.type === "error") {
           refused = true;
           onStatus(message.message || "연결하지 못했습니다.");
@@ -349,6 +363,7 @@
         try { pc.close(); } catch (_) { /* 이미 닫힌 연결은 무시합니다 */ }
         active = null;
         if (closed || refused) return;
+        joinedSeen = false;
         onStatus("연결이 끊겼습니다. 다시 연결합니다.");
         clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(startLink, 1500);
@@ -369,7 +384,7 @@
         await pc.setLocalDescription(offer);
         await putJson(`${base}/offer.json`, { type: "offer", sdp: numericCandidate(offer.sdp) });
       }).catch(() => {
-        onStatus("연결하지 못했습니다. 다시 시도해 주세요.");
+        reportStatus("연결하지 못했습니다. 다시 시도해 주세요.");
       });
     }
 
@@ -377,6 +392,7 @@
     return {
       setPaused(next) { sending = !next; },
       get serverBase() { return serverBase; },
+      get joined() { return joinedSeen; },
       sendLine,
       hold,
       stop() {
@@ -641,7 +657,7 @@
           serverBase: current.serverBase || "",
           locale: speechLocale(spoken),
         }));
-        say("마이크를 열었습니다. 송출 컴퓨터에 연결하는 중입니다.");
+        if (!current.joined) say("마이크를 열었습니다. 송출 컴퓨터에 연결하는 중입니다.");
       } catch (err) {
         endHearing();
         pendingLines = [];
