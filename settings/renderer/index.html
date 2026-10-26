@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>통역 설정</title>
+  <link rel="stylesheet" href="../../broadcast/renderer/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>통역 설정</h1>
+      <p class="hint">방송실에 연결된 마이크와 휴대폰을 보고, 시작과 언어와 이름을 바꿉니다. 장치는 고르지 않습니다.</p>
+    </div>
+    <div class="cost-head">
+      <div>남은 충전금 <span id="balanceCost" class="cost-figure">0원</span></div>
+      <div>이번 방송 차감 <span id="sessionCost" class="cost-figure">0원</span></div>
+      <div id="prepaidTime" class="cost-figure time">남은 시간 없음</div>
+    </div>
+  </header>
+  <main>
+    <section class="card" id="signInCard">
+      <h2>로그인</h2>
+      <label for="email">이메일</label>
+      <input id="email" type="email" autocomplete="username">
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <button type="button" id="signIn">로그인</button>
+      <p class="hint" id="signInMsg"></p>
+    </section>
+
+    <section id="desk" hidden>
+      <section class="card" id="broadcastActions">
+        <h2 id="accountLine">계정</h2>
+        <p class="hint" id="notice"></p>
+        <div class="row">
+          <button type="button" id="start">시작</button>
+          <button type="button" class="danger" id="stop">종료</button>
+          <button type="button" class="ghost" id="signOut">로그아웃</button>
+        </div>
+        <label><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
+      </section>
+
+      <section class="card">
+        <h2>오늘 번역할 언어</h2>
+        <div id="langs" class="langs"></div>
+      </section>
+
+      <section class="card">
+        <h2>연결된 입력</h2>
+        <div id="inputs"></div>
+        <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
+      </section>
+    </section>
+
+    <section class="card" id="operator" hidden>
+      <h2>계정 사용</h2>
+      <p class="hint">계정마다 남은 잔액, 남은 시간, 최근 사용을 보고 선불 잔액을 더합니다.</p>
+      <label><input id="testPeriod" type="checkbox"> 테스트 기간</label>
+      <p class="hint" id="testPeriodMsg"></p>
+      <div id="operatorRows"></div>
+      <label for="operatorCredit">선불 잔액 더하기</label>
+      <input id="operatorAmount" inputmode="numeric" placeholder="금액">
+      <button type="button" id="operatorCredit">선불 잔액 더하기</button>
+      <p class="hint" id="operatorMsg"></p>
+      <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

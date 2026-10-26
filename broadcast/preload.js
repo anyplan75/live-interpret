@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   setPhoneCount: (count) => ask("phone:set-count", count),
   addPhoneChannel: () => ask("phone:add-channel"),
   pickFolder: () => ask("dialog:folder"),
+  openSettings: () => ask("app:open-settings"),
   monitor: (deviceKey, channel) => ask("audio:monitor", deviceKey, channel),
   setChannel: (index) => ask("audio:channel", index),
   setTargets: (targets, spoken) => ask("targets:set", "", targets, spoken),

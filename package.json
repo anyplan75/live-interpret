@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "여러 교회의 예배를 입력 채널로 받아 실시간 통역 자막을 보내는 방송실 앱",
-  "main": "broadcast/main.js",
+  "main": "desktop.js",
   "author": "anyplan75",
   "repository": {
     "type": "git",
@@ -11,6 +11,7 @@
   },
   "scripts": {
     "start": "electron .",
+    "start:settings": "electron settings/main.js",
     "web": "node scripts/serve-web.js",
     "test": "node --test test/*.js",
     "mirror:firebase": "node scripts/export-firebase-mirror.js",
@@ -45,7 +46,9 @@
     ],
     "afterPack": "scripts/bake-desktop-env.js",
     "files": [
+      "desktop.js",
       "broadcast/**/*",
+      "settings/**/*",
       "docs/js/catalog.js",
       "docs/js/languages.js",
       "docs/js/org-services.js",
@@ -85,7 +88,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "설교 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
+        "NSMicrophoneUsageDescription": "말하는 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
         "CFBundleDisplayName": "실시간 통역시스템"
       },
       "executableName": "live-interpret"
@@ -103,7 +106,7 @@
       "entitlementsInherit": "build/entitlements.mas.inherit.plist",
       "entitlementsLoginHelper": "build/entitlements.mas.inherit.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "설교 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
+        "NSMicrophoneUsageDescription": "말하는 음성을 실시간으로 인식하기 위해 마이크 입력이 필요합니다. 음성은 저장하지 않습니다.",
         "CFBundleDisplayName": "실시간 통역시스템",
         "ElectronTeamID": "ZJYZ656BL8"
       },

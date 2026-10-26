@@ -1,6 +1,7 @@
 const { firebase, underRoot, isChurchId, isPreacherId, churchIsActive, isPlatformKey, isModelId, redactSecrets, platformKeyRel, defaultModel } = require("./catalog");
 const { netFetch } = require("./net-fetch");
 const { isSessionFolder: folderOk } = require("./paths");
+const { applyStreamEvent } = require("./room-sync");
 
 let idToken = "";
 
@@ -54,6 +55,67 @@ function update(rel, value) {
 
 function remove(rel) {
   return request("DELETE", rel);
+}
+
+/**
+ * 같은 계정 세션의 변경을 바로 받습니다.
+ * 끊기면 잠깐 쉬었다가 다시 엽니다. 반환한 함수를 부르면 멈춥니다.
+ */
+function listen(rel, onValue) {
+  let stopped = false;
+  let current = null;
+  const ac = new AbortController();
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const run = async () => {
+    while (!stopped) {
+      try {
+        const full = underRoot(rel);
+        const url = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${full}.json`);
+        const res = await netFetch(url, {
+          headers: { Accept: "text/event-stream" },
+          signal: ac.signal,
+        });
+        if (!res.ok || !res.body || !res.body.getReader) throw new Error("stream");
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let eventName = "put";
+        let dataLines = [];
+        const flush = () => {
+          if (!dataLines.length) return;
+          const raw = dataLines.join("\n");
+          dataLines = [];
+          current = applyStreamEvent(current, eventName, raw);
+          if (typeof onValue === "function") onValue(current);
+        };
+        while (!stopped) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          buf += decoder.decode(chunk.value, { stream: true });
+          let nl = buf.indexOf("\n");
+          while (nl >= 0) {
+            const line = buf.slice(0, nl).replace(/\r$/, "");
+            buf = buf.slice(nl + 1);
+            if (!line) {
+              flush();
+              eventName = "put";
+            } else if (line.startsWith("event:")) eventName = line.slice(6).trim();
+            else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+            nl = buf.indexOf("\n");
+          }
+        }
+        flush();
+      } catch (_) {
+        if (stopped) return;
+      }
+      if (!stopped) await wait(1500);
+    }
+  };
+  run();
+  return () => {
+    stopped = true;
+    ac.abort();
+  };
 }
 
 function rowsFromIndex(index) {
@@ -218,6 +280,7 @@ module.exports = {
   set,
   update,
   remove,
+  listen,
   listChurches,
   activeChurchesFromIndex,
   getPlatformKey,
