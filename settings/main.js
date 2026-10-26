@@ -9,8 +9,16 @@ const operator = require("../broadcast/lib/operator");
 const consent = require("../broadcast/lib/consent");
 const roomSync = require("../broadcast/lib/room-sync");
 const { userText } = require("../broadcast/lib/user-text");
+const { pickSessionDir } = require("./session-dir");
 
 app.setName("live-interpret-settings");
+const sharedDir = pickSessionDir({
+  argv: process.argv,
+  env: process.env,
+  appData: app.getPath("appData"),
+  home: app.getPath("home"),
+});
+if (sharedDir) app.setPath("userData", sharedDir);
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
 
 let win = null;

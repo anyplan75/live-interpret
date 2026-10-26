@@ -66,7 +66,7 @@ function paintMeters(channels) {
     bar.className = "meter";
     const fill = document.createElement("span");
     const peak = levels.get(row.index) || 0;
-    fill.style.width = `${Math.round(Math.min(1, peak) * 100)}%`;
+    fill.style.width = meterWidth(peak);
     bar.append(fill);
     wrap.append(title, bar);
     meters.append(wrap);
@@ -107,20 +107,39 @@ async function refreshPhones() {
   paintDesks(await window.broadcast.phoneJoin());
 }
 
-function widthOf(peak) {
-  return `${Math.round(Math.min(1, Number(peak) || 0) * 100)}%`;
+function meterWidth(peak) {
+  const pct = Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * 140)));
+  return `${pct}%`;
+}
+
+function ensureMicMeters(count) {
+  if (meters.querySelectorAll(".meter span").length >= count) return;
+  const rows = [];
+  for (let index = 0; index < count; index += 1) rows.push({ index, source: "device", name: "" });
+  paintMeters(rows);
+}
+
+function paintMicPeaks(peaks) {
+  if (!Array.isArray(peaks) || !peaks.length) return;
+  ensureMicMeters(peaks.length);
+  peaks.forEach((peak, index) => {
+    levels.set(index, Number(peak) || 0);
+    const fill = meters.querySelectorAll(".meter span")[index];
+    if (fill) fill.style.width = meterWidth(peak);
+  });
 }
 
 window.broadcast.onEvent((event) => {
   if (!event || typeof event !== "object") return;
+  if (event.type === "levels") paintMicPeaks(event.peaks);
   if (event.type === "level" && Number.isInteger(event.channel)) {
     levels.set(event.channel, Number(event.peak) || 0);
     const micFill = meters.querySelectorAll(".meter span")[event.channel];
-    if (micFill) micFill.style.width = widthOf(levels.get(event.channel));
+    if (micFill) micFill.style.width = meterWidth(event.peak);
     const phone = lastChannels.find((row) => row.index === event.channel && row.connectionId);
     if (phone) {
       const fill = desks.querySelector(`[data-phone-level="${phone.connectionId}"]`);
-      if (fill) fill.style.width = widthOf(levels.get(event.channel));
+      if (fill) fill.style.width = meterWidth(event.peak);
     }
   }
   if (event.type === "phones" && event.channels) {

@@ -211,13 +211,22 @@ function openSettingsApp() {
   const args = [];
   if (process.defaultApp && process.argv[1]) args.push(path.resolve(process.argv[1]));
   args.push("--settings");
-  const child = spawn(process.execPath, args, { detached: true, stdio: "ignore" });
+  const sessionDir = app.getPath("userData");
+  args.push(`--session-dir=${sessionDir}`);
+  const child = spawn(process.execPath, args, {
+    detached: true,
+    stdio: "ignore",
+    env: { ...process.env, LIVE_INTERPRET_SESSION_DIR: sessionDir },
+  });
   child.unref();
 }
 
 function send(payload) {
   if (payload && payload.type === "level" && Number.isInteger(payload.channel)) {
     peaks.set(payload.channel, Number(payload.peak) || 0);
+  }
+  if (payload && payload.type === "levels" && Array.isArray(payload.peaks)) {
+    payload.peaks.forEach((peak, index) => peaks.set(index, Number(peak) || 0));
   }
   if (win && !win.isDestroyed()) win.webContents.send("engine", payload);
   try { publishRoom(); } catch (_) { /* 상태 기록은 다음 변화에서 다시 보냅니다 */ }

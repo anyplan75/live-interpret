@@ -16,9 +16,10 @@ function say(text) {
 
 function paintMoney(status) {
   const row = status || {};
-  document.getElementById("balanceCost").textContent = row.balanceLabel || "0원";
-  document.getElementById("sessionCost").textContent = row.sessionLabel || "이번 0원";
-  document.getElementById("prepaidTime").textContent = row.remainingLabel || "남은 시간 없음";
+  const ready = row.updatedAt > 0;
+  document.getElementById("balanceCost").textContent = ready ? (row.balanceLabel || "0원") : "불러오는 중";
+  document.getElementById("sessionCost").textContent = ready ? (row.sessionLabel || "이번 0원") : "불러오는 중";
+  document.getElementById("prepaidTime").textContent = ready ? (row.remainingLabel || "남은 시간 없음") : "불러오는 중";
   notice.textContent = row.notice || "";
   document.getElementById("offline").hidden = row.online !== false && row.updatedAt > 0;
   const show = document.getElementById("showName");
@@ -125,6 +126,7 @@ async function openDesk(email) {
   signInCard.hidden = true;
   operator.hidden = true;
   desk.hidden = false;
+  document.getElementById("costHead").hidden = false;
   document.getElementById("accountLine").textContent = email || "계정";
   const catalog = await window.desk.catalog();
   languages = catalog.languages || [];
@@ -177,6 +179,7 @@ async function signOut() {
   desk.hidden = true;
   operator.hidden = true;
   signInCard.hidden = false;
+  document.getElementById("costHead").hidden = true;
 }
 
 document.getElementById("signOut").addEventListener("click", () => signOut().catch((err) => {
