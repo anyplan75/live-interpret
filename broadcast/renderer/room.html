@@ -5,18 +5,62 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>방송실</title>
   <link rel="stylesheet" href="styles.css">
+  <style>
+    /* 방송실만: 한 칸 좁은 창에 맞게 줄입니다. */
+    body.room-compact {
+      min-height: 0;
+      background: var(--bg);
+    }
+    body.room-compact header {
+      position: static;
+      padding: 12px 14px 4px;
+    }
+    body.room-compact h1 { font-size: 1.2rem; }
+    body.room-compact main {
+      display: block;
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 8px 14px 16px;
+    }
+    body.room-compact .card {
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    body.room-compact .card h2 { margin: 0 0 8px; font-size: 1rem; }
+    body.room-compact .card h3 { margin: 0 0 6px; font-size: 0.95rem; }
+    body.room-compact .hint { margin: 4px 0 8px; font-size: 0.88rem; }
+    body.room-compact .row { gap: 6px; }
+    body.room-compact button { margin-top: 8px; padding: 10px 12px; }
+    body.room-compact .phone-desk {
+      background: #121a24;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      margin-top: 8px;
+    }
+    body.room-compact .phone-desk img {
+      display: block;
+      width: 148px;
+      height: 148px;
+      margin: 8px 0;
+      padding: 6px;
+      background: #fff;
+      border-radius: 10px;
+    }
+    body.room-compact .meter { height: 12px; margin-top: 6px; }
+  </style>
 </head>
-<body>
+<body class="room-compact">
   <header class="top">
     <div>
       <h1>방송실</h1>
-      <p class="hint" id="lead">마이크와 휴대폰을 연결합니다. 시작, 언어, 충전금은 설정 앱에서 다룹니다.</p>
+      <p class="hint" id="lead">이 컴퓨터의 마이크와 휴대폰만 연결합니다. 시작·언어·충전금은 설정 사이트에서 합니다.</p>
     </div>
   </header>
   <main>
     <section class="card" id="signInCard">
       <h2>로그인</h2>
-      <p class="hint">이 방송실과 설정 앱은 같은 계정으로 로그인합니다.</p>
+      <p class="hint">설정 사이트와 같은 계정으로 로그인하세요.</p>
       <label for="email">이메일</label>
       <input id="email" type="email" autocomplete="username">
       <label for="password">비밀번호</label>
@@ -29,15 +73,16 @@
       <section class="card">
         <h2>이 컴퓨터</h2>
         <p class="hint" id="accountLine"></p>
-        <p class="hint">기록은 이 컴퓨터 폴더에만 남습니다.</p>
-        <button type="button" class="ghost" id="pickFolder">기록 폴더</button>
+        <p class="hint">기록은 이 컴퓨터 폴더에만 남습니다. 폴더를 고른 뒤에 설정 사이트에서 시작할 수 있습니다.</p>
+        <button type="button" class="ghost" id="pickFolder">기록 폴더 고르기</button>
         <p class="hint" id="folderLine">폴더를 아직 고르지 않았습니다.</p>
-        <button type="button" class="ghost" id="openSettings">설정 앱 열기</button>
+        <button type="button" class="ghost" id="openSettings">설정 사이트 열기</button>
         <button type="button" class="ghost" id="signOut">로그아웃</button>
       </section>
 
       <section class="card" id="inputCard">
         <h2>마이크</h2>
+        <p class="hint">이 컴퓨터에 꽂힌 마이크를 고르면 소리 막대가 움직입니다.</p>
         <div class="row">
           <select id="device" class="grow"></select>
           <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
@@ -47,14 +92,13 @@
 
       <section class="card" id="phoneJoinCard">
         <h2>휴대폰</h2>
-        <p class="hint">연결 번호와 QR은 송출 컴퓨터와 연결할 때 씁니다. 휴대폰에서 이름과 말하는 언어를 입력합니다.</p>
-        <label for="phoneCount">휴대폰 수</label>
-        <input id="phoneCount" type="number" min="0" max="8" step="1" value="0">
+        <p class="hint">휴대폰 대수는 설정 사이트에서 정합니다. 여기서는 연결 번호와 QR만 보여 줍니다. 휴대폰 카메라로 QR을 찍거나 연결 번호를 입력하세요.</p>
         <div id="phoneDesks"></div>
         <p class="hint" id="phoneMsg"></p>
       </section>
     </section>
   </main>
+  <script src="../lib/user-text.js"></script>
   <script src="room.js"></script>
 </body>
 </html>

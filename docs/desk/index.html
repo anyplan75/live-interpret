@@ -27,6 +27,45 @@
     .setup-gaps { margin: 8px 0 0; padding-left: 18px; }
     textarea { min-height: 72px; }
     input[type="file"] { width: auto; }
+    .meter {
+      height: 10px;
+      border-radius: 99px;
+      background: #0d1218;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .meter span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #1f8f6a, #ffd666 78%, #d64545);
+    }
+    #inputs .card { margin-top: 10px; padding: 12px; }
+    #inputs input { margin-top: 8px; }
+    details.setup {
+      background: #1a2332;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin: 14px 0;
+    }
+    details.setup > summary {
+      cursor: pointer;
+      font-weight: 800;
+      list-style: none;
+      color: #f6d56b;
+    }
+    details.setup > summary::-webkit-details-marker { display: none; }
+    details.setup > summary::after {
+      content: " 펼치기";
+      color: #9aa8b8;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    details.setup[open] > summary::after { content: " 접기"; }
+    details.setup[open] > summary { margin-bottom: 10px; }
+    .live-board { margin-top: 8px; }
+    .section-lead { margin: 0 0 8px; color: #9aa8b8; font-size: 0.95rem; }
   </style>
   <script>
     // 방송실이 넘겨 준 로그인 열쇠는 주소 조각에만 있다가, 바로 이 탭 저장소로 옮기고 주소에서는 지웁니다.
@@ -54,7 +93,7 @@
     <header class="top">
       <div>
         <h1>통역 설정</h1>
-        <p class="hint">지금 듣는 말과 교정, 시작과 언어와 이름을 여기서 봅니다. 마이크 장치와 기록 폴더 고르기는 방송실 앱에서 합니다.</p>
+        <p class="hint">위에서 방송 상태와 듣는 말을 보고, 아래 접은 칸에서 한 번 정하는 설정을 바꿉니다. 마이크와 기록 폴더는 방송실 앱에서 고릅니다.</p>
         <div id="onAir" class="pill" hidden>방송 중</div>
       </div>
       <div class="cost-head" id="costHead" hidden>
@@ -66,6 +105,7 @@
 
     <section class="card" id="signInCard">
       <h2>로그인</h2>
+      <p class="hint">방송실 앱과 같은 계정으로 로그인하세요.</p>
       <label for="email">이메일</label>
       <input id="email" type="email" autocomplete="username">
       <label for="password">비밀번호</label>
@@ -77,14 +117,13 @@
     <section id="desk" hidden>
       <section class="card">
         <h2 id="accountLine">계정</h2>
+        <p class="section-lead">방송을 켜고 끄는 곳입니다. 준비가 안 되면 시작확인이 막힙니다.</p>
         <p class="hint" id="notice"></p>
         <div class="row">
           <button type="button" id="start">시작</button>
           <button type="button" class="danger" id="stop">종료</button>
           <button type="button" class="ghost" id="signOut">로그아웃</button>
         </div>
-        <p class="hint" id="folderLine">기록 폴더는 방송실 앱에서 고릅니다.</p>
-        <ul id="setupGaps" class="setup-gaps" hidden></ul>
       </section>
 
       <section class="card" id="startConfirm" hidden>
@@ -98,18 +137,41 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card live-board">
         <h2 id="heardTitle">지금 듣는 말</h2>
-        <p class="hint">노란 칸은 지금 듣는 말입니다. 끝난 말은 아래에 쌓이고, 교정은 그 말 바로 아래에 붙습니다.</p>
+        <p class="section-lead">노란 칸은 지금 듣는 말입니다. 끝난 말은 아래에 쌓이고, 교정은 그 말 바로 아래에 붙습니다. 번역은 그 아래 칸에 나옵니다.</p>
         <div id="live" class="live">대기 중...</div>
         <div id="koStack" class="ko-stack"></div>
-        <h2>안내</h2>
-        <div id="log" class="log"></div>
+        <h2>번역</h2>
         <div id="cards" class="grid"></div>
+        <details class="setup">
+          <summary>안내 로그</summary>
+          <p class="hint">연결·시작 안내가 여기에 쌓입니다. 개발자용 영어 오류는 보이지 않습니다.</p>
+          <div id="log" class="log"></div>
+        </details>
       </section>
 
       <section class="card">
-        <h2>내용</h2>
+        <h2>연결 상태</h2>
+        <p class="section-lead">방송실 앱이 올린 마이크·휴대폰 연결입니다. 이름과 켜짐/꺼짐만 여기서 바꿉니다.</p>
+        <div id="inputs"></div>
+        <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
+      </section>
+
+      <details class="setup">
+        <summary>시작 전 준비</summary>
+        <p class="hint">기록 폴더는 방송실 앱에서 고릅니다. 폴더가 준비되기 전에는 시작할 수 없습니다.</p>
+        <p class="hint" id="folderLine">기록 폴더는 방송실 앱에서 고릅니다.</p>
+        <ul id="setupGaps" class="setup-gaps" hidden></ul>
+        <h2>진행자료</h2>
+        <p class="hint">순서지 사진을 올리면 방송실 컴퓨터에 저장하고 분석합니다.</p>
+        <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+        <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
+      </details>
+
+      <details class="setup">
+        <summary>내용과 이름</summary>
+        <p class="hint">자막에 보일 이름과 오늘 내용 종류를 정합니다. 한 번 정하면 보통 다시 건드리지 않습니다.</p>
         <label for="sessionKind">종류</label>
         <select id="sessionKind">
           <option value="">선택</option>
@@ -120,11 +182,11 @@
         <label for="preacherName">이름</label>
         <input id="preacherName" maxlength="40" placeholder="자막에 보일 이름">
         <label class="check"><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
-      </section>
+      </details>
 
-      <section class="card">
-        <h2>말투와 감도</h2>
-        <p class="hint">감도는 방송 중에도 바로 적용됩니다.</p>
+      <details class="setup">
+        <summary>말투와 감도</summary>
+        <p class="hint">감도는 방송 중에도 바로 적용됩니다. 말투·교정·용어는 필요할 때만 고칩니다.</p>
         <label for="sensitivity">인식 감도</label>
         <select id="sensitivity">
           <option value="high">감도 높음</option>
@@ -137,32 +199,20 @@
         <textarea id="fixes"></textarea>
         <label for="terms">용어</label>
         <textarea id="terms"></textarea>
-      </section>
+      </details>
 
-      <section class="card">
-        <h2>오늘 번역할 언어</h2>
+      <details class="setup">
+        <summary>오늘 번역할 언어</summary>
+        <p class="hint">체크한 언어로 번역합니다. 말하는 언어는 보통 한국어입니다.</p>
         <div id="langs" class="langs"></div>
-      </section>
+      </details>
 
-      <section class="card">
-        <h2>휴대폰 수</h2>
+      <details class="setup">
+        <summary>휴대폰 대수</summary>
+        <p class="hint">0이면 휴대폰 없이 시작합니다. 8대까지 고를 수 있습니다. 연결 번호와 QR은 방송실 화면에 나옵니다.</p>
         <label for="phoneCount">대수</label>
         <input id="phoneCount" type="number" min="0" max="8" step="1" value="0">
-        <p class="hint">0이면 휴대폰 없이 시작합니다. 8대까지 고를 수 있습니다. QR과 연결 번호는 방송실 화면에 나옵니다.</p>
-      </section>
-
-      <section class="card">
-        <h2>진행자료</h2>
-        <p class="hint">큐시트나 순서지 사진을 올리면 방송실 컴퓨터에 저장하고 분석합니다.</p>
-        <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
-        <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
-      </section>
-
-      <section class="card">
-        <h2>연결된 입력</h2>
-        <div id="inputs"></div>
-        <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
-      </section>
+      </details>
     </section>
 
     <section class="card" id="operator" hidden>

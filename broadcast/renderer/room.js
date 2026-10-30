@@ -7,8 +7,22 @@ const deviceEl = document.getElementById("device");
 const levels = new Map();
 let lastChannels = [];
 
+function personText(err) {
+  const raw = err && err.message ? err.message : err;
+  if (typeof UserText !== "undefined" && UserText.userText) return UserText.userText(raw);
+  const text = String(raw || "").trim();
+  if (!text || /firebase|permission denied|401|error:|https?:|at\s+\S/i.test(text)) {
+    return "다시 시도해 주세요.";
+  }
+  return text.slice(0, 180);
+}
+
 function say(text) {
   signInMsg.textContent = text || "";
+}
+
+function note(text) {
+  document.getElementById("phoneMsg").textContent = text || "";
 }
 
 function openStudio(email) {
@@ -76,9 +90,17 @@ function paintMeters(channels) {
 function paintDesks(info) {
   desks.innerHTML = "";
   const channels = info && Array.isArray(info.channels) ? info.channels : [];
+  if (!channels.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "설정 사이트에서 휴대폰 대수를 정하면 여기에 연결 번호와 QR이 나옵니다.";
+    desks.append(empty);
+    note(info && info.note ? info.note : "");
+    return;
+  }
   channels.forEach((desk, index) => {
     const card = document.createElement("article");
-    card.className = "card";
+    card.className = "phone-desk";
     const title = document.createElement("h3");
     title.textContent = desk.connected
       ? `휴대폰 ${index + 1} 연결됨`
@@ -90,8 +112,13 @@ function paintDesks(info) {
       const image = document.createElement("img");
       image.alt = "휴대폰이 스캔할 QR";
       image.src = desk.qrDataUrl;
-      image.width = 180;
       card.append(image);
+    }
+    if (desk.joinUrl) {
+      const url = document.createElement("p");
+      url.className = "hint";
+      url.textContent = `웹 마이크 ${desk.joinUrl}`;
+      card.append(url);
     }
     const bar = document.createElement("div");
     bar.className = "meter";
@@ -102,7 +129,7 @@ function paintDesks(info) {
     card.append(bar);
     desks.append(card);
   });
-  document.getElementById("phoneMsg").textContent = info && info.note ? info.note : "";
+  note(info && info.note ? info.note : "");
 }
 
 async function refreshPhones() {
@@ -159,7 +186,7 @@ document.getElementById("signIn").addEventListener("click", async () => {
       document.getElementById("password").value,
     );
     if (session && session.operator) {
-      say("계정 사용은 설정 앱에서 합니다.");
+      say("계정 사용은 설정 사이트에서 합니다.");
       return;
     }
     openStudio(session && session.email);
@@ -167,7 +194,7 @@ document.getElementById("signIn").addEventListener("click", async () => {
     await restoreDevice();
     await refreshPhones();
   } catch (err) {
-    say(err && err.message ? err.message : "다시 로그인해 주세요.");
+    say(personText(err));
   }
 });
 
@@ -175,7 +202,7 @@ document.getElementById("signOut").addEventListener("click", async () => {
   try {
     await window.broadcast.signOut();
   } catch (err) {
-    document.getElementById("phoneMsg").textContent = err && err.message ? err.message : "다시 시도해 주세요.";
+    note(personText(err));
     return;
   }
   studio.hidden = true;
@@ -183,13 +210,17 @@ document.getElementById("signOut").addEventListener("click", async () => {
 });
 
 document.getElementById("pickFolder").addEventListener("click", async () => {
-  const folder = await window.broadcast.pickFolder();
-  document.getElementById("folderLine").textContent = folder ? "기록 폴더를 골랐습니다." : "폴더를 아직 고르지 않았습니다.";
+  try {
+    const folder = await window.broadcast.pickFolder();
+    document.getElementById("folderLine").textContent = folder ? "기록 폴더를 골랐습니다." : "폴더를 아직 고르지 않았습니다.";
+  } catch (err) {
+    note(personText(err));
+  }
 });
 
 document.getElementById("openSettings").addEventListener("click", () => {
   window.broadcast.openSettings().catch(() => {
-    document.getElementById("phoneMsg").textContent = "설정 앱을 열지 못했습니다. 다시 시도해 주세요.";
+    note("설정 사이트를 열지 못했습니다. 다시 시도해 주세요.");
   });
 });
 
@@ -205,18 +236,7 @@ deviceEl.addEventListener("change", async () => {
     for (let index = 0; index < count; index += 1) rows.push({ index, source: "device", name: "" });
     paintMeters(rows);
   } catch (err) {
-    document.getElementById("phoneMsg").textContent = err && err.message ? err.message : "마이크를 열지 못했습니다.";
-  }
-});
-
-document.getElementById("phoneCount").addEventListener("change", async () => {
-  const count = Math.max(0, Math.min(8, Number(document.getElementById("phoneCount").value) || 0));
-  document.getElementById("phoneCount").value = String(count);
-  try {
-    await window.broadcast.setPhoneCount(count);
-    await refreshPhones();
-  } catch (err) {
-    document.getElementById("phoneMsg").textContent = err && err.message ? err.message : "휴대폰 수를 바꾸지 못했습니다.";
+    note(personText(err) || "마이크를 열지 못했습니다.");
   }
 });
 
