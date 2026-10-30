@@ -367,8 +367,13 @@
       log.innerHTML = "";
       logs.forEach((item) => {
         const line = document.createElement("p");
-        if (item.level === "error") line.className = "error";
-        line.textContent = item.body || "";
+        const body = item.body || "";
+        if (item.level === "error") {
+          line.className = "error";
+          line.textContent = personText({ message: body || "다시 시도해 주세요." });
+        } else {
+          line.textContent = body;
+        }
         log.append(line);
       });
     }

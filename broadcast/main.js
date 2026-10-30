@@ -314,10 +314,10 @@ function send(payload) {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1280,
-    height: 880,
-    minWidth: 980,
-    minHeight: 720,
+    width: 520,
+    height: 720,
+    minWidth: 420,
+    minHeight: 520,
     backgroundColor: "#0f1419",
     title: "방송실",
     webPreferences: {
@@ -341,7 +341,7 @@ function createWindow() {
     {
       label: "방송실",
       submenu: [
-        { label: "설정 앱 열기", click: () => openSettingsApp() },
+        { label: "설정 사이트 열기", click: () => openSettingsApp() },
         { type: "separator" },
         { role: "quit", label: "종료" },
       ],

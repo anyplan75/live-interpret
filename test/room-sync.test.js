@@ -101,9 +101,13 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.match(openSettings, /shell\.openExternal/);
   assert.doesNotMatch(openSettings, /spawn\(/);
   assert.doesNotMatch(roomHtml, /id="start"|id="operator"|설교|교회/);
+  assert.doesNotMatch(roomHtml, /id="phoneCount"|id="langs"|id="pickBulletin"|진행자료|감도/);
   assert.match(roomHtml, /id="device"/);
   assert.match(roomHtml, /id="phoneDesks"/);
   assert.match(roomHtml, /연결 번호/);
+  assert.match(roomHtml, /설정 사이트/);
+  assert.match(main, /width:\s*520/);
+  assert.match(main, /height:\s*720/);
   assert.match(settingsHtml, /id="start"/);
   assert.match(settingsHtml, /id="stop"/);
   assert.match(settingsHtml, /id="langs"/);
