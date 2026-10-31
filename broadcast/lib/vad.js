@@ -21,6 +21,7 @@ function trimTail(buffer, maxSamples) {
 /**
  * 에너지 기반 발화 검출.
  * 말이 끝난 뒤 silenceMs 만큼 조용하면 그 구간 PCM을 돌려줍니다.
+ * 말이 너무 길면 maxSpeechMs 에서 조용하지 않아도 한 발화를 닫습니다.
  */
 class UtteranceVad {
   constructor(opts = {}) {
@@ -29,6 +30,8 @@ class UtteranceVad {
     this.silenceLimit = Math.round((this.sampleRate * (opts.silenceMs == null ? 500 : opts.silenceMs)) / 1000);
     this.preRollSamples = Math.round((this.sampleRate * (opts.preRollMs == null ? 300 : opts.preRollMs)) / 1000);
     this.minSpeechSamples = Math.round((this.sampleRate * (opts.minSpeechMs == null ? 250 : opts.minSpeechMs)) / 1000);
+    const maxMs = opts.maxSpeechMs == null ? 12000 : opts.maxSpeechMs;
+    this.maxSpeechSamples = maxMs > 0 ? Math.round((this.sampleRate * maxMs) / 1000) : 0;
     this.reset();
   }
 
@@ -81,7 +84,8 @@ class UtteranceVad {
       this.silenceRun += samples;
     }
 
-    if (this.silenceRun >= this.silenceLimit) {
+    const overLong = this.maxSpeechSamples > 0 && this.speechSamples >= this.maxSpeechSamples;
+    if (this.silenceRun >= this.silenceLimit || overLong) {
       const enough = this.speechSamples >= this.minSpeechSamples;
       const utterance = enough ? concat(this.chunks) : null;
       this.reset();

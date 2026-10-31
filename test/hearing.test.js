@@ -49,16 +49,20 @@ test("the utterance in the yellow box moves down unchanged as a heard line", asy
   assert.deepEqual(koLines(events).map((line) => [line.raw, line.heardId]), [[SPOKEN, 1], ["그래서 저는", 2]]);
 });
 
-test("several sentences stay in the yellow box until the translation cap", () => {
+test("finished sentences leave the yellow box for correction while speech continues", async () => {
   const live = "오늘 친구를 만났어요. 그리고 밥을 먹었어요. 날씨가 참 좋았어요. 내일은 또 만나요.";
   assert.ok(live.length < sentence.TRANSLATE_MAX);
   assert.ok(live.split(".").length > 3);
   const { pipeline, events } = recorder();
   pipeline.onInterim(live);
   pipeline.onInterim(`${live} 그래서 기대돼요.`);
-  assert.equal(events.filter((event) => event.type === "live").at(-1).text, `${live} 그래서 기대돼요.`);
-  assert.equal(heardOf(events).length, 0);
-  assert.equal(koLines(events).length, 0);
+  await pipeline.chain;
+  assert.ok(heardOf(events).length >= 1);
+  assert.ok(koLines(events).length >= 1);
+  assert.ok(koLines(events).some((line) => String(line.raw || "").includes("만났어요")));
+  const yellow = String(events.filter((event) => event.type === "live").at(-1).text || "");
+  assert.ok(!yellow.includes("만났어요"));
+  assert.ok(yellow === "" || yellow.includes("기대") || yellow.includes("그래서"));
 });
 
 test("a long stretch with no sentence ending is translated once it passes the cap", async () => {
@@ -87,14 +91,12 @@ test("a long stretch with no sentence ending is translated once it passes the ca
   let several = "";
   while (several.length <= sentence.TRANSLATE_MAX) several += unit;
   again.pipeline.onInterim(several);
+  await again.pipeline.chain;
   const chunk = heardOf(again.events)[0];
   assert.ok(chunk);
-  assert.ok((chunk.text.match(/\./g) || []).length >= 2, "more than one sentence stays together");
-  assert.ok(chunk.text.endsWith("."));
-  assert.notEqual(chunk.text.length, sentence.TRANSLATE_MAX);
-  assert.ok(Math.abs(chunk.text.length - sentence.TRANSLATE_MAX) <= sentence.TRANSLATE_WINDOW);
-  assert.ok(again.pipeline.interim.length > 0);
-  assert.ok(again.pipeline.interim.length <= sentence.TRANSLATE_MAX);
+  assert.ok(chunk.text.includes("만났어요"));
+  assert.ok(chunk.text.endsWith(".") || chunk.text.endsWith("요"));
+  assert.ok(heardOf(again.events).length >= 2, "each finished sentence can move to correction");
   const clause = recorder(async (text) => ({ ko: `${text} (교정)`, en: `EN ${text}` }));
   const spoken = `${"그냥 ".repeat(46)}말은 했는데 ${"그냥 ".repeat(25)}`;
   clause.pipeline.onInterim(spoken);
@@ -275,6 +277,22 @@ test("speech session keeps deltas when the transcript is empty and ignores a lat
   await third;
   assert.deepEqual(finals, ["주님께 감사드립니다", "파일로 받은 말", "셋째 말"]);
   assert.equal(sent.filter((event) => event.type === "input_audio_buffer.commit").length, 3);
+});
+
+test("a finished Korean ending moves to correction while sound keeps arriving", async () => {
+  const { pipeline, events } = recorder();
+  pipeline.onInterim("오늘 하나님은 우리를 사랑하십니다");
+  await pipeline.chain;
+  assert.ok(heardOf(events).length >= 1);
+  assert.ok(koLines(events).some((line) => String(line.raw || "").includes("사랑하십니다")));
+  pipeline.onInterim("오늘 하나님은 우리를 사랑하십니다 그리고 우리는 감사드립니다");
+  await pipeline.chain;
+  assert.ok(!String(pipeline.interim || "").includes("사랑하십니다"));
+  assert.match(String(pipeline.interim || ""), /감사드립니다/);
+  pipeline.lastSpeechTime = Date.now() - 5000;
+  pipeline.tick();
+  await pipeline.chain;
+  assert.ok(koLines(events).length >= 2);
 });
 
 test("a mac mic waits for a quiet gap before it cuts a line", async () => {

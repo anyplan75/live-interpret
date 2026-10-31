@@ -5,11 +5,15 @@
 const ENDINGS =
   "축원합니다|축원하옵나이다|하옵나이다|하겠습니다|하셨습니다|하십니다|바랍니다|할지어다|하시옵소서|하여\\s*주옵소서|주옵소서|하옵소서|주시옵소서|나이다|이옵니다|아닙니까|습니까|합니까|인가요|은가요|는가요|잖아요|아닙니다|것입니다|겁니다|입니다|습니다|합니다|합시다|하십시다|십시오|세요|시죠|아멘|네요|어요|아요|예요|대요|지요|군요|죠|느냐|도다|입니까";
 
-const ENDING = new RegExp(`(${ENDINGS})(\\s|[.,?!]|$)`, "g");
+function endingRegex() {
+  return new RegExp(`(${ENDINGS})(\\s|[.,?!]|$)`, "g");
+}
 
 const ENDS_SENTENCE = new RegExp(`(?:${ENDINGS})$`);
 
-const CLAUSE = /(는데|지만|면서|니까|어서|아서|으니|도록|하며)(\s)/g;
+function clauseRegex() {
+  return new RegExp("(는데|지만|면서|니까|어서|아서|으니|도록|하며)(\\s)", "g");
+}
 
 const HANGING_TAIL =
   /(이|가|을|를|은|는|의|에|로|와|과|도|만|께|께서|에서|으로|라고|으며|면서|는데|지만|으니|아서|어서|하며|하고|며|고|제|내|그|저|또|및|좀|더|참|정말|우리|나의|그의|주님|하나님|예수|성령)$/;
@@ -61,20 +65,20 @@ function isNoise(text) {
 }
 
 function findLastEnding(text, minIndex) {
-  ENDING.lastIndex = 0;
+  const ending = endingRegex();
   let best = null;
   let execResult;
-  while ((execResult = ENDING.exec(text)) !== null) {
+  while ((execResult = ending.exec(text)) !== null) {
     if (execResult.index >= minIndex) best = execResult;
   }
   return best;
 }
 
 function findClauseCut(text) {
-  CLAUSE.lastIndex = 0;
+  const clause = clauseRegex();
   let best = null;
   let execResult;
-  while ((execResult = CLAUSE.exec(text)) !== null) {
+  while ((execResult = clause.exec(text)) !== null) {
     if (execResult.index >= 40 && execResult.index <= text.length - 24) best = execResult;
   }
   return best;
@@ -105,9 +109,9 @@ function findCutMatch(text) {
   if (text.length < 12) return punctuationCut(text, false);
   const minIdx = 10;
   if (text.length < 100) {
-    ENDING.lastIndex = 0;
+    const ending = endingRegex();
     let execResult;
-    while ((execResult = ENDING.exec(text)) !== null) {
+    while ((execResult = ending.exec(text)) !== null) {
       if (execResult.index >= minIdx) {
         const cutAt = execResult.index + execResult[0].length;
         const piece = text.slice(0, cutAt).trim();
@@ -196,8 +200,8 @@ function translateBreak(text, maxLen = TRANSLATE_MAX) {
     if (!t.slice(0, match.index).trim()) continue;
     if (nearTarget(end, maxLen)) sentences.push(end);
   }
-  ENDING.lastIndex = 0;
-  while ((match = ENDING.exec(t)) !== null) {
+  const ending = endingRegex();
+  while ((match = ending.exec(t)) !== null) {
     if (match.index < 10) continue;
     const end = match.index + match[0].length;
     const piece = t.slice(0, end).trim();
@@ -207,8 +211,8 @@ function translateBreak(text, maxLen = TRANSLATE_MAX) {
   const sentenceAt = closestTo(sentences, maxLen);
   if (sentenceAt) return sentenceAt;
 
-  CLAUSE.lastIndex = 0;
-  while ((match = CLAUSE.exec(t)) !== null) {
+  const clause = clauseRegex();
+  while ((match = clause.exec(t)) !== null) {
     const end = match.index + match[0].length;
     if (!t.slice(0, match.index).trim()) continue;
     if (nearTarget(end, maxLen)) clauses.push(end);
@@ -245,11 +249,44 @@ function canSilenceFlush(text, silenceMs, cfg) {
   return true;
 }
 
+/**
+ * 말하는 도중에 교정으로 넘길 끊는 위치입니다.
+ * 종결어미·마침표가 보이면 침묵을 기다리지 않고 그 앞에서 끊습니다.
+ * 분명한 끝이 없고 글만 길면 번역 한도와 같은 근처 경계를 씁니다.
+ * 0.8초마다 자르지 않습니다.
+ */
+function liveBreak(text) {
+  const t = String(text || "");
+  if (t.trim().length < 8) return 0;
+  const ending = endingRegex();
+  let execResult;
+  while ((execResult = ending.exec(t)) !== null) {
+    if (execResult.index < 4) continue;
+    const at = execResult.index + execResult[0].length;
+    const piece = t.slice(0, at).trim();
+    const rest = t.slice(at).trim();
+    if (!piece || isNoise(piece) || isHangingTail(piece)) continue;
+    if (!(endsSentence(piece) || /[.?!。！？…]/.test(piece.slice(-1)))) continue;
+    // 문장 부호로 끝났거나, 뒤에 낱말 하나만 짧게 남은 게 아니면 끊습니다.
+    const punctEnded = /[.?!。！？…]/.test(piece.slice(-1));
+    if (!punctEnded && rest && !/\s/.test(rest) && rest.length < 12 && t.length < 140) continue;
+    return at;
+  }
+  const punct = punctuationCut(t, false);
+  if (punct) {
+    const at = punct.index + punct[0].length;
+    const piece = t.slice(0, at).trim();
+    if (piece && !isNoise(piece) && !isHangingTail(piece)) return at;
+  }
+  return translateBreak(t);
+}
+
 module.exports = {
   findCutMatch,
   isHangingTail,
   isNoise,
   canSilenceFlush,
+  liveBreak,
   endsSentence,
   stripTrailing,
   lastWord,

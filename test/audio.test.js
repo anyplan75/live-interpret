@@ -74,6 +74,22 @@ test("vad returns one utterance after speech and silence", () => {
   const hidden = Buffer.alloc(700 * 2);
   hidden.writeInt16LE(80, 200);
   assert.equal(still.push(hidden).speaking, false);
+
+  const capped = new UtteranceVad({
+    sampleRate: rate,
+    silenceMs: 5000,
+    preRollMs: 10,
+    minSpeechMs: 20,
+    maxSpeechMs: 200,
+    threshold: 0.01,
+  });
+  let longEnd = null;
+  for (let i = 0; i < 6; i += 1) {
+    longEnd = capped.push(frame(50, 0.4));
+    if (longEnd.finished) break;
+  }
+  assert.ok(longEnd && longEnd.finished, "max speech length closes an utterance without silence");
+  assert.ok(longEnd.utterance && longEnd.utterance.length > 0);
 });
 
 test("a missing saved input uses the default mic and hides RtApiCore disconnect text", () => {

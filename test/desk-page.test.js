@@ -74,6 +74,8 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /chip on|className = .*chip/);
   assert.match(client, /paintPhoneCount/);
   assert.match(client, /시작확인/);
+  assert.match(client, /이 이름을 자막에 표시/);
+  assert.match(client, /showName:\s*showBox\.checked|showName: showBox\.checked/);
   assert.doesNotMatch(page, /id="device"|설교|교회/);
   assert.doesNotMatch(client, /console\.(log|info|debug)/);
   assert.doesNotMatch(client, /location\.hash/);
