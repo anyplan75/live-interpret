@@ -9,7 +9,7 @@ const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
 test("the web settings page starts a broadcast without picking a device", () => {
   const page = read("docs/desk/index.html");
   const client = read("docs/js/desk-client.js");
-  assert.match(page, /<h1>통역 설정<\/h1>/);
+  assert.match(page, /통역 설정/);
   assert.match(page, /id="start"/);
   assert.match(page, /id="stop"/);
   assert.match(page, /id="langs"/);
@@ -34,6 +34,10 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(page, /불러오는 중/);
   assert.match(page, /liDeskSession/);
   assert.match(page, /history\.replaceState/);
+  assert.match(page, /width:\s*fit-content/);
+  assert.match(page, /class="chips"/);
+  assert.match(page, /class="monitor"/);
+  assert.doesNotMatch(page, /<select\b/);
   const liveAt = page.indexOf('id="live"');
   const inputsAt = page.indexOf('id="inputs"');
   const langsAt = page.indexOf('id="langs"');
@@ -48,6 +52,8 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /confirmStart/);
   assert.match(client, /sessionStorage/);
   assert.match(client, /personText/);
+  assert.match(client, /chip on|className = .*chip/);
+  assert.match(client, /paintPhoneCount/);
   assert.doesNotMatch(page, /id="device"|설교|교회/);
   assert.doesNotMatch(client, /console\.(log|info|debug)/);
   assert.doesNotMatch(client, /location\.hash/);
