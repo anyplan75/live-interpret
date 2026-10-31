@@ -314,10 +314,10 @@ function send(payload) {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 520,
-    height: 720,
-    minWidth: 420,
-    minHeight: 520,
+    width: 480,
+    height: 640,
+    minWidth: 400,
+    minHeight: 480,
     backgroundColor: "#0f1419",
     title: "방송실",
     webPreferences: {

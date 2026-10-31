@@ -229,26 +229,58 @@
   function paintLanguages() {
     const box = document.getElementById("langs");
     const nextKey = `${spoken}|${[...chosen].sort().join(",")}|${languages.map((lang) => lang.code).join(",")}`;
-    if (nextKey === languageKey && box.childElementCount) return;
+    if (nextKey === languageKey && box.childElementCount) {
+      box.querySelectorAll("button.chip").forEach((btn) => {
+        btn.classList.toggle("on", chosen.has(btn.dataset.code));
+      });
+      return;
+    }
     languageKey = nextKey;
     box.innerHTML = "";
     languages.filter((lang) => lang.code !== spoken).forEach((lang) => {
-      const label = document.createElement("label");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = chosen.has(lang.code);
-      input.addEventListener("change", async () => {
-        if (input.checked) chosen.add(lang.code);
-        else chosen.delete(lang.code);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = chosen.has(lang.code) ? "chip on" : "chip";
+      btn.dataset.code = lang.code;
+      btn.textContent = `${lang.flag || ""} ${lang.name}`.trim();
+      btn.addEventListener("click", async () => {
+        if (chosen.has(lang.code)) chosen.delete(lang.code);
+        else chosen.add(lang.code);
+        btn.classList.toggle("on", chosen.has(lang.code));
         try {
           await command({ spoken, targets: [...chosen] });
         } catch (err) {
           notice.textContent = personText(err);
         }
       });
-      label.append(input, document.createTextNode(` ${lang.flag || ""} ${lang.name}`));
-      box.append(label);
+      box.append(btn);
     });
+  }
+
+  function markChoice(box, attr, value) {
+    if (!box) return;
+    box.querySelectorAll("button").forEach((btn) => {
+      btn.classList.toggle("on", btn.getAttribute(attr) === value);
+    });
+  }
+
+  function paintPhoneCount(count) {
+    const box = document.getElementById("phoneCount");
+    if (!box) return;
+    if (!box.childElementCount) {
+      for (let n = 0; n <= 8; n += 1) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.dataset.count = String(n);
+        btn.textContent = String(n);
+        btn.addEventListener("click", () => {
+          markChoice(box, "data-count", String(n));
+          sendPatch({ phoneCount: n });
+        });
+        box.append(btn);
+      }
+    }
+    markChoice(box, "data-count", String(count || 0));
   }
 
   let inputKey = "";
@@ -258,7 +290,14 @@
   let gapKey = "";
 
   function fieldIdle(id) {
-    return document.activeElement !== document.getElementById(id);
+    const el = document.getElementById(id);
+    return !el || document.activeElement !== el;
+  }
+
+  function choiceValue(box, attr, fallback) {
+    const on = box && box.querySelector("button.on");
+    if (!on) return fallback;
+    return on.getAttribute(attr);
   }
 
   function langLabel(code) {
@@ -273,18 +312,22 @@
     onAir.hidden = !running;
     document.getElementById("start").disabled = running;
     document.getElementById("stop").disabled = !running;
-    const kind = document.getElementById("sessionKind");
-    if (fieldIdle("sessionKind") && kind.value !== (row.sessionKind || "")) kind.value = row.sessionKind || "";
+    const focus = document.activeElement;
+    if (!focus || !focus.closest || !focus.closest("#sessionKind")) {
+      markChoice(document.getElementById("sessionKind"), "data-kind", row.sessionKind || "");
+    }
     const name = document.getElementById("preacherName");
     if (fieldIdle("preacherName")) name.value = row.preacherName || "";
-    const sense = document.getElementById("sensitivity");
-    if (fieldIdle("sensitivity")) sense.value = row.sensitivity || "normal";
+    if (!focus || !focus.closest || !focus.closest("#sensitivity")) {
+      markChoice(document.getElementById("sensitivity"), "data-sense", row.sensitivity || "normal");
+    }
     const speech = row.speech || {};
     if (fieldIdle("traits")) document.getElementById("traits").value = speech.traits || "";
     if (fieldIdle("fixes")) document.getElementById("fixes").value = speech.fixes || "";
     if (fieldIdle("terms")) document.getElementById("terms").value = speech.terms || "";
-    const phones = document.getElementById("phoneCount");
-    if (fieldIdle("phoneCount")) phones.value = String(row.phoneCount || 0);
+    if (!focus || !focus.closest || !focus.closest("#phoneCount")) {
+      paintPhoneCount(row.phoneCount || 0);
+    }
     const folder = document.getElementById("folderLine");
     folder.textContent = row.folderReady
       ? `기록 폴더가 준비되었습니다.${row.folderLabel ? ` ${row.folderLabel}` : ""}`
@@ -400,10 +443,23 @@
     }
     rows.forEach((row) => {
       const card = document.createElement("article");
-      card.className = "card";
+      card.className = "tile";
+      const head = document.createElement("div");
+      head.className = "tile-head";
       const title = document.createElement("p");
-      const state = row.connected ? "연결됨" : (row.joining ? "연결중" : "아직 연결되지 않았습니다");
-      title.textContent = `${row.title} ${state}${row.code ? ` · 연결 번호 ${row.code}` : ""}`;
+      title.className = "tile-title";
+      const state = row.connected ? "연결됨" : (row.joining ? "연결중" : "미연결");
+      const stateClass = row.connected ? "state-on" : (row.joining ? "state-wait" : "state-off");
+      const stateEl = document.createElement("span");
+      stateEl.className = stateClass;
+      stateEl.textContent = state;
+      title.append(
+        document.createTextNode(`${row.title}${row.name ? ` · ${row.name}` : ""}${row.code ? ` · ${row.code}` : ""} · `),
+        stateEl,
+      );
+      head.append(title);
+      const controls = document.createElement("div");
+      controls.className = "tile-controls";
       const name = document.createElement("input");
       name.value = row.name || "";
       name.maxLength = 40;
@@ -412,6 +468,7 @@
       live.type = "button";
       live.textContent = row.live === false ? "꺼짐" : "켜짐";
       live.className = row.live === false ? "ghost" : "";
+      controls.append(name, live);
       const bar = document.createElement("div");
       bar.className = "meter";
       const fill = document.createElement("span");
@@ -431,7 +488,7 @@
       };
       name.addEventListener("change", () => save({ name: name.value }));
       live.addEventListener("click", () => save({ live: row.live === false }));
-      card.append(title, name, live, bar);
+      card.append(head, controls, bar);
       inputs.append(card);
     });
   }
@@ -592,7 +649,7 @@
 
   function speechPatch() {
     return {
-      sensitivity: document.getElementById("sensitivity").value,
+      sensitivity: choiceValue(document.getElementById("sensitivity"), "data-sense", "normal"),
       speech: {
         traits: document.getElementById("traits").value,
         fixes: document.getElementById("fixes").value,
@@ -622,7 +679,7 @@
       running: true,
       spoken,
       targets: [...chosen],
-      sessionKind: document.getElementById("sessionKind").value,
+      sessionKind: choiceValue(document.getElementById("sessionKind"), "data-kind", ""),
       preacherName: document.getElementById("preacherName").value,
       ...speechPatch(),
     });
@@ -640,15 +697,21 @@
     sendPatch({ showName: event.target.checked });
   });
 
-  document.getElementById("sessionKind").addEventListener("change", (event) => {
-    sendPatch({ sessionKind: event.target.value });
+  document.getElementById("sessionKind").addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-kind]");
+    if (!btn) return;
+    markChoice(document.getElementById("sessionKind"), "data-kind", btn.getAttribute("data-kind") || "");
+    sendPatch({ sessionKind: btn.getAttribute("data-kind") || "" });
   });
 
   document.getElementById("preacherName").addEventListener("change", (event) => {
     sendPatch({ preacherName: event.target.value });
   });
 
-  document.getElementById("sensitivity").addEventListener("change", () => {
+  document.getElementById("sensitivity").addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-sense]");
+    if (!btn) return;
+    markChoice(document.getElementById("sensitivity"), "data-sense", btn.getAttribute("data-sense") || "normal");
     sendPatch(speechPatch());
   });
 
@@ -656,11 +719,7 @@
     document.getElementById(id).addEventListener("change", () => sendPatch(speechPatch()));
   });
 
-  document.getElementById("phoneCount").addEventListener("change", (event) => {
-    const count = Math.max(0, Math.min(8, Math.round(Number(event.target.value) || 0)));
-    event.target.value = String(count);
-    sendPatch({ phoneCount: count });
-  });
+  paintPhoneCount(0);
 
   document.getElementById("pickBulletin").addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];

@@ -106,8 +106,8 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.match(roomHtml, /id="phoneDesks"/);
   assert.match(roomHtml, /연결 번호/);
   assert.match(roomHtml, /설정 사이트/);
-  assert.match(main, /width:\s*520/);
-  assert.match(main, /height:\s*720/);
+  assert.match(main, /width:\s*480/);
+  assert.match(main, /height:\s*640/);
   assert.match(settingsHtml, /id="start"/);
   assert.match(settingsHtml, /id="stop"/);
   assert.match(settingsHtml, /id="langs"/);
