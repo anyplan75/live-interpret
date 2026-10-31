@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
   <title>통역 설정</title>
-  <link rel="stylesheet" href="../css/phone-app.css">
+  <!-- desk-build 20261031p2: placeLabel 가드·org-services·캐시 무효 -->
+  <link rel="stylesheet" href="../css/phone-app.css?v=20261031p2">
   <style>
     /* desk: 위는 조작·금액, 가운데는 모니터, 연결은 넓게 언어 위 */
     body { padding: 16px 16px 40px; }
@@ -377,6 +380,30 @@
         }
       } catch (err) { /* 열쇠를 못 읽으면 로그인 칸을 보여 줍니다 */ }
       try { history.replaceState(null, "", location.pathname + location.search); } catch (err) { /* 주소 정리는 다음 열기에서 다시 합니다 */ }
+      // org-services.js 가 늦거나 옛 캐시라도 placeLabel 접근이 깨지지 않게 먼저 자리를 만듭니다.
+      var root = typeof globalThis !== "undefined" ? globalThis : window;
+      root.LI = root.LI || {};
+      if (!root.LI.orgServices) {
+        root.LI.orgServices = {
+          placeLabel: function (orgOrName, kind) {
+            try {
+              if (orgOrName == null) return "";
+              if (typeof orgOrName === "object") {
+                var objectName = String(orgOrName.name || "").replace(/\s+/g, " ").trim();
+                if (!objectName) return "";
+                var objectKind = orgOrName.kind || kind;
+                return (objectKind === "company" ? "기업" : "계정") + " " + objectName;
+              }
+              var plain = String(orgOrName || "").replace(/\s+/g, " ").trim();
+              if (!plain) return "";
+              return kind ? ((kind === "company" ? "기업" : "계정") + " " + plain) : plain;
+            } catch (err) { return ""; }
+          },
+          cleanPlaceName: function (value) {
+            return String(value || "").replace(/\s+/g, " ").trim();
+          },
+        };
+      }
     })();
   </script>
 </head>
@@ -514,12 +541,12 @@
       <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
     </section>
   </main>
-  <script src="../js/phone-firebase-env.js"></script>
-  <script src="../js/languages.js"></script>
-  <script src="../js/catalog.js"></script>
-  <script src="../js/cost.js"></script>
-  <script src="../js/org-services.js"></script>
-  <script src="../js/room-sync.js"></script>
-  <script src="../js/desk-client.js"></script>
+  <script src="../js/phone-firebase-env.js?v=20261031p2"></script>
+  <script src="../js/languages.js?v=20261031p2"></script>
+  <script src="../js/catalog.js?v=20261031p2"></script>
+  <script src="../js/cost.js?v=20261031p2"></script>
+  <script src="../js/org-services.js?v=20261031p2"></script>
+  <script src="../js/room-sync.js?v=20261031p2"></script>
+  <script src="../js/desk-client.js?v=20261031p2"></script>
 </body>
 </html>

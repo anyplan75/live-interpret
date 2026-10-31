@@ -286,7 +286,7 @@ function clearHearing() {
 }
 
 function openSettingsApp() {
-  const page = "https://anyplan75.github.io/live-interpret/desk/";
+  const page = "https://anyplan75.github.io/live-interpret/desk/?v=20261031p2";
   const session = secrets.readSession(userDir());
   const refresh = session && typeof session.refreshToken === "string" ? session.refreshToken : "";
   let target = page;

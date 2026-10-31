@@ -77,7 +77,10 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /이 이름을 자막에 표시/);
   assert.match(client, /showName:\s*showBox\.checked|showName: showBox\.checked/);
   assert.match(page, /id="placeLine"/);
-  assert.match(page, /org-services\.js/);
+  assert.match(page, /org-services\.js\?v=/);
+  assert.match(page, /desk-client\.js\?v=/);
+  assert.match(page, /desk-build/);
+  assert.match(page, /LI\.orgServices/);
   assert.ok(page.indexOf("org-services.js") < page.indexOf("desk-client.js"));
   assert.match(client, /placeLine|placeLabel|cleanPlaceName/);
   assert.match(client, /LI && LI\.orgServices|services\.placeLabel/);
