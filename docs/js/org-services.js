@@ -48,7 +48,8 @@
 
   /** 화면 위쪽에 계정·장소 이름을 보여 줄 때 씁니다. */
   function placeLabel(orgOrName, kind) {
-    if (orgOrName && typeof orgOrName === "object") {
+    if (orgOrName == null) return "";
+    if (typeof orgOrName === "object") {
       const name = cleanPlaceName(orgOrName.name);
       if (!name) return "";
       return `${kindLabel(orgOrName.kind || kind)} ${name}`;

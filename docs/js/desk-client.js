@@ -174,9 +174,18 @@
     churchId = link.churchId;
     const name = await dbGet(`churches/${link.churchId}/name`);
     const kind = await dbGet(`churches/${link.churchId}/orgKind`);
-    placeName = LI.orgServices.placeLabel(
-      { name: typeof name === "string" ? name : "", kind: kind === "company" ? "company" : "church" },
-    ) || LI.orgServices.cleanPlaceName(name) || "계정";
+    const rawName = typeof name === "string" ? name : "";
+    const services = LI && LI.orgServices;
+    const labeled = services && typeof services.placeLabel === "function"
+      ? services.placeLabel({
+        name: rawName,
+        kind: kind === "company" ? "company" : "church",
+      })
+      : "";
+    const cleaned = services && typeof services.cleanPlaceName === "function"
+      ? services.cleanPlaceName(name)
+      : rawName.trim();
+    placeName = labeled || cleaned || "계정";
     return churchId;
   }
 
