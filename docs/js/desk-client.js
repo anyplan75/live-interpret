@@ -14,6 +14,9 @@
   const inputs = document.getElementById("inputs");
   let languages = [];
   let chosen = new Set();
+  let watched = new Set();
+  let prevChosen = new Set();
+  let startArmed = false;
   let spoken = "ko";
   let latest = null;
   let operatorAccounts = [];
@@ -225,6 +228,64 @@
   }
 
   let languageKey = "";
+  let watchKey = "";
+
+  function syncWatchedToChosen() {
+    const next = new Set();
+    chosen.forEach((code) => {
+      if (watched.has(code) || !prevChosen.has(code) || watched.size === 0) next.add(code);
+    });
+    if (!next.size) chosen.forEach((code) => next.add(code));
+    watched = next;
+    prevChosen = new Set(chosen);
+  }
+
+  function paintWatchLangs() {
+    const box = document.getElementById("watchLangs");
+    if (!box) return;
+    const codes = [...chosen].sort();
+    const nextKey = codes.join(",");
+    if (nextKey === watchKey && box.childElementCount) {
+      box.querySelectorAll("button.chip").forEach((btn) => {
+        btn.classList.toggle("on", watched.has(btn.dataset.code));
+        btn.hidden = !chosen.has(btn.dataset.code);
+      });
+      return;
+    }
+    watchKey = nextKey;
+    box.innerHTML = "";
+    if (!codes.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "아래에 번역할 언어를 먼저 고르세요.";
+      box.append(empty);
+      return;
+    }
+    codes.forEach((code) => {
+      const lang = languages.find((row) => row.code === code);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = watched.has(code) ? "chip on" : "chip";
+      btn.dataset.code = code;
+      btn.textContent = lang ? `${lang.flag || ""} ${lang.name}`.trim() : code;
+      btn.addEventListener("click", () => {
+        if (watched.has(code) && watched.size <= 1) return;
+        if (watched.has(code)) watched.delete(code);
+        else watched.add(code);
+        btn.classList.toggle("on", watched.has(code));
+        applyWatchFilter();
+      });
+      box.append(btn);
+    });
+  }
+
+  function applyWatchFilter() {
+    const box = document.getElementById("cards");
+    if (!box) return;
+    box.querySelectorAll(".card[data-lang]").forEach((card) => {
+      card.hidden = !watched.has(card.dataset.lang);
+    });
+  }
 
   function paintLanguages() {
     const box = document.getElementById("langs");
@@ -233,6 +294,8 @@
       box.querySelectorAll("button.chip").forEach((btn) => {
         btn.classList.toggle("on", chosen.has(btn.dataset.code));
       });
+      syncWatchedToChosen();
+      paintWatchLangs();
       return;
     }
     languageKey = nextKey;
@@ -247,6 +310,9 @@
         if (chosen.has(lang.code)) chosen.delete(lang.code);
         else chosen.add(lang.code);
         btn.classList.toggle("on", chosen.has(lang.code));
+        syncWatchedToChosen();
+        paintWatchLangs();
+        applyWatchFilter();
         try {
           await command({ spoken, targets: [...chosen] });
         } catch (err) {
@@ -255,6 +321,46 @@
       });
       box.append(btn);
     });
+    syncWatchedToChosen();
+    paintWatchLangs();
+  }
+
+  function paintStartButton(running, gaps) {
+    const start = document.getElementById("start");
+    const hint = document.getElementById("confirmHint");
+    if (!start) return;
+    if (running) {
+      startArmed = false;
+      start.textContent = "시작";
+      start.classList.remove("confirm-ready");
+      start.disabled = true;
+      start.setAttribute("aria-label", "시작");
+      if (hint) hint.hidden = true;
+      return;
+    }
+    if (startArmed) {
+      // 같은 단추 글자만 「시작확인」으로 바꿉니다. 다시 누르면 방송이 시작됩니다.
+      start.textContent = "시작확인";
+      start.classList.add("confirm-ready");
+      start.setAttribute("aria-label", "confirmStart");
+      start.disabled = Array.isArray(gaps) && gaps.length > 0;
+      if (hint) {
+        const row = latest || {};
+        const spokenName = langLabel(row.spoken || spoken);
+        const targets = (row.targets || [...chosen]).map(langLabel).join(", ") || "번역 없음";
+        const blocked = Array.isArray(gaps) && gaps.length > 0;
+        hint.hidden = false;
+        hint.textContent = blocked
+          ? `아직 준비되지 않았습니다: ${(gaps || []).join(", ")}. 입력 장치와 기록 폴더는 방송실 앱에서 맞춥니다.`
+          : `말하는 언어 ${spokenName}. 번역 ${targets}. 남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}. 다시 누르면 시작합니다.`;
+      }
+    } else {
+      start.textContent = "시작";
+      start.classList.remove("confirm-ready");
+      start.setAttribute("aria-label", "시작");
+      start.disabled = false;
+      if (hint) hint.hidden = true;
+    }
   }
 
   function markChoice(box, attr, value) {
@@ -310,7 +416,6 @@
     const onAir = document.getElementById("onAir");
     const running = row.running === true;
     onAir.hidden = !running;
-    document.getElementById("start").disabled = running;
     document.getElementById("stop").disabled = !running;
     const focus = document.activeElement;
     if (!focus || !focus.closest || !focus.closest("#sessionKind")) {
@@ -345,13 +450,8 @@
       });
       list.hidden = gaps.length === 0;
     }
-    document.getElementById("confirmStart").disabled = gaps.length > 0;
     document.getElementById("bulletinMsg").textContent = row.bulletinLabel || "아직 올린 진행자료가 없습니다.";
-    const spokenName = langLabel(row.spoken || spoken);
-    const targets = (row.targets || []).map(langLabel).join(", ") || "번역 없음";
-    document.getElementById("confirmLangs").textContent = `말하는 언어 ${spokenName}. 번역 ${targets}.`;
-    document.getElementById("confirmBalance").textContent = `남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}.`;
-    if (running) document.getElementById("startConfirm").hidden = true;
+    paintStartButton(running, gaps);
   }
 
   function paintBoard(status) {
@@ -394,6 +494,8 @@
       cards.forEach((item) => {
         const card = document.createElement("article");
         card.className = "card";
+        card.dataset.lang = item.lang || "";
+        card.hidden = watched.size > 0 && !watched.has(item.lang);
         const title = document.createElement("p");
         title.textContent = langLabel(item.lang);
         const body = document.createElement("p");
@@ -401,6 +503,8 @@
         card.append(title, body);
         box.append(card);
       });
+    } else {
+      applyWatchFilter();
     }
     const logs = status && Array.isArray(status.logs) ? status.logs : [];
     const nextLogs = JSON.stringify(logs);
@@ -510,6 +614,7 @@
     operator.hidden = true;
     desk.hidden = false;
     document.getElementById("costHead").hidden = false;
+    document.getElementById("opsBar").hidden = false;
     document.getElementById("accountLine").textContent = email || "계정";
     languages = (LI.catalog.languages || []).map((lang) => ({
       code: lang.code,
@@ -518,7 +623,10 @@
     }));
     spoken = "ko";
     chosen = new Set(LI.catalog.defaultSelectedTargets());
+    watched = new Set(chosen);
+    startArmed = false;
     paintLanguages();
+    paintStartButton(false, []);
     watchStatus();
     ensureToken().then(() => dbGet(`churches/${churchId}/room/status`)).then((value) => {
       showStatus(LI.roomSync.publicStatus(value));
@@ -562,6 +670,7 @@
     desk.hidden = true;
     operator.hidden = false;
     document.getElementById("costHead").hidden = true;
+    document.getElementById("opsBar").hidden = true;
     const period = await dbGet("billing/testPeriod");
     document.getElementById("testPeriod").checked = period === true;
     const index = await dbGet("churchIndex");
@@ -620,11 +729,13 @@
     idToken = "";
     tokenExpiresAt = 0;
     churchId = "";
+    startArmed = false;
     writeSession(null);
     desk.hidden = true;
     operator.hidden = true;
     signInCard.hidden = false;
     document.getElementById("costHead").hidden = true;
+    document.getElementById("opsBar").hidden = true;
   }
 
   document.getElementById("signIn").addEventListener("click", async () => {
@@ -667,14 +778,17 @@
   }
 
   document.getElementById("start").addEventListener("click", () => {
-    document.getElementById("startConfirm").hidden = false;
-  });
-
-  document.getElementById("confirmCancel").addEventListener("click", () => {
-    document.getElementById("startConfirm").hidden = true;
-  });
-
-  document.getElementById("confirmStart").addEventListener("click", () => {
+    const gaps = latest && Array.isArray(latest.gaps) ? latest.gaps : [];
+    if (!startArmed) {
+      startArmed = true;
+      paintStartButton(false, gaps);
+      return;
+    }
+    if (gaps.length > 0) {
+      paintStartButton(false, gaps);
+      return;
+    }
+    // confirmStart: 같은 단추를 한 번 더 누르면 방송을 시작합니다.
     sendPatch({
       running: true,
       spoken,
@@ -686,6 +800,11 @@
   });
 
   document.getElementById("stop").addEventListener("click", async () => {
+    if (startArmed && !(latest && latest.running)) {
+      startArmed = false;
+      paintStartButton(false, latest && Array.isArray(latest.gaps) ? latest.gaps : []);
+      return;
+    }
     try {
       await command({ running: false });
     } catch (err) {
