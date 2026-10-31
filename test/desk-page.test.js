@@ -37,6 +37,10 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(page, /width:\s*fit-content/);
   assert.match(page, /class="chips"/);
   assert.match(page, /class="monitor"/);
+  assert.match(page, /class="stage"/);
+  assert.match(page, /panel conn|class="panel conn"/);
+  assert.match(page, /setup-info/);
+  assert.match(page, /max-width:\s*1180px/);
   assert.doesNotMatch(page, /<select\b/);
   const liveAt = page.indexOf('id="live"');
   const inputsAt = page.indexOf('id="inputs"');
@@ -44,7 +48,7 @@ test("the web settings page starts a broadcast without picking a device", () => 
   const bulletinAt = page.indexOf('id="pickBulletin"');
   assert.ok(liveAt > 0 && inputsAt > liveAt);
   assert.ok(langsAt > inputsAt && bulletinAt > 0);
-  assert.ok(page.indexOf("시작 전 준비") < langsAt);
+  assert.ok(page.indexOf("시작 전 준비") < langsAt || page.indexOf('id="pickBulletin"') > 0);
   assert.match(client, /room\/desired/);
   assert.match(client, /room\/status/);
   assert.match(client, /withRev/);

@@ -6,10 +6,10 @@
   <title>통역 설정</title>
   <link rel="stylesheet" href="../css/phone-app.css">
   <style>
-    /* desk만: 정보는 한눈에, 설정 칸은 필요한 폭만 */
-    body { padding: 16px 14px 36px; }
+    /* desk: 정보 패널은 넓게, 연결·컨트롤은 필요한 폭만 */
+    body { padding: 16px 16px 40px; }
     main.desk {
-      max-width: 720px;
+      max-width: 1180px;
       margin: 0 auto;
     }
     header.top {
@@ -19,13 +19,13 @@
       align-items: flex-start;
       margin-bottom: 4px;
     }
-    header.top h1 { margin: 0; font-size: 1.25rem; }
-    header.top .hint { margin: 4px 0 0; font-size: 0.88rem; }
+    header.top h1 { margin: 0; font-size: 1.3rem; }
+    header.top .hint { margin: 4px 0 0; font-size: 0.9rem; }
     .cost-head {
       text-align: right;
       color: #f6d56b;
       font-weight: 800;
-      font-size: 0.9rem;
+      font-size: 0.92rem;
       line-height: 1.35;
       white-space: nowrap;
     }
@@ -34,7 +34,9 @@
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
-      margin: 8px 0 10px;
+      margin: 8px 0 12px;
+      width: fit-content;
+      max-width: 100%;
     }
     .ops button,
     .row button,
@@ -58,45 +60,67 @@
       font-size: 0.85rem;
       vertical-align: middle;
     }
+
+    /* 위: 정보(넓게) + 연결(좁게) */
+    .stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 250px;
+      gap: 12px;
+      align-items: stretch;
+    }
     .monitor {
       display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 10px;
-      align-items: start;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-width: 0;
     }
-    @media (max-width: 640px) {
+    @media (max-width: 900px) {
+      .stage { grid-template-columns: 1fr; }
+      .conn { max-width: 320px; }
+    }
+    @media (max-width: 700px) {
       .monitor { grid-template-columns: 1fr; }
       .cost-head { white-space: normal; }
     }
+
     .panel {
       margin: 0;
-      padding: 12px;
+      padding: 14px 16px;
       border-radius: 14px;
       background: #172033;
+      min-width: 0;
+    }
+    .panel.info {
+      min-height: 320px;
+      display: flex;
+      flex-direction: column;
     }
     .panel h2 {
-      margin: 0 0 6px;
-      font-size: 0.98rem;
+      margin: 0 0 8px;
+      font-size: 1.05rem;
     }
     .live {
-      min-height: 40px;
-      margin: 0 0 8px;
-      padding: 10px 12px;
-      border-radius: 10px;
+      min-height: 72px;
+      margin: 0 0 10px;
+      padding: 14px 16px;
+      border-radius: 12px;
       background: #3a3114;
       color: #f6d56b;
       font-weight: 700;
-      font-size: 0.98rem;
+      font-size: 1.12rem;
+      line-height: 1.45;
     }
     .ko-stack {
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      max-height: 160px;
+      gap: 6px;
+      flex: 1;
+      min-height: 180px;
+      max-height: 420px;
       overflow: auto;
     }
-    .ko-line { padding: 4px 0; border-bottom: 1px solid #243041; }
-    .ko-line p { margin: 0; font-size: 0.92rem; line-height: 1.35; }
+    .ko-line { padding: 6px 0; border-bottom: 1px solid #243041; }
+    .ko-line p { margin: 0; font-size: 1.02rem; line-height: 1.45; }
     .tag {
       display: inline-block;
       margin-right: 6px;
@@ -107,18 +131,29 @@
     .grid {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      max-height: 140px;
+      gap: 8px;
+      flex: 1;
+      min-height: 220px;
+      max-height: 520px;
       overflow: auto;
     }
     .grid .card {
       margin: 0;
-      padding: 8px 10px;
-      border-radius: 10px;
+      padding: 12px 14px;
+      border-radius: 12px;
       background: #121a24;
     }
-    .grid .card p { margin: 0; font-size: 0.9rem; line-height: 1.35; }
-    .grid .card p:first-child { color: #9aa8b8; font-size: 0.8rem; margin-bottom: 2px; }
+    .grid .card p { margin: 0; font-size: 1.05rem; line-height: 1.45; }
+    .grid .card p:first-child { color: #9aa8b8; font-size: 0.85rem; margin-bottom: 4px; }
+
+    /* 연결 상태: 좁은 칸 */
+    .conn {
+      width: 100%;
+      max-width: 250px;
+      padding: 12px;
+    }
+    .conn h2 { font-size: 0.95rem; }
+    .conn .hint { margin: 0 0 8px; font-size: 0.82rem; }
     .inputs {
       display: flex;
       flex-direction: column;
@@ -126,7 +161,7 @@
     }
     article.tile {
       margin: 0;
-      padding: 8px 10px;
+      padding: 8px;
       border-radius: 10px;
       background: #121a24;
       border: 1px solid #334155;
@@ -134,15 +169,15 @@
     article.tile .tile-head {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
       align-items: center;
-      justify-content: space-between;
     }
     article.tile .tile-title {
       margin: 0;
-      font-size: 0.88rem;
+      font-size: 0.8rem;
       font-weight: 700;
       color: #d7e6f5;
+      line-height: 1.3;
     }
     article.tile .state-on { color: #7dcea0; }
     article.tile .state-wait { color: #f6d56b; }
@@ -154,14 +189,18 @@
       margin-top: 6px;
     }
     article.tile input {
-      width: 110px;
+      width: 88px;
       min-width: 0;
       margin: 0;
+      padding: 5px 7px;
+      font-size: 0.85rem;
+    }
+    article.tile button {
       padding: 6px 8px;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
     }
     .meter {
-      height: 8px;
+      height: 7px;
       border-radius: 99px;
       background: #0d1218;
       overflow: hidden;
@@ -173,9 +212,11 @@
       width: 0%;
       background: linear-gradient(90deg, #1f8f6a, #ffd666 78%, #d64545);
     }
-    .log { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow: auto; }
-    .log p { margin: 0; color: #c9d5e2; font-size: 0.88rem; }
+    .log { display: flex; flex-direction: column; gap: 4px; max-height: 100px; overflow: auto; }
+    .log p { margin: 0; color: #c9d5e2; font-size: 0.82rem; }
     .log .error { color: #f0b4b4; }
+
+    /* 컨트롤: 필요한 폭만 / 정보성 설정: 넓게 */
     details.setup {
       display: block;
       width: fit-content;
@@ -184,14 +225,19 @@
       border: 1px solid #334155;
       border-radius: 12px;
       padding: 10px 12px;
-      margin: 8px 0 0;
+      margin: 10px 0 0;
+    }
+    details.setup.setup-info {
+      width: 100%;
+      max-width: none;
+      padding: 14px 16px;
     }
     details.setup > summary {
       cursor: pointer;
       font-weight: 800;
       list-style: none;
       color: #f6d56b;
-      font-size: 0.95rem;
+      font-size: 0.98rem;
     }
     details.setup > summary::-webkit-details-marker { display: none; }
     details.setup > summary::after {
@@ -201,21 +247,33 @@
       font-size: 0.85rem;
     }
     details.setup[open] > summary::after { content: " 접기"; }
-    details.setup[open] > summary { margin-bottom: 8px; }
+    details.setup[open] > summary { margin-bottom: 10px; }
     details.setup .hint { margin: 4px 0 8px; font-size: 0.88rem; }
     details.setup label { margin: 10px 0 6px; font-size: 0.92rem; }
-    details.setup input,
-    details.setup textarea {
-      width: min(320px, 100%);
+    details.setup input {
+      width: min(280px, 100%);
       padding: 8px 10px;
       font-size: 0.95rem;
     }
-    details.setup textarea { min-height: 56px; }
+    details.setup.setup-info textarea {
+      width: 100%;
+      max-width: none;
+      min-height: 96px;
+      padding: 12px 14px;
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+    details.setup:not(.setup-info) textarea {
+      width: min(320px, 100%);
+      min-height: 56px;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+    }
     .chips {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
-      max-width: 420px;
+      gap: 8px;
+      width: 100%;
     }
     .chip,
     .choice button {
@@ -237,6 +295,14 @@
       gap: 6px;
     }
     .setup-gaps { margin: 6px 0 0; padding-left: 18px; font-size: 0.9rem; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: flex-start;
+      margin-top: 4px;
+    }
+    .controls > details.setup { margin-top: 8px; }
     input[type="file"] { width: auto; }
     .check { font-weight: 700; }
     .check input { width: auto; }
@@ -244,13 +310,14 @@
     #operator.card,
     #startConfirm.panel {
       max-width: 360px;
+      width: fit-content;
     }
     #signInCard input,
     #operator input {
       width: min(320px, 100%);
     }
-    #notice { margin: 0; color: #9aa8b8; font-size: 0.88rem; }
-    #offline { margin: 6px 0 0; }
+    #notice { margin: 0 0 8px; color: #9aa8b8; font-size: 0.88rem; }
+    #offline { margin: 6px 0 0; font-size: 0.82rem; }
   </style>
   <script>
     // 방송실이 넘겨 준 로그인 열쇠는 주소 조각에만 있다가, 바로 이 탭 저장소로 옮기고 주소에서는 지웁니다.
@@ -278,7 +345,7 @@
     <header class="top">
       <div>
         <h1>통역 설정 <span id="onAir" class="pill" hidden>방송 중</span></h1>
-        <p class="hint">실시간 정보는 위, 한 번 정하는 설정은 아래. 마이크·폴더는 방송실 앱.</p>
+        <p class="hint">듣는 말·번역은 넓게, 연결은 옆 좁은 칸. 마이크·폴더는 방송실 앱.</p>
       </div>
       <div class="cost-head" id="costHead" hidden>
         <div>남은 충전금 <span id="balanceCost" class="cost-figure">불러오는 중</span></div>
@@ -318,58 +385,40 @@
         </div>
       </section>
 
-      <section class="monitor">
-        <article class="panel">
-          <h2 id="heardTitle">지금 듣는 말 · 교정</h2>
-          <div id="live" class="live">대기 중...</div>
-          <div id="koStack" class="ko-stack"></div>
-        </article>
-        <article class="panel">
-          <h2>번역</h2>
-          <div id="cards" class="grid"></div>
-        </article>
+      <section class="stage">
+        <section class="monitor">
+          <article class="panel info">
+            <h2 id="heardTitle">지금 듣는 말 · 교정</h2>
+            <div id="live" class="live">대기 중...</div>
+            <div id="koStack" class="ko-stack"></div>
+          </article>
+          <article class="panel info">
+            <h2>번역</h2>
+            <div id="cards" class="grid"></div>
+          </article>
+        </section>
+
+        <aside class="panel conn">
+          <h2>연결 상태</h2>
+          <p class="hint">마이크·휴대폰·막대</p>
+          <div id="inputs" class="inputs"></div>
+          <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
+          <details class="setup" style="margin-top:8px; width:100%; max-width:100%">
+            <summary>안내 로그</summary>
+            <div id="log" class="log"></div>
+          </details>
+        </aside>
       </section>
 
-      <section class="panel" style="margin-top:10px">
-        <h2>연결 상태</h2>
-        <p class="hint" style="margin:0 0 6px;font-size:0.88rem">방송실의 마이크·휴대폰·소리 막대·연결됨/중·이름이 실시간으로 옵니다. 이름·켜짐만 여기서 바꿉니다.</p>
-        <div id="inputs" class="inputs"></div>
-        <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
-        <details class="setup" style="margin-top:8px">
-          <summary>안내 로그</summary>
-          <div id="log" class="log"></div>
-        </details>
-      </section>
-
-      <details class="setup">
-        <summary>시작 전 준비</summary>
-        <p class="hint">기록 폴더는 방송실 앱에서 고릅니다. 폴더가 준비되기 전에는 시작할 수 없습니다.</p>
-        <p class="hint" id="folderLine">기록 폴더는 방송실 앱에서 고릅니다.</p>
-        <ul id="setupGaps" class="setup-gaps" hidden></ul>
-        <h2>진행자료</h2>
-        <p class="hint">순서지 사진을 올리면 방송실 컴퓨터에 저장하고 분석합니다.</p>
-        <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
-        <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
+      <details class="setup setup-info" open>
+        <summary>오늘 번역할 언어</summary>
+        <p class="hint">누른 언어로 번역합니다. 말하는 언어는 보통 한국어입니다.</p>
+        <div id="langs" class="chips"></div>
       </details>
 
-      <details class="setup">
-        <summary>내용과 이름</summary>
-        <p class="hint">자막에 보일 이름과 오늘 내용 종류를 정합니다.</p>
-        <label>종류</label>
-        <div class="choice" id="sessionKind" role="group" aria-label="종류">
-          <button type="button" data-kind="">선택 안 함</button>
-          <button type="button" data-kind="강의">강의</button>
-          <button type="button" data-kind="연설">연설</button>
-          <button type="button" data-kind="행사">행사</button>
-        </div>
-        <label for="preacherName">이름</label>
-        <input id="preacherName" maxlength="40" placeholder="자막에 보일 이름">
-        <label class="check"><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
-      </details>
-
-      <details class="setup">
+      <details class="setup setup-info">
         <summary>말투와 감도</summary>
-        <p class="hint">감도는 방송 중에도 바로 적용됩니다.</p>
+        <p class="hint">감도는 방송 중에도 바로 적용됩니다. 말투·교정·용어는 넓게 보입니다.</p>
         <label>인식 감도</label>
         <div class="choice" id="sensitivity" role="group" aria-label="인식 감도">
           <button type="button" data-sense="high">감도 높음</button>
@@ -384,17 +433,39 @@
         <textarea id="terms"></textarea>
       </details>
 
-      <details class="setup">
-        <summary>오늘 번역할 언어</summary>
-        <p class="hint">누른 언어로 번역합니다. 말하는 언어는 보통 한국어입니다.</p>
-        <div id="langs" class="chips"></div>
-      </details>
+      <div class="controls">
+        <details class="setup">
+          <summary>시작 전 준비</summary>
+          <p class="hint">기록 폴더는 방송실 앱에서 고릅니다. 폴더가 준비되기 전에는 시작할 수 없습니다.</p>
+          <p class="hint" id="folderLine">기록 폴더는 방송실 앱에서 고릅니다.</p>
+          <ul id="setupGaps" class="setup-gaps" hidden></ul>
+          <h2>진행자료</h2>
+          <p class="hint">순서지 사진을 올리면 방송실 컴퓨터에 저장하고 분석합니다.</p>
+          <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+          <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
+        </details>
 
-      <details class="setup">
-        <summary>휴대폰 대수</summary>
-        <p class="hint">0이면 휴대폰 없이 시작합니다. 연결 번호와 QR은 방송실에 나옵니다.</p>
-        <div class="choice" id="phoneCount" role="group" aria-label="휴대폰 대수"></div>
-      </details>
+        <details class="setup">
+          <summary>내용과 이름</summary>
+          <p class="hint">자막에 보일 이름과 오늘 내용 종류를 정합니다.</p>
+          <label>종류</label>
+          <div class="choice" id="sessionKind" role="group" aria-label="종류">
+            <button type="button" data-kind="">선택 안 함</button>
+            <button type="button" data-kind="강의">강의</button>
+            <button type="button" data-kind="연설">연설</button>
+            <button type="button" data-kind="행사">행사</button>
+          </div>
+          <label for="preacherName">이름</label>
+          <input id="preacherName" maxlength="40" placeholder="자막에 보일 이름">
+          <label class="check"><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
+        </details>
+
+        <details class="setup">
+          <summary>휴대폰 대수</summary>
+          <p class="hint">0이면 휴대폰 없이 시작합니다. 연결 번호와 QR은 방송실에 나옵니다.</p>
+          <div class="choice" id="phoneCount" role="group" aria-label="휴대폰 대수"></div>
+        </details>
+      </div>
     </section>
 
     <section class="card" id="operator" hidden>
