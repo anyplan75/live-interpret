@@ -1,7 +1,7 @@
 const WebSocket = require("ws");
 const { UtteranceVad } = require("./vad");
 const { wavFromPcm16 } = require("./audio-util");
-const { keywordsFromGlossary, sttPrompt, spokenLanguage, transcriptionLanguage } = require("./catalog");
+const { keywordsFromGlossary, sttPrompt, spokenLanguage, transcriptionLanguage, timing } = require("./catalog");
 
 const REALTIME_URL = "wss://api.openai.com/v1/realtime?intent=transcription";
 
@@ -34,6 +34,8 @@ class SpeechSession {
     this.vad = new UtteranceVad({
       sampleRate: 24000,
       threshold: sensitivityThreshold(opts.sensitivity),
+      // 말이 멈춘 뒤 이만큼 조용하면 한 발화로 확정합니다. 말하는 중 강제 절단은 하지 않습니다.
+      silenceMs: timing.vadSilenceMs == null ? 500 : timing.vadSilenceMs,
     });
     this.mode = "realtime";
     this.ws = null;
