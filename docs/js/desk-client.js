@@ -528,7 +528,7 @@
 
   function paintInputs(status) {
     const rows = status && Array.isArray(status.inputs) ? status.inputs : [];
-    const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.joining}|${row.code}|${row.live}|${row.name}`).join(";");
+    const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.joining}|${row.code}|${row.live}|${row.name}|${row.showName !== false}`).join(";");
     if (nextKey === inputKey && inputs.childElementCount) {
       rows.forEach((row) => {
         const fill = inputs.querySelector(`[data-level="${row.key}"]`);
@@ -572,7 +572,14 @@
       live.type = "button";
       live.textContent = row.live === false ? "꺼짐" : "켜짐";
       live.className = row.live === false ? "ghost" : "";
-      controls.append(name, live);
+      const show = document.createElement("label");
+      show.className = "check";
+      const showBox = document.createElement("input");
+      showBox.type = "checkbox";
+      showBox.checked = row.showName !== false;
+      showBox.setAttribute("aria-label", `${row.title || "입력"} 이름을 자막에 표시`);
+      show.append(showBox, document.createTextNode(" 이 이름을 자막에 표시"));
+      controls.append(name, live, show);
       const bar = document.createElement("div");
       bar.className = "meter";
       const fill = document.createElement("span");
@@ -592,6 +599,7 @@
       };
       name.addEventListener("change", () => save({ name: name.value }));
       live.addEventListener("click", () => save({ live: row.live === false }));
+      showBox.addEventListener("change", () => save({ showName: showBox.checked }));
       card.append(head, controls, bar);
       inputs.append(card);
     });

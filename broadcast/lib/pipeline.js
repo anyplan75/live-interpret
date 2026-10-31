@@ -96,8 +96,9 @@ class Pipeline {
   }
 
   /**
-   * 인식은 발화 처음부터 누적된 글을 보냅니다. 노란 칸에는 문장이 여러 개 쌓여도 그대로 둡니다.
-   * 번역을 기다리는 말이 140자를 넘으면, 그 근처의 문장·어미·쉼표·띄어쓰기에서 끊어 번역합니다.
+   * 인식은 발화 처음부터 누적된 글을 보냅니다.
+   * 종결어미·마침표가 보이면 침묵을 기다리지 않고 그 앞을 교정으로 넘깁니다.
+   * 분명한 끝이 없고 140자를 넘으면 그 근처 경계에서 끊습니다.
    * 빈 값으로는 지우지 않습니다.
    */
   onInterim(text) {
@@ -115,12 +116,12 @@ class Pipeline {
     let tail = value.slice(start);
     let consumed = start;
     let guard = 0;
-    let cutAt = sentence.translateBreak(tail);
+    let cutAt = sentence.liveBreak(tail);
     while (cutAt > 0 && guard++ < 40) {
       this.releaseChunk(tail.slice(0, cutAt).trim());
       consumed += cutAt;
       tail = tail.slice(cutAt);
-      cutAt = sentence.translateBreak(tail);
+      cutAt = sentence.liveBreak(tail);
     }
     this.spoken = value.slice(0, consumed);
     this.interim = tail.trim();
@@ -226,6 +227,7 @@ class Pipeline {
 
   tick() {
     if (this.stopped) return;
+    this.flushInterimSilence();
     const pending = this.unprocessed.trim();
     if (!pending) return;
     const silence = Date.now() - this.lastSpeechTime;
@@ -236,6 +238,31 @@ class Pipeline {
     this.unprocessed = "";
     this.heardMarks = [];
     this.enqueuePiece(pending, force, heardId);
+    this.pushLive(false);
+  }
+
+  /**
+   * 인식기는 아직 발화를 안 닫았는데, 글은 이미 끝났고 잠깐 조용하면 교정으로 넘깁니다.
+   * 말이 계속 들어오면 lastSpeechTime 이 갱신되어 여기로 오지 않습니다.
+   */
+  flushInterimSilence() {
+    const live = String(this.interim || "").trim();
+    if (!live || sentence.isNoise(live)) return;
+    const silence = Date.now() - this.lastSpeechTime;
+    const soft = timing.silenceFlushMs || 1800;
+    const hard = timing.silenceForceFlushMs || 4500;
+    if (silence < soft) return;
+    const cutAt = sentence.liveBreak(live);
+    const force = silence >= hard;
+    if (!force && !cutAt && (sentence.isHangingTail(live) || this.endsWithPauseTail(live))) return;
+    if (!force && !cutAt && !sentence.canSilenceFlush(live, silence, timing)) return;
+    const head = cutAt > 0 ? live.slice(0, cutAt).trim() : live;
+    const rest = cutAt > 0 ? live.slice(cutAt).trim() : "";
+    if (!head) return;
+    this.releaseChunk(head);
+    this.spoken = joinSpace(this.spoken, head);
+    this.interim = rest;
+    this.onLive(rest ? speakerCaption(this.speaker, rest) : "");
     this.pushLive(false);
   }
 

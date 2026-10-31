@@ -547,7 +547,11 @@ function registerIpc() {
     const row = engine.publicChannels().find((item) => item.connectionId === connectionId);
     if (!row) return;
     try {
-      if (action.name) engine.setPhoneDisplay(connectionId, { name: action.name, showName: action.showName });
+      // 이름만 비어 있어도 showName 켜기/끄기는 반영합니다.
+      engine.setPhoneDisplay(connectionId, {
+        name: Object.prototype.hasOwnProperty.call(action, "name") ? action.name : (row.name || ""),
+        showName: action.showName,
+      });
     } catch (_) { /* 자막 칸이 없으면 연결 기록만 바꿉니다 */ }
     if ((row.captionLive !== false) !== action.live) {
       try { engine.setInputLive(row.index, action.live); } catch (_) { /* 꺼진 칸은 다음에 다시 맞춥니다 */ }

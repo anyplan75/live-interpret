@@ -72,9 +72,20 @@ test("silence flush waits on a hanging tail until the hard limit", () => {
   assert.equal(timing.vadSilenceMs, 500);
   assert.equal(timing.silenceFlushMs, 1800);
   assert.equal(timing.silenceForceFlushMs, 4500);
+  assert.equal(timing.maxSpeechMs, 12000);
   assert.equal(sentence.canSilenceFlush("주님께서", 1000, timing), false);
   assert.equal(sentence.canSilenceFlush("주님께서", timing.silenceFlushMs + 10, timing), false);
   assert.equal(sentence.canSilenceFlush("주님께서", timing.silenceForceFlushMs, timing), true);
   assert.equal(sentence.canSilenceFlush("하나님은 사랑이십니다", timing.silenceFlushMs + 10, timing), true);
   assert.equal(sentence.canSilenceFlush("하나님은 사랑이십니다", 1500, timing), false);
+});
+
+test("live break cuts a finished ending before the translation cap", () => {
+  const spoken = "오늘 하나님은 우리를 사랑하십니다. 그리고 우리는";
+  const at = sentence.liveBreak(spoken);
+  assert.ok(at > 0);
+  assert.ok(spoken.slice(0, at).includes("사랑하십니다"));
+  assert.equal(spoken.slice(at).trim().startsWith("그리고"), true);
+  assert.equal(sentence.liveBreak("주님께서"), 0);
+  assert.equal(sentence.liveBreak("짧게"), 0);
 });

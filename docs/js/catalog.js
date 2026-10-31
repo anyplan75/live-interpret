@@ -92,12 +92,14 @@
   // 말이 멈춘 뒤 교정으로 넘기는 침묵 기준(밀리초).
   // soft는 문장이 어느 정도 끝난 뒤, hard는 조사 꼬리처럼 애매해도 강제.
   // 말하는 도중 0.8초마다 잘라 보내던 강제 확정은 쓰지 않는다.
+  // 대신 종결어미·문장 부호로 끊고, 말이 너무 길면 maxSpeechMs 에서 한 발화를 닫는다.
   const timing = {
     livePushMinInterval: 250,
     vadSilenceMs: 500,
     silenceFlushMs: 1800,
     silenceForceFlushMs: 4500,
     minFlushChars: 8,
+    maxSpeechMs: 12000,
   };
 
   const defaultModel = "gpt-4o-mini";
