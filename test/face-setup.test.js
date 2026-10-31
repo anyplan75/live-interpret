@@ -110,6 +110,8 @@ test("face page asks for the party size before it can start", () => {
   assert.match(face, /id="modeQr"/);
   assert.match(face, /id="modeSolo"/);
   assert.match(face, /id="guestSpoken"/);
+  assert.match(face, /id="placeLine"/);
+  assert.match(face, /placeLabel|placeName/);
   assert.match(face, /faceSetupReady/);
   const start = face.slice(face.indexOf("async function beginInterpretation"));
   assert.match(start, /currentSetup\(\)[\s\S]*chargePeople/);

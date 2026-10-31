@@ -128,9 +128,14 @@ function registerIpc() {
       }
       const church = await requireChurch();
       watchStatus(church.id);
-      return { signedIn: true, operator: false, email: saved.email };
+      return {
+        signedIn: true,
+        operator: false,
+        email: saved.email,
+        church: { id: church.id, name: church.name || "" },
+      };
     } catch (err) {
-      return { signedIn: false, operator: false, email: "", message: userText(err) };
+      return { signedIn: false, operator: false, email: "", church: null, message: userText(err) };
     }
   });
   ipcMain.handle("auth:signIn", async (_event, email, password) => {
@@ -152,11 +157,16 @@ function registerIpc() {
         if (!operator.isOperatorAccount(session, typeof adminUid === "string" ? adminUid : "")) {
           throw new Error("이 계정은 운영 화면을 열 수 없습니다.");
         }
-        return { signedIn: true, operator: true, email: session.email };
+        return { signedIn: true, operator: true, email: session.email, church: null };
       }
       const church = await requireChurch();
       watchStatus(church.id);
-      return { signedIn: true, operator: false, email: session.email };
+      return {
+        signedIn: true,
+        operator: false,
+        email: session.email,
+        church: { id: church.id, name: church.name || "" },
+      };
     } catch (err) {
       idToken = "";
       tokenExpiresAt = 0;

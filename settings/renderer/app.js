@@ -130,12 +130,14 @@ function showStatus(status) {
   paintInputs(latest);
 }
 
-async function openDesk(email) {
+async function openDesk(email, church) {
   signInCard.hidden = true;
   operator.hidden = true;
   desk.hidden = false;
   document.getElementById("costHead").hidden = false;
-  document.getElementById("accountLine").textContent = email || "계정";
+  const place = church && church.name ? String(church.name).trim() : "";
+  document.getElementById("placeLine").textContent = place || "계정";
+  document.getElementById("accountLine").textContent = email || "";
   const catalog = await window.desk.catalog();
   languages = catalog.languages || [];
   spoken = "ko";
@@ -176,7 +178,7 @@ document.getElementById("signIn").addEventListener("click", async () => {
       document.getElementById("password").value,
     );
     if (session && session.operator) await openOperator();
-    else await openDesk(session && session.email);
+    else await openDesk(session && session.email, session && session.church);
   } catch (err) {
     say(err && err.message ? err.message : "다시 로그인해 주세요.");
   }
@@ -188,6 +190,8 @@ async function signOut() {
   operator.hidden = true;
   signInCard.hidden = false;
   document.getElementById("costHead").hidden = true;
+  document.getElementById("placeLine").textContent = "계정";
+  document.getElementById("accountLine").textContent = "";
 }
 
 document.getElementById("signOut").addEventListener("click", () => signOut().catch((err) => {
@@ -252,5 +256,5 @@ window.desk.onStatus((status) => {
 window.desk.authStatus().then(async (session) => {
   if (!session || !session.signedIn) return;
   if (session.operator) await openOperator();
-  else await openDesk(session.email);
+  else await openDesk(session.email, session.church);
 }).catch(() => {});

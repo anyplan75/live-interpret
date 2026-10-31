@@ -158,6 +158,8 @@
     return String(email || "").trim().toLowerCase() === OPERATOR_EMAIL;
   }
 
+  let placeName = "";
+
   async function requireChurch() {
     await ensureToken();
     if (!session || !session.localId) throw new Error("로그인 정보가 없습니다. 다시 로그인해 주세요.");
@@ -170,6 +172,11 @@
       throw new Error("로그인한 계정이 이 방송과 맞지 않습니다. 다시 로그인해 주세요.");
     }
     churchId = link.churchId;
+    const name = await dbGet(`churches/${link.churchId}/name`);
+    const kind = await dbGet(`churches/${link.churchId}/orgKind`);
+    placeName = LI.orgServices.placeLabel(
+      { name: typeof name === "string" ? name : "", kind: kind === "company" ? "company" : "church" },
+    ) || LI.orgServices.cleanPlaceName(name) || "계정";
     return churchId;
   }
 
@@ -623,7 +630,8 @@
     desk.hidden = false;
     document.getElementById("costHead").hidden = false;
     document.getElementById("opsBar").hidden = false;
-    document.getElementById("accountLine").textContent = email || "계정";
+    document.getElementById("placeLine").textContent = placeName || "계정";
+    document.getElementById("accountLine").textContent = email || "";
     languages = (LI.catalog.languages || []).map((lang) => ({
       code: lang.code,
       name: lang.name,
@@ -737,6 +745,7 @@
     idToken = "";
     tokenExpiresAt = 0;
     churchId = "";
+    placeName = "";
     startArmed = false;
     writeSession(null);
     desk.hidden = true;
@@ -744,6 +753,8 @@
     signInCard.hidden = false;
     document.getElementById("costHead").hidden = true;
     document.getElementById("opsBar").hidden = true;
+    document.getElementById("placeLine").textContent = "계정";
+    document.getElementById("accountLine").textContent = "";
   }
 
   document.getElementById("signIn").addEventListener("click", async () => {

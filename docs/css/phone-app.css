@@ -13,6 +13,13 @@ h1 { margin: 0 0 8px; font-size: 1.55rem; letter-spacing: -0.03em; }
 h2 { margin: 22px 0 8px; font-size: 1.05rem; }
 p { line-height: 1.45; }
 .hint { color: #9aa8b8; font-size: 0.95rem; }
+.place {
+  margin: 0 0 10px;
+  color: #f6d56b;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
 label { display: block; font-weight: 700; margin: 16px 0 8px; }
 input, select {
   width: 100%;

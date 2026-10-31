@@ -15,6 +15,7 @@
 <body>
   <main>
     <h1>대면 통역</h1>
+    <p class="place" id="placeLine" hidden></p>
     <p class="hint" id="lead">먼저 인원을 고릅니다. 본인도 포함해 2명 또는 3명입니다. 그다음 다른 사람 휴대폰으로 할지, 이 휴대폰만 쓸지 고릅니다. 설정이 끝나기 전에는 통역이 시작되지 않습니다.</p>
 
     <section id="gate" class="card">
@@ -28,7 +29,7 @@
     </section>
 
     <section id="host" class="card" hidden>
-      <p id="orgLine" class="hint"></p>
+      <p id="orgLine" class="place"></p>
       <p id="rateLine"></p>
 
       <div id="stepCount">
@@ -93,6 +94,7 @@
 
     <section id="guest" class="card" hidden>
       <h2>통역에 들어가기</h2>
+      <p id="guestPlace" class="place" hidden></p>
       <p class="hint">이름과 말하는 언어를 고르면 상대 휴대폰에 전달됩니다. 모두 모이기 전에는 통역이 시작되지 않습니다. 이 휴대폰은 요금을 시작하지 않습니다.</p>
       <form id="guestForm">
         <label for="guestName">이름</label>
@@ -429,7 +431,13 @@
 
     function broadcastClock() {
       if (!room) return;
-      room.sendAll({ type: "session", paused, remainingSeconds: shownSeconds(), waiting: false });
+      room.sendAll({
+        type: "session",
+        paused,
+        remainingSeconds: shownSeconds(),
+        waiting: false,
+        placeName: org ? org.name : "",
+      });
     }
 
     function settleElapsed() {
@@ -651,7 +659,13 @@
           return interpret(pcm, speaker.spoken, speaker.name);
         });
         if (room) {
-          room.sendAll({ type: "session", paused: false, remainingSeconds, waiting: false });
+          room.sendAll({
+            type: "session",
+            paused: false,
+            remainingSeconds,
+            waiting: false,
+            placeName: org ? org.name : "",
+          });
           guests.forEach((guest) => {
             room.sendCaption(guest.peerId, { type: "joined", phoneId: guest.peerId });
           });
@@ -691,7 +705,13 @@
         room.sendCaption(peerId, { type: "error", message: "인원이 다 찼습니다." });
         return;
       } else guests.push(person);
-      room.sendCaption(peerId, { type: "session", paused: true, remainingSeconds: 0, waiting: true });
+      room.sendCaption(peerId, {
+        type: "session",
+        paused: true,
+        remainingSeconds: 0,
+        waiting: true,
+        placeName: org ? org.name : "",
+      });
       paintWait();
       const ready = currentSetup();
       if (ready.ok) beginInterpretation().catch(() => {});
@@ -761,7 +781,13 @@
       org = LI.orgServices.orgSnapshot(church);
       const gateResult = LI.orgServices.canStartPaid(org, "face");
       if (!gateResult.ok) throw new Error(gateResult.reason);
-      document.getElementById("orgLine").textContent = `${LI.orgServices.kindLabel(org.kind)} ${org.name}`;
+      const label = LI.orgServices.placeLabel(org);
+      document.getElementById("orgLine").textContent = label;
+      const topPlace = document.getElementById("placeLine");
+      if (label) {
+        topPlace.hidden = false;
+        topPlace.textContent = label;
+      }
       gate.hidden = true;
       hostCard.hidden = false;
       paintRate();
@@ -809,6 +835,15 @@
                 return;
               }
               if (message.type === "session") {
+                const place = LI.orgServices.cleanPlaceName(message.placeName);
+                if (place) {
+                  const guestPlace = document.getElementById("guestPlace");
+                  const topPlace = document.getElementById("placeLine");
+                  guestPlace.hidden = false;
+                  guestPlace.textContent = place;
+                  topPlace.hidden = false;
+                  topPlace.textContent = place;
+                }
                 if (message.waiting) {
                   link.setPaused(true);
                   document.getElementById("guestClock").textContent = "설정 중";
@@ -897,6 +932,9 @@
         try { await firebase.auth().signOut(); } catch (_) { /* 이미 로그아웃된 상태는 무시합니다 */ }
         hostCard.hidden = true;
         gate.hidden = false;
+        document.getElementById("placeLine").hidden = true;
+        document.getElementById("placeLine").textContent = "";
+        document.getElementById("orgLine").textContent = "";
       });
       LI.db.init().then(() => {
         firebase.auth().onAuthStateChanged(async (user) => {
