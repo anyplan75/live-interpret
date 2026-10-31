@@ -25,10 +25,14 @@ function note(text) {
   document.getElementById("phoneMsg").textContent = text || "";
 }
 
-function openStudio(email) {
+function openStudio(email, church) {
   signInCard.hidden = true;
   studio.hidden = false;
-  document.getElementById("accountLine").textContent = email ? `${email} 로 연결했습니다.` : "계정으로 연결했습니다.";
+  const place = church && church.name ? String(church.name).trim() : "";
+  document.getElementById("placeLine").textContent = place || "계정";
+  document.getElementById("accountLine").textContent = email
+    ? `${email} 로 연결했습니다.`
+    : "계정으로 연결했습니다.";
 }
 
 async function restoreDevice() {
@@ -189,7 +193,7 @@ document.getElementById("signIn").addEventListener("click", async () => {
       say("계정 사용은 설정 사이트에서 합니다.");
       return;
     }
-    openStudio(session && session.email);
+    openStudio(session && session.email, session && session.church);
     await loadDevices();
     await restoreDevice();
     await refreshPhones();
@@ -207,6 +211,8 @@ document.getElementById("signOut").addEventListener("click", async () => {
   }
   studio.hidden = true;
   signInCard.hidden = false;
+  document.getElementById("placeLine").textContent = "계정";
+  document.getElementById("accountLine").textContent = "";
 });
 
 document.getElementById("pickFolder").addEventListener("click", async () => {
@@ -242,7 +248,7 @@ deviceEl.addEventListener("change", async () => {
 
 window.broadcast.authStatus().then(async (session) => {
   if (!session || !session.signedIn || session.operator) return;
-  openStudio(session.email);
+  openStudio(session.email, session.church);
   await loadDevices();
   await restoreDevice();
   await refreshPhones();

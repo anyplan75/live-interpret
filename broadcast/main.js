@@ -403,6 +403,32 @@ function registerIpc() {
     publishRoom();
   }
 
+  let placeNameCache = { id: "", name: "" };
+
+  async function currentPlaceName() {
+    if (!roomChurchId) return "";
+    if (placeNameCache.id === roomChurchId && placeNameCache.name) return placeNameCache.name;
+    try {
+      const church = await firebase.getChurch(roomChurchId);
+      const name = orgServices.cleanPlaceName(church && church.name);
+      placeNameCache = { id: roomChurchId, name };
+      return name;
+    } catch (_) {
+      return placeNameCache.id === roomChurchId ? placeNameCache.name : "";
+    }
+  }
+
+  async function writeLectureJoin(connectionId) {
+    if (!phoneJoin || !/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) {
+      throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
+    }
+    const placeName = await currentPlaceName();
+    await firebase.set(
+      `lectureJoins/${connectionId}`,
+      orgServices.lectureJoinRecord(phoneJoin.token, placeName),
+    );
+  }
+
   function roomInputs() {
     const channels = engine.publicChannels();
     const info = phoneJoin ? phoneJoin.info() : { channels: [] };
@@ -648,7 +674,7 @@ function registerIpc() {
     }
     try {
       for (const connectionId of changed.added) {
-        await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
+        await writeLectureJoin(connectionId);
       }
       for (const connectionId of changed.removed) {
         try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 없는 칸은 넘어갑니다 */ }
@@ -703,6 +729,7 @@ function registerIpc() {
     if (churchId === roomChurchId && stopDesired) return;
     if (stopDesired) stopDesired();
     roomChurchId = churchId;
+    if (placeNameCache.id !== churchId) placeNameCache = { id: "", name: "" };
     appliedRev = 0;
     stopDesired = firebase.listen(`churches/${churchId}/room/desired`, (value) => {
       applyDesired(value).catch((err) => note(err));
@@ -714,6 +741,7 @@ function registerIpc() {
     if (stopDesired) stopDesired();
     stopDesired = null;
     roomChurchId = "";
+    placeNameCache = { id: "", name: "" };
     appliedRev = 0;
   }
 
@@ -956,7 +984,7 @@ function registerIpc() {
     }
     const desk = phoneJoin.addDesk();
     try {
-      await firebase.set(`lectureJoins/${desk.connectionId}`, { token: phoneJoin.token });
+      await writeLectureJoin(desk.connectionId);
     } catch (err) {
       phoneJoin.dropDesk(desk.connectionId);
       send({ type: "phone-join", info: phoneJoin.info() });
@@ -1140,7 +1168,7 @@ function registerIpc() {
         opened = phoneJoin.desks.map((item) => item.connectionId).filter(Boolean);
         if (!opened.length && desk.connectionId) opened = [desk.connectionId];
         for (const connectionId of opened) {
-          await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token });
+          await writeLectureJoin(connectionId);
         }
         await phoneJoin.refreshQrs();
         send({ type: "phone-join", info: phoneJoin.info() });
@@ -1175,7 +1203,7 @@ function registerIpc() {
       try { await firebase.remove(`lectureJoins/${connectionId}`); } catch (_) { /* 이미 지워진 번호는 무시합니다 */ }
     }
     for (const connectionId of fresh) {
-      try { await firebase.set(`lectureJoins/${connectionId}`, { token: phoneJoin.token }); } catch (_) { /* 다음 시작 때 다시 엽니다 */ }
+      try { await writeLectureJoin(connectionId); } catch (_) { /* 다음 시작 때 다시 엽니다 */ }
     }
     return stopped;
   }

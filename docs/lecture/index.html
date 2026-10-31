@@ -15,6 +15,7 @@
 <body>
   <main>
     <h1>강연·회의 통역</h1>
+    <p class="place" id="placeLine" hidden></p>
     <p class="hint" id="lead">이름, 말하는 언어, 마이크는 바로 보입니다. 송출 컴퓨터와 연결할 때는 QR을 스캔하거나 연결 번호를 입력하세요.</p>
 
     <section id="booth" class="card">
@@ -451,10 +452,49 @@
       else say("휴대폰 앱에서 QR 스캔을 눌러 주세요.");
     });
 
+    function showPlace(name) {
+      const line = document.getElementById("placeLine");
+      const place = LI.orgServices.cleanPlaceName(name);
+      if (!place) {
+        line.hidden = true;
+        line.textContent = "";
+        return;
+      }
+      line.hidden = false;
+      line.textContent = place;
+    }
+
+    async function loadPlaceName(connectionId) {
+      const id = LI.orgServices.normalizeConnectionId(connectionId);
+      if (!id) return "";
+      try {
+        const url = LI.orgServices.lectureJoinRecordUrl(
+          LI.catalog.firebase.databaseURL,
+          LI.catalog.firebase.rootPath,
+          id,
+        );
+        const res = await fetch(url, { cache: "no-store" });
+        const body = res.ok ? await res.json() : null;
+        return LI.orgServices.cleanPlaceName(body && body.placeName);
+      } catch (_) {
+        return "";
+      }
+    }
+
     function showSlot(next) {
       slot = next;
       needScan.hidden = true;
       micForm.hidden = false;
+      showPlace(next && next.placeName);
+      if (next && next.connectionId && !LI.orgServices.cleanPlaceName(next.placeName)) {
+        loadPlaceName(next.connectionId).then((place) => {
+          if (!slot || slot.connectionId !== next.connectionId) return;
+          if (place) {
+            slot.placeName = place;
+            showPlace(place);
+          }
+        });
+      }
       say("이름과 말하는 언어를 입력한 뒤 마이크를 여세요.");
     }
 
@@ -592,7 +632,11 @@
           say("이 연결 번호를 찾지 못했습니다. 송출 컴퓨터의 번호를 다시 확인해 주세요.");
           return;
         }
-        showSlot({ connectionId: id, token });
+        showSlot({
+          connectionId: id,
+          token,
+          placeName: LI.orgServices.cleanPlaceName(body && body.placeName),
+        });
       } catch (_) {
         say("연결 번호를 확인하지 못했습니다. 다시 시도해 주세요.");
       } finally {

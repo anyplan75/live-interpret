@@ -28,6 +28,36 @@
     return Array.from(text).slice(0, 40).join("");
   }
 
+  /** 지금 쓰는 계정·장소 이름. 자막 이름보다 길게 둡니다. */
+  function cleanPlaceName(value) {
+    const text = String(value || "")
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return Array.from(text).slice(0, 80).join("");
+  }
+
+  /** 휴대폰이 연결 번호로 찾는 기록. 토큰과 장소 이름만 둡니다. */
+  function lectureJoinRecord(token, placeName) {
+    if (!validToken(token)) throw new Error("연결 토큰이 올바르지 않습니다.");
+    const place = cleanPlaceName(placeName);
+    const row = { token };
+    if (place) row.placeName = place;
+    return row;
+  }
+
+  /** 화면 위쪽에 계정·장소 이름을 보여 줄 때 씁니다. */
+  function placeLabel(orgOrName, kind) {
+    if (orgOrName && typeof orgOrName === "object") {
+      const name = cleanPlaceName(orgOrName.name);
+      if (!name) return "";
+      return `${kindLabel(orgOrName.kind || kind)} ${name}`;
+    }
+    const name = cleanPlaceName(orgOrName);
+    if (!name) return "";
+    return kind ? `${kindLabel(kind)} ${name}` : name;
+  }
+
   function validToken(value) {
     return /^[a-f0-9]{32}$/.test(value || "");
   }
@@ -572,6 +602,9 @@ function claimConnection(holderPeerId, peerId) {
 
   return {
     cleanName,
+    cleanPlaceName,
+    lectureJoinRecord,
+    placeLabel,
     validToken,
     normalizeConnectionId,
     validSessionPin,

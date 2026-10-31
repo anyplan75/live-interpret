@@ -31,6 +31,23 @@
       max-width: 100%;
       margin-left: auto;
     }
+    .ops .place {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      margin-right: 4px;
+      min-width: 0;
+    }
+    .ops .place strong {
+      font-size: 1rem;
+      line-height: 1.2;
+    }
+    .ops .place .hint {
+      margin: 0;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
     .ops button,
     .row button,
     article.tile button,
@@ -371,7 +388,10 @@
         <p class="hint">번역은 보고 싶은 언어만, 연결은 넓게. 마이크·폴더는 방송실 앱.</p>
       </div>
       <div class="ops" id="opsBar" hidden>
-        <strong id="accountLine">계정</strong>
+        <div class="place">
+          <strong id="placeLine">계정</strong>
+          <span class="hint" id="accountLine"></span>
+        </div>
         <button type="button" id="start">시작</button>
         <button type="button" class="danger" id="stop">종료</button>
         <button type="button" class="ghost" id="signOut">로그아웃</button>

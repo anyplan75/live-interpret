@@ -129,6 +129,17 @@ test("one connection id stays on the first device until it leaves", () => {
   assert.match(lecture, /id="name"/);
   assert.match(lecture, /id="spoken"/);
   assert.match(lecture, /말하는 언어/);
+  assert.match(lecture, /id="placeLine"/);
+  assert.match(lecture, /placeName/);
+  assert.match(read("broadcast/renderer/room.html"), /id="placeLine"/);
+  assert.match(read("broadcast/renderer/room.js"), /session\.church|church\.name/);
+  assert.match(read("docs/face/index.html"), /id="placeLine"/);
+  assert.equal(org.cleanPlaceName("  은혜교회  ").length > 0, true);
+  assert.deepEqual(org.lectureJoinRecord("a".repeat(32), "은혜교회"), {
+    token: "a".repeat(32),
+    placeName: "은혜교회",
+  });
+  assert.match(String(desk[".write"]), /placeName/);
   assert.doesNotMatch(lecture, /id="joinId"/);
   assert.ok(lecture.indexOf('id="scanQr"') < lecture.indexOf('for="name"'));
   assert.ok(lecture.indexOf('for="name"') < lecture.indexOf('for="spoken"'));
