@@ -89,10 +89,14 @@
   };
   const pagesBase = "https://anyplan75.github.io/live-interpret";
 
+  // 말이 멈춘 뒤 교정으로 넘기는 침묵 기준(밀리초).
+  // soft는 문장이 어느 정도 끝난 뒤, hard는 조사 꼬리처럼 애매해도 강제.
+  // 말하는 도중 0.8초마다 잘라 보내던 강제 확정은 쓰지 않는다.
   const timing = {
     livePushMinInterval: 250,
-    silenceFlushMs: 3200,
-    silenceForceFlushMs: 6500,
+    vadSilenceMs: 500,
+    silenceFlushMs: 1800,
+    silenceForceFlushMs: 4500,
     minFlushChars: 8,
   };
 
