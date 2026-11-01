@@ -48,6 +48,34 @@
       border-radius: 10px;
     }
     body.room-compact .meter { height: 12px; margin-top: 6px; }
+    body.room-compact .caption-desk {
+      background: #121a24;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      margin-top: 8px;
+    }
+    body.room-compact .caption-desk img {
+      display: block;
+      width: 148px;
+      height: 148px;
+      margin: 8px 0;
+      padding: 6px;
+      background: #fff;
+      border-radius: 10px;
+    }
+    body.room-compact .caption-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    body.room-compact .caption-actions button { margin-top: 0; padding: 8px 10px; }
+    body.room-compact .caption-url {
+      word-break: break-all;
+      font-size: 0.82rem;
+      color: var(--muted, #9bb0c5);
+    }
   </style>
 </head>
 <body class="room-compact">
@@ -88,6 +116,13 @@
           <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
         </div>
         <div id="meters"></div>
+      </section>
+
+      <section class="card" id="captionCard">
+        <h2>성도 자막</h2>
+        <p class="hint">설정 사이트에서 고른 언어의 자막 링크와 QR입니다. 복사·저장·공유로 나눠 주세요. 주소 형식은 listen.html?church=…&amp;lang=… 입니다.</p>
+        <div id="captionLinks"></div>
+        <p class="hint" id="captionMsg"></p>
       </section>
 
       <section class="card" id="phoneJoinCard">

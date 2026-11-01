@@ -25,6 +25,10 @@
   let tokenExpiresAt = 0;
   let churchId = "";
   let stopWatch = null;
+  let styleState = LI.catalog.styleFromSettings(LI.catalog.defaultLiveSettings());
+  let captionKey = "";
+  let fontKey = "";
+  let captionBusy = 0;
 
   function say(text) {
     signInMsg.textContent = text || "";
@@ -303,6 +307,260 @@
     });
   }
 
+  function styleOutputCodes() {
+    const codes = [spoken, ...[...chosen].filter((code) => code !== spoken)];
+    return codes.filter((code) => LI.catalog.langByCode[code]);
+  }
+
+  function makeQr(url) {
+    return new Promise((resolve) => {
+      if (!window.LIQR || typeof LIQR.toDataURL !== "function") {
+        resolve("");
+        return;
+      }
+      try {
+        LIQR.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" }, (err, dataUrl) => {
+          resolve(err || !dataUrl ? "" : dataUrl);
+        });
+      } catch (_) {
+        resolve("");
+      }
+    });
+  }
+
+  function captionNote(text) {
+    const box = document.getElementById("captionMsg");
+    if (box) box.textContent = text || "";
+  }
+
+  function downloadDataUrl(dataUrl, fileName) {
+    if (!dataUrl) {
+      captionNote("QR이 아직 없습니다.");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = fileName || "자막-QR.png";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    captionNote("QR을 저장했습니다.");
+  }
+
+  function captionActions(url, qrDataUrl, fileName, title) {
+    const row = document.createElement("div");
+    row.className = "caption-actions";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "ghost";
+    copy.textContent = "복사";
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        captionNote("링크를 복사했습니다.");
+      } catch (_) {
+        captionNote("복사하지 못했습니다.");
+      }
+    });
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "ghost";
+    open.textContent = "열기";
+    open.addEventListener("click", () => {
+      window.open(url, "_blank", "noopener,noreferrer");
+    });
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "ghost";
+    save.textContent = "QR 저장";
+    save.addEventListener("click", () => downloadDataUrl(qrDataUrl, fileName));
+    const share = document.createElement("button");
+    share.type = "button";
+    share.className = "ghost";
+    share.textContent = "공유";
+    share.addEventListener("click", async () => {
+      try {
+        if (navigator.share) {
+          await navigator.share({ title: title || "성도 자막", url, text: url });
+          captionNote("공유 창을 열었습니다.");
+          return;
+        }
+        await navigator.clipboard.writeText(url);
+        captionNote("공유가 안 되어 링크를 복사했습니다.");
+      } catch (_) {
+        captionNote("공유하지 못했습니다.");
+      }
+    });
+    row.append(copy, open, save, share);
+    return row;
+  }
+
+  function paintCaptionCard(title, url, qrDataUrl, fileName) {
+    const card = document.createElement("article");
+    card.className = "caption-card";
+    const head = document.createElement("h3");
+    head.textContent = title;
+    card.append(head);
+    if (qrDataUrl) {
+      const image = document.createElement("img");
+      image.alt = `${title} QR`;
+      image.src = qrDataUrl;
+      card.append(image);
+    }
+    const link = document.createElement("p");
+    link.className = "caption-url";
+    link.textContent = url;
+    card.append(link, captionActions(url, qrDataUrl, fileName, title));
+    return card;
+  }
+
+  async function refreshCaptions() {
+    const box = document.getElementById("captionLinks");
+    if (!box || !churchId) return;
+    const codes = styleOutputCodes();
+    const nextKey = `${churchId}|${codes.join(",")}`;
+    if (nextKey === captionKey && box.childElementCount) return;
+    const ticket = ++captionBusy;
+    captionKey = nextKey;
+    const home = LI.catalog.homeLink(LI.catalog.pagesBase, churchId);
+    const items = LI.catalog.buildLinks(LI.catalog.pagesBase, churchId, codes);
+    const homeQr = await makeQr(home);
+    const painted = [];
+    for (const item of items) {
+      painted.push({
+        ...item,
+        listenQr: await makeQr(item.listen),
+        overlayQr: await makeQr(item.overlay),
+      });
+    }
+    if (ticket !== captionBusy) return;
+    box.innerHTML = "";
+    box.append(paintCaptionCard("성도 홈", home, homeQr, "성도-홈-QR.png"));
+    painted.forEach((item) => {
+      const label = `${item.flag || ""} ${item.name || item.code}`.trim();
+      box.append(paintCaptionCard(`${label} 자막`, item.listen, item.listenQr, `자막-${item.code}-QR.png`));
+      box.append(paintCaptionCard(`${label} OBS`, item.overlay, item.overlayQr, `OBS-${item.code}-QR.png`));
+    });
+  }
+
+  function fillStyleControls() {
+    const global = (styleState && styleState.global) || {};
+    markChoice(document.getElementById("layout"), "data-layout", global.layout || "bottom");
+    markChoice(document.getElementById("align"), "data-align", global.align || "center");
+    const color = document.getElementById("color");
+    const bg = document.getElementById("bgColor");
+    const opacity = document.getElementById("opacity");
+    if (color) color.value = global.color || "#ffffff";
+    if (bg) bg.value = global.bgColor || "#000000";
+    if (opacity && document.activeElement !== opacity) {
+      opacity.value = global.bgOpacity !== undefined ? global.bgOpacity : 0.7;
+    }
+  }
+
+  function paintFontRows() {
+    const rows = document.getElementById("fontRows");
+    if (!rows) return;
+    const codes = styleOutputCodes();
+    const nextKey = codes.join(",");
+    if (nextKey === fontKey && rows.childElementCount) return;
+    fontKey = nextKey;
+    rows.innerHTML = "";
+    if (!codes.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "오늘 번역할 언어를 고르면 나라별 글자 설정이 나타납니다.";
+      rows.append(empty);
+      return;
+    }
+    const faces = LI.catalog.subtitleFonts || [];
+    codes.forEach((code) => {
+      const lang = LI.catalog.langByCode[code];
+      if (!lang) return;
+      const font = (styleState.fonts && styleState.fonts[code]) || {};
+      const row = document.createElement("div");
+      row.className = "font-row";
+      const name = document.createElement("span");
+      name.textContent = `${lang.flag || ""} ${lang.name}`.trim();
+      const controls = document.createElement("span");
+      controls.className = "font-controls";
+      const faceBox = document.createElement("div");
+      faceBox.className = "font-faces choice";
+      faceBox.setAttribute("role", "group");
+      faceBox.setAttribute("aria-label", `${lang.name} 글꼴`);
+      const selected = faces.some((face) => face.id === font.font)
+        ? font.font
+        : LI.catalog.subtitleFontId(undefined, code);
+      faces.forEach((face) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.dataset.font = face.id;
+        btn.textContent = face.label;
+        if (face.id === selected) btn.classList.add("on");
+        btn.addEventListener("click", () => {
+          markChoice(faceBox, "data-font", face.id);
+        });
+        faceBox.append(btn);
+      });
+      const sizeLabel = document.createElement("span");
+      sizeLabel.textContent = "크기";
+      const size = document.createElement("input");
+      size.type = "number";
+      size.min = "8";
+      size.max = "240";
+      size.dataset.size = code;
+      size.value = font.fontSize || lang.defaultSize || 48;
+      const spaceLabel = document.createElement("span");
+      spaceLabel.textContent = "자간";
+      const space = document.createElement("input");
+      space.type = "number";
+      space.step = "0.5";
+      space.dataset.space = code;
+      space.value = font.letterSpacing !== undefined ? font.letterSpacing : (lang.defaultSpacing || 0);
+      faceBox.dataset.lang = code;
+      controls.append(faceBox, sizeLabel, size, spaceLabel, space);
+      row.append(name, controls);
+      rows.append(row);
+    });
+  }
+
+  function readStyleForm() {
+    const fonts = { ...(styleState && styleState.fonts ? styleState.fonts : {}) };
+    styleOutputCodes().forEach((code) => {
+      const size = document.querySelector(`[data-size="${code}"]`);
+      const space = document.querySelector(`[data-space="${code}"]`);
+      const faceBox = document.querySelector(`.font-faces[data-lang="${code}"]`);
+      const on = faceBox && faceBox.querySelector("button.on");
+      if (!size || !space) return;
+      fonts[code] = {
+        font: on ? on.getAttribute("data-font") : LI.catalog.subtitleFontId(undefined, code),
+        fontSize: size.value,
+        letterSpacing: space.value,
+      };
+    });
+    return {
+      layout: choiceValue(document.getElementById("layout"), "data-layout", "bottom"),
+      align: choiceValue(document.getElementById("align"), "data-align", "center"),
+      color: document.getElementById("color").value,
+      bgColor: document.getElementById("bgColor").value,
+      bgOpacity: document.getElementById("opacity").value,
+      fonts,
+    };
+  }
+
+  async function loadStyle() {
+    if (!churchId) return;
+    try {
+      const existing = await dbGet(`churches/${churchId}/live/settings`);
+      styleState = LI.catalog.styleFromSettings(existing || LI.catalog.defaultLiveSettings());
+      fontKey = "";
+      fillStyleControls();
+      paintFontRows();
+    } catch (err) {
+      const msg = document.getElementById("styleMsg");
+      if (msg) msg.textContent = personText(err);
+    }
+  }
+
   function paintLanguages() {
     const box = document.getElementById("langs");
     const nextKey = `${spoken}|${[...chosen].sort().join(",")}|${languages.map((lang) => lang.code).join(",")}`;
@@ -312,6 +570,8 @@
       });
       syncWatchedToChosen();
       paintWatchLangs();
+      paintFontRows();
+      refreshCaptions().catch(() => {});
       return;
     }
     languageKey = nextKey;
@@ -329,6 +589,10 @@
         syncWatchedToChosen();
         paintWatchLangs();
         applyWatchFilter();
+        fontKey = "";
+        captionKey = "";
+        paintFontRows();
+        refreshCaptions().catch(() => {});
         try {
           await command({ spoken, targets: [...chosen] });
         } catch (err) {
@@ -339,6 +603,8 @@
     });
     syncWatchedToChosen();
     paintWatchLangs();
+    paintFontRows();
+    refreshCaptions().catch(() => {});
   }
 
   function paintStartButton(running, gaps) {
@@ -664,10 +930,14 @@
     chosen = new Set(LI.catalog.defaultSelectedTargets());
     watched = new Set(chosen);
     startArmed = false;
+    captionKey = "";
+    fontKey = "";
     paintLanguages();
     paintStartButton(false, []);
     watchStatus();
-    ensureToken().then(() => dbGet(`churches/${churchId}/room/status`)).then((value) => {
+    ensureToken().then(async () => {
+      await loadStyle();
+      const value = await dbGet(`churches/${churchId}/room/status`);
       showStatus(LI.roomSync.publicStatus(value));
     }).catch((err) => {
       notice.textContent = personText(err);
@@ -860,6 +1130,35 @@
 
   document.getElementById("showName").addEventListener("change", (event) => {
     sendPatch({ showName: event.target.checked });
+  });
+
+  document.getElementById("layout").addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-layout]");
+    if (!btn) return;
+    markChoice(document.getElementById("layout"), "data-layout", btn.getAttribute("data-layout") || "bottom");
+  });
+
+  document.getElementById("align").addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-align]");
+    if (!btn) return;
+    markChoice(document.getElementById("align"), "data-align", btn.getAttribute("data-align") || "center");
+  });
+
+  document.getElementById("saveStyle").addEventListener("click", async () => {
+    const msg = document.getElementById("styleMsg");
+    try {
+      await ensureToken();
+      const existing = (await dbGet(`churches/${churchId}/live/settings`)) || {};
+      const next = LI.catalog.applyStyleToSettings(existing, readStyleForm());
+      await dbPut(`churches/${churchId}/live/settings`, next);
+      styleState = LI.catalog.styleFromSettings(next);
+      fontKey = "";
+      fillStyleControls();
+      paintFontRows();
+      if (msg) msg.textContent = "자막 위치와 나라별 글자를 저장했습니다.";
+    } catch (err) {
+      if (msg) msg.textContent = personText(err);
+    }
   });
 
   document.getElementById("sessionKind").addEventListener("click", (event) => {

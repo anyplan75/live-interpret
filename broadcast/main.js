@@ -2,6 +2,7 @@ require("./lib/load-env");
 const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu } = require("electron");
 const fs = require("fs");
 const path = require("path");
+const QRCode = require("qrcode");
 const catalog = require("./lib/catalog");
 const { Engine } = require("./lib/engine");
 const firebase = require("./lib/firebase");
@@ -314,8 +315,8 @@ function send(payload) {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 480,
-    height: 640,
+    width: 520,
+    height: 760,
     minWidth: 400,
     minHeight: 480,
     backgroundColor: "#0f1419",
@@ -707,7 +708,11 @@ function registerIpc() {
       for (const action of plan.actions) {
         try {
           if (action.type === "showName") engine.setShowPreacherName(action.on);
-          else if (action.type === "languages") await engine.setTargets(roomChurchId, action.targets, action.spoken);
+          else if (action.type === "languages") {
+            await engine.setTargets(roomChurchId, action.targets, action.spoken);
+            // 성도 자막 QR은 고른 언어가 바뀌면 바로 다시 그립니다.
+            send({ type: "caption-links", spoken: action.spoken, targets: action.targets });
+          }
           else if (action.type === "kind" && action.sessionKind) writeSettings({ sessionKind: action.sessionKind });
           else if (action.type === "sensitivity" || action.type === "speech") applyDeskStyle(action);
           else if (action.type === "phones") await applyPhoneCount(action.phoneCount);
@@ -1109,12 +1114,47 @@ function registerIpc() {
   });
   ipcMain.handle("links", async (_event, _churchId, targets, spoken) => {
     const church = await requireChurch();
-    const source = catalog.spokenLanguage(spoken);
-    const codes = [source, ...catalog.translationTargets(targets, source)];
+    const saved = readSettings();
+    const source = catalog.spokenLanguage(
+      spoken || (engine && engine.spoken) || saved.spoken || "ko",
+    );
+    const picked = Array.isArray(targets) && targets.length
+      ? targets
+      : (engine && Array.isArray(engine.outputs) && engine.outputs.length
+        ? engine.outputs
+        : (saved.targets || []));
+    const codes = [source, ...catalog.translationTargets(picked, source)];
+    const home = catalog.homeLink(catalog.pagesBase, church.id);
+    const makeQr = (url) => QRCode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" });
+    const items = [];
+    for (const item of catalog.buildLinks(catalog.pagesBase, church.id, codes)) {
+      items.push({
+        ...item,
+        // 성도 자막·OBS 주소는 catalog.buildLinks 형식을 그대로 씁니다.
+        listenQr: await makeQr(item.listen),
+        overlayQr: await makeQr(item.overlay),
+      });
+    }
     return {
-      home: catalog.homeLink(catalog.pagesBase, church.id),
-      items: catalog.buildLinks(catalog.pagesBase, church.id, codes),
+      home,
+      homeQr: await makeQr(home),
+      items,
     };
+  });
+  ipcMain.handle("save-image", async (_event, dataUrl, suggestedName) => {
+    const raw = String(dataUrl || "");
+    const match = /^data:image\/(png|jpeg|jpg);base64,(.+)$/i.exec(raw);
+    if (!match) throw new Error("그림을 저장하지 못했습니다.");
+    const ext = match[1].toLowerCase() === "png" ? "png" : "jpg";
+    const safe = String(suggestedName || `자막.${ext}`).replace(/[\\/:*?"<>|]+/g, "-").slice(0, 80);
+    const result = await dialog.showSaveDialog(win || undefined, {
+      title: "QR 저장",
+      defaultPath: safe.endsWith(`.${ext}`) ? safe : `${safe}.${ext}`,
+      filters: [{ name: "그림", extensions: [ext] }],
+    });
+    if (result.canceled || !result.filePath) return { saved: false };
+    fs.writeFileSync(result.filePath, Buffer.from(match[2], "base64"));
+    return { saved: true, path: result.filePath };
   });
   async function beginBroadcast(opts) {
     const church = await requireChurch();
