@@ -22,7 +22,9 @@
     return LANG.test(code) ? code : fallback;
   }
 
-  const KINDS = ["강의", "연설", "행사"];
+  // 공개 status에는 설교를 숨기고, desired/갭 판정용으로는 설교를 허용합니다.
+  const PUBLIC_KINDS = ["강의", "연설", "행사"];
+  const DESIRED_KINDS = ["설교", "강의", "연설", "행사"];
   const GAPS = ["저장 폴더", "강연자", "내용", "번역할 언어", "입력 장치"];
 
   function cleanSensitivity(value) {
@@ -31,7 +33,12 @@
 
   function cleanKind(value) {
     const kind = String(value || "");
-    return KINDS.includes(kind) ? kind : "";
+    return PUBLIC_KINDS.includes(kind) ? kind : "";
+  }
+
+  function cleanDesiredKind(value) {
+    const kind = String(value || "");
+    return DESIRED_KINDS.includes(kind) ? kind : "";
   }
 
   function cleanCount(value) {
@@ -140,7 +147,7 @@
       inputs,
     };
     if (Object.prototype.hasOwnProperty.call(src, "sensitivity")) next.sensitivity = cleanSensitivity(src.sensitivity);
-    if (Object.prototype.hasOwnProperty.call(src, "sessionKind")) next.sessionKind = cleanKind(src.sessionKind);
+    if (Object.prototype.hasOwnProperty.call(src, "sessionKind")) next.sessionKind = cleanDesiredKind(src.sessionKind);
     if (Object.prototype.hasOwnProperty.call(src, "phoneCount")) next.phoneCount = cleanCount(src.phoneCount);
     if (Object.prototype.hasOwnProperty.call(src, "preacherName")) next.preacherName = cleanName(src.preacherName);
     if (Object.prototype.hasOwnProperty.call(src, "speech")) next.speech = cleanSpeech(src.speech);
@@ -153,6 +160,8 @@
     const next = cleanDesired(desired);
     const previous = Math.max(0, Math.round(Number(appliedRev) || 0));
     if (!next.rev || next.rev === previous) return { rev: previous, actions: [] };
+    // 시작 전에 꼭 맞는 설정만 먼저 두고, running 다음에 휴대폰/진행자료/입력을 둡니다.
+    // 휴대폰 QR 실패 등이 방송 시작을 가로채지 않게 하려는 순서입니다.
     const actions = [
       { type: "showName", on: next.showName },
       { type: "languages", spoken: next.spoken, targets: next.targets.slice() },
@@ -162,9 +171,6 @@
     }
     if (Object.prototype.hasOwnProperty.call(next, "sensitivity") && !next.speech) {
       actions.push({ type: "sensitivity", sensitivity: next.sensitivity });
-    }
-    if (Object.prototype.hasOwnProperty.call(next, "phoneCount")) {
-      actions.push({ type: "phones", phoneCount: next.phoneCount });
     }
     if (Object.prototype.hasOwnProperty.call(next, "preacherName")) {
       actions.push({ type: "preacher", name: next.preacherName });
@@ -178,7 +184,6 @@
         sensitivity: next.sensitivity || next.speech.sensitivity || "normal",
       });
     }
-    if (next.sheet) actions.push({ type: "sheet", name: next.sheet.name, image: next.sheet.image });
     const running = {
       type: "running",
       on: next.running,
@@ -189,6 +194,10 @@
     if (Object.prototype.hasOwnProperty.call(next, "sensitivity")) running.sensitivity = next.sensitivity;
     if (Object.prototype.hasOwnProperty.call(next, "preacherName")) running.preacherName = next.preacherName;
     actions.push(running);
+    if (Object.prototype.hasOwnProperty.call(next, "phoneCount")) {
+      actions.push({ type: "phones", phoneCount: next.phoneCount });
+    }
+    if (next.sheet) actions.push({ type: "sheet", name: next.sheet.name, image: next.sheet.image });
     next.inputs.forEach((input) => actions.push({ type: "input", ...input }));
     return { rev: next.rev, actions };
   }

@@ -169,9 +169,13 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(publishStatus, /sessionKind:\s*saved\.sessionKind/);
   assert.match(publishStatus, /sessionKind:\s*publicKind/);
   assert.ok(publishStatus.indexOf("sessionKind: saved.sessionKind") < publishStatus.indexOf("sessionKind: publicKind"));
+  const applyDesired = main.slice(main.indexOf("async function applyDesired"), main.indexOf("function watchRoom"));
+  assert.match(applyDesired, /pendingDesired/);
+  assert.match(applyDesired, /startFailed/);
   const startMain = main.slice(main.indexOf("async function beginBroadcast"), main.indexOf("async function endBroadcast"));
   assert.ok(startMain.indexOf("openSavedFolder") < startMain.indexOf("engine.start"));
   assert.match(startMain, /고른 폴더에 기록을 만들 수 없습니다/);
+  assert.match(startMain, /\["설교", "강의", "연설", "행사"\]/);
   const settingsBlock = html.slice(settingsAt, html.indexOf('id="heardTitle"'));
   assert.doesNotMatch(settingsBlock, /id="start"|id="stop"/);
   assert.match(settingsBlock, /id="sensitivity"/);

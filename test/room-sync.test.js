@@ -28,6 +28,26 @@ test("a newer settings revision becomes engine actions in a fixed order", () => 
   assert.deepEqual(room.actionsFor(1, desired).actions, []);
 });
 
+test("desired keeps 설교 and runs start before phones or sheet", () => {
+  const sheetImage = "A".repeat(80);
+  const desired = room.withRev(null, {
+    running: true,
+    spoken: "ko",
+    targets: ["en"],
+    sessionKind: "설교",
+    phoneCount: 1,
+    preacherName: "준",
+    sheet: { name: "순서.jpg", image: sheetImage },
+  });
+  assert.equal(desired.sessionKind, "설교");
+  const types = room.actionsFor(0, desired).actions.map((item) => item.type);
+  assert.ok(types.indexOf("running") < types.indexOf("phones"));
+  assert.ok(types.indexOf("running") < types.indexOf("sheet"));
+  assert.equal(types.includes("kind"), true);
+  const kind = room.actionsFor(0, desired).actions.find((item) => item.type === "kind");
+  assert.equal(kind.sessionKind, "설교");
+});
+
 test("status keeps connection facts and drops secrets", () => {
   const status = room.publicStatus({
     updatedAt: 10,
