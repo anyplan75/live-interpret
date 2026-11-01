@@ -79,7 +79,14 @@ function main() {
 
   const pkg = require(path.join(root, "package.json"));
   const version = pkg.version || "0.0.0";
-  const pkgPath = path.join(root, "dist", `live-interpret-${version}-mas-arm64.pkg`);
+  const name = `live-interpret-${version}-mas-arm64.pkg`;
+  const nested = path.join(root, "dist", "mas-arm64", name);
+  const flat = path.join(root, "dist", name);
+  // 안내서·업로드 스크립트가 쓰는 위치는 dist/ 바로 아래다. builder가 하위에 두면 복사한다.
+  if (fs.existsSync(nested) && !fs.existsSync(flat)) {
+    fs.copyFileSync(nested, flat);
+  }
+  const pkgPath = fs.existsSync(flat) ? flat : nested;
   if (fs.existsSync(pkgPath)) {
     console.log(pkgPath);
   }
