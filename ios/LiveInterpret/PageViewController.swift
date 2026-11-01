@@ -40,10 +40,22 @@ final class PageViewController: UIViewController, WKNavigationDelegate, WKUIDele
 
     required init?(coder: NSCoder) { nil }
 
+    /// Info.plist의 마케팅 버전과 빌드 번호를 한 줄로 만듭니다.
+    private static func versionLine() -> String {
+        let info = Bundle.main.infoDictionary
+        let version = (info?["CFBundleShortVersionString"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let build = (info?["CFBundleVersion"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ver = (version?.isEmpty == false) ? version! : "?"
+        let bld = (build?.isEmpty == false) ? build! : "?"
+        return "앱 버전 \(ver) · 빌드 \(bld)"
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = ShellColor.background
         navigationItem.title = page.title
+        // 앱 버전(마케팅)과 빌드 번호를 헷갈리지 않게 둘 다 적어 둡니다.
+        navigationItem.prompt = Self.versionLine()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "QR 스캔",
             style: .plain,

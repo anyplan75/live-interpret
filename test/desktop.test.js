@@ -218,6 +218,7 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(read("scripts/mas-signing.js"), /Live Interpret Mac App Store Exact/);
   assert.match(read("scripts/pack-mas.js"), /--mac",\s*"mas"/);
   assert.match(read("scripts/pack-mas.js"), /MAS_BUILD_VERSION/);
+  assert.match(read("scripts/pack-mas.js"), /BUILD_VERSION/);
 
   const packMac = read("scripts/pack-mac.js");
   assert.match(packMac, /--mac", "dir", "--arm64/);
@@ -226,6 +227,8 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(packMac, /APPLE_TEAM_ID/);
   assert.match(packMac, /-c\.mac\.identity=-/);
   assert.match(packMac, /-c\.mac\.hardenedRuntime=true/);
+  assert.match(packMac, /--options", "runtime"/);
+  assert.match(packMac, /BUILD_VERSION/);
   assert.doesNotMatch(packMac, /\.p12|CSC_LINK|CSC_KEY_PASSWORD|APPLE_APP_SPECIFIC_PASSWORD\s*[:=]\s*["'][^"']|BEGIN CERTIFICATE/);
 
   const workflow = read(".github/workflows/desktop.yml");

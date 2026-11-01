@@ -99,6 +99,17 @@ function main() {
     builderArgs.push("-c.mac.identity=-");
   }
 
+  // TestFlight와 같이 쓸 빌드 번호. 마케팅 버전(package.json)과 따로 둡니다.
+  const buildVersion = String(process.env.BUILD_VERSION || process.env.MAS_BUILD_VERSION || "").trim();
+  if (buildVersion) {
+    if (!/^\d+(\.\d+){0,2}$/.test(buildVersion)) {
+      console.error("BUILD_VERSION 형식이 올바르지 않습니다.");
+      process.exit(1);
+    }
+    builderArgs.push(`-c.buildVersion=${buildVersion}`);
+    console.log(`빌드 번호: ${buildVersion} (앱 버전 ${pkg.version})`);
+  }
+
   if (dist) builderArgs.push("--publish", "never");
   run(builder, builderArgs, env);
   run(process.execPath, [path.join(__dirname, "name-mac-app.js")], env);
@@ -109,13 +120,24 @@ function main() {
     console.log("ad-hoc 서명: codesign --force --deep --sign - \"" + displayApp + "\"");
     run("codesign", ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, displayApp], env);
   } else {
-    console.log("표시 이름으로 다시 서명합니다: " + displayApp);
-    run("codesign", ["--force", "--deep", "--sign", signName, "--entitlements", entitlements, displayApp], env);
+    // 이름 바꾼 뒤 다시 서명할 때도 hardened runtime 을 켜야 Apple 공증이 통과합니다.
+    console.log("표시 이름으로 다시 서명합니다(hardened runtime): " + displayApp);
+    run("codesign", [
+      "--force",
+      "--deep",
+      "--options", "runtime",
+      "--sign", signName,
+      "--entitlements", entitlements,
+      displayApp,
+    ], env);
   }
   if (dist) {
-    const dmg = path.join(root, "dist", `실시간 통역시스템-${pkg.version}-mac-arm64.dmg`);
-    makeDirectDmg(displayApp, dmg);
-    console.log(dmg);
+    const dmgKo = path.join(root, "dist", `실시간 통역시스템-${pkg.version}-mac-arm64.dmg`);
+    const dmgEn = path.join(root, "dist", `live-interpret-${pkg.version}-mac-arm64.dmg`);
+    makeDirectDmg(displayApp, dmgKo);
+    fs.copyFileSync(dmgKo, dmgEn);
+    console.log(dmgKo);
+    console.log(dmgEn);
   }
 }
 

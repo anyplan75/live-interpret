@@ -64,11 +64,12 @@ function main() {
     `-c.mas.identity=ZJYZ656BL8`,
     `-c.mas.provisioningProfile=${profile.path}`,
   ];
-  // 시험 설치 빌드 번호. 마케팅 버전 0.1.0 은 두고, 이 숫자만 이전 TestFlight 빌드보다 올린다.
-  const buildVersion = String(process.env.MAS_BUILD_VERSION || "").trim();
+  // 시험 설치 빌드 번호. 마케팅 버전(package.json)은 두고, 이 숫자만 이전 TestFlight 빌드보다 올린다.
+  // DMG와 같은 번호를 쓰려면 BUILD_VERSION 또는 MAS_BUILD_VERSION 을 같게 둔다.
+  const buildVersion = String(process.env.BUILD_VERSION || process.env.MAS_BUILD_VERSION || "").trim();
   if (buildVersion) {
     if (!/^\d+(\.\d+){0,2}$/.test(buildVersion)) {
-      console.error("MAS_BUILD_VERSION 형식이 올바르지 않습니다.");
+      console.error("BUILD_VERSION / MAS_BUILD_VERSION 형식이 올바르지 않습니다.");
       process.exit(1);
     }
     args.push(`-c.buildVersion=${buildVersion}`);
@@ -78,7 +79,14 @@ function main() {
 
   const pkg = require(path.join(root, "package.json"));
   const version = pkg.version || "0.0.0";
-  const pkgPath = path.join(root, "dist", `live-interpret-${version}-mas-arm64.pkg`);
+  const name = `live-interpret-${version}-mas-arm64.pkg`;
+  const nested = path.join(root, "dist", "mas-arm64", name);
+  const flat = path.join(root, "dist", name);
+  // 안내서·업로드 스크립트가 쓰는 위치는 dist/ 바로 아래다. builder가 하위에 두면 복사한다.
+  if (fs.existsSync(nested) && !fs.existsSync(flat)) {
+    fs.copyFileSync(nested, flat);
+  }
+  const pkgPath = fs.existsSync(flat) ? flat : nested;
   if (fs.existsSync(pkgPath)) {
     console.log(pkgPath);
   }

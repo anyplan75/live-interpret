@@ -18,6 +18,7 @@ const setupReady = require("./lib/setup-ready");
 const orgServices = require("../docs/js/org-services");
 const cost = require("./lib/cost");
 const { userText } = require("./lib/user-text");
+const appVersion = require("./lib/app-version");
 
 app.setName("live-interpret");
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
@@ -1055,6 +1056,7 @@ function registerIpc() {
     openSettingsApp();
     return true;
   });
+  ipcMain.handle("app:version", () => appVersion.readAppVersionInfo(app));
   ipcMain.handle("audio:monitor", (_event, deviceKey, channel) => {
     const snap = engine.monitor(deviceKey, channel);
     const key = engine.device && engine.device.key ? engine.device.key : String(deviceKey || "");
