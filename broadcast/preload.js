@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("broadcast", {
   setChannelCaption: (index, patch) => ask("channel:caption", index, patch),
   setPhoneDisplay: (connectionId, patch) => ask("phone:display", connectionId, patch),
   links: (targets, spoken) => ask("links", "", targets, spoken),
+  saveImage: (dataUrl, suggestedName) => ask("save-image", dataUrl, suggestedName),
   start: (opts) => ask("broadcast:start", opts),
   stop: () => ask("broadcast:stop"),
   copy: (text) => ask("copy", text),

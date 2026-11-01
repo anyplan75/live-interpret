@@ -3,9 +3,11 @@ const studio = document.getElementById("studio");
 const signInMsg = document.getElementById("signInMsg");
 const meters = document.getElementById("meters");
 const desks = document.getElementById("phoneDesks");
+const captions = document.getElementById("captionLinks");
 const deviceEl = document.getElementById("device");
 const levels = new Map();
 let lastChannels = [];
+let captionKey = "";
 
 function personText(err) {
   const raw = err && err.message ? err.message : err;
@@ -23,6 +25,133 @@ function say(text) {
 
 function note(text) {
   document.getElementById("phoneMsg").textContent = text || "";
+}
+
+function captionNote(text) {
+  document.getElementById("captionMsg").textContent = text || "";
+}
+
+function actionButtons(url, qrDataUrl, fileName) {
+  const row = document.createElement("div");
+  row.className = "caption-actions";
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "ghost";
+  copy.textContent = "복사";
+  copy.addEventListener("click", async () => {
+    try {
+      await window.broadcast.copy(url);
+      captionNote("링크를 복사했습니다.");
+    } catch (_) {
+      captionNote("복사하지 못했습니다.");
+    }
+  });
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "ghost";
+  open.textContent = "열기";
+  open.addEventListener("click", () => {
+    window.broadcast.openExternal(url).catch(() => captionNote("열지 못했습니다."));
+  });
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "ghost";
+  save.textContent = "QR 저장";
+  save.addEventListener("click", async () => {
+    if (!qrDataUrl) {
+      captionNote("QR이 아직 없습니다.");
+      return;
+    }
+    try {
+      const result = await window.broadcast.saveImage(qrDataUrl, fileName);
+      captionNote(result && result.saved ? "QR을 저장했습니다." : "저장을 취소했습니다.");
+    } catch (err) {
+      captionNote(personText(err));
+    }
+  });
+  const share = document.createElement("button");
+  share.type = "button";
+  share.className = "ghost";
+  share.textContent = "공유";
+  share.addEventListener("click", async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "성도 자막", url, text: url });
+        captionNote("공유 창을 열었습니다.");
+        return;
+      }
+      await window.broadcast.copy(url);
+      captionNote("공유가 안 되어 링크를 복사했습니다.");
+    } catch (_) {
+      captionNote("공유하지 못했습니다.");
+    }
+  });
+  row.append(copy, open, save, share);
+  return row;
+}
+
+function paintCaptionBlock(title, url, qrDataUrl, fileName) {
+  const card = document.createElement("article");
+  card.className = "caption-desk";
+  const head = document.createElement("h3");
+  head.textContent = title;
+  card.append(head);
+  if (qrDataUrl) {
+    const image = document.createElement("img");
+    image.alt = `${title} QR`;
+    image.src = qrDataUrl;
+    card.append(image);
+  }
+  const link = document.createElement("p");
+  link.className = "caption-url";
+  link.textContent = url;
+  card.append(link, actionButtons(url, qrDataUrl, fileName));
+  return card;
+}
+
+function paintCaptions(info) {
+  if (!captions) return;
+  captions.innerHTML = "";
+  if (!info || !info.home) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "로그인하면 성도 자막 링크와 QR이 나옵니다.";
+    captions.append(empty);
+    return;
+  }
+  captions.append(paintCaptionBlock("성도 홈", info.home, info.homeQr, "성도-홈-QR.png"));
+  (info.items || []).forEach((item) => {
+    const label = `${item.flag || ""} ${item.name || item.code} 자막`.trim();
+    captions.append(paintCaptionBlock(label, item.listen, item.listenQr, `자막-${item.code}-QR.png`));
+    if (item.overlay) {
+      const obs = document.createElement("p");
+      obs.className = "hint";
+      obs.textContent = `OBS ${item.overlay}`;
+      const wrap = captions.lastElementChild;
+      if (wrap) {
+        const obsRow = actionButtons(item.overlay, item.overlayQr, `OBS-${item.code}-QR.png`);
+        const obsTitle = document.createElement("p");
+        obsTitle.className = "hint";
+        obsTitle.textContent = "OBS 오버레이";
+        wrap.append(obsTitle, obs, obsRow);
+      }
+    }
+  });
+}
+
+async function refreshCaptions(targets, spoken) {
+  try {
+    const info = await window.broadcast.links(targets, spoken);
+    const nextKey = JSON.stringify({
+      home: info && info.home,
+      items: (info && info.items || []).map((item) => item.listen),
+    });
+    if (nextKey === captionKey && captions.childElementCount) return;
+    captionKey = nextKey;
+    paintCaptions(info);
+  } catch (err) {
+    captionNote(personText(err));
+  }
 }
 
 function openStudio(email, church) {
@@ -180,6 +309,9 @@ window.broadcast.onEvent((event) => {
     paintMeters(event.channels);
   }
   if (event.type === "phone-join") paintDesks(event.info || {});
+  if (event.type === "caption-links") {
+    refreshCaptions(event.targets, event.spoken).catch(() => {});
+  }
 });
 
 document.getElementById("signIn").addEventListener("click", async () => {
@@ -197,6 +329,7 @@ document.getElementById("signIn").addEventListener("click", async () => {
     await loadDevices();
     await restoreDevice();
     await refreshPhones();
+    await refreshCaptions();
   } catch (err) {
     say(personText(err));
   }
@@ -213,6 +346,9 @@ document.getElementById("signOut").addEventListener("click", async () => {
   signInCard.hidden = false;
   document.getElementById("placeLine").textContent = "계정";
   document.getElementById("accountLine").textContent = "";
+  captionKey = "";
+  if (captions) captions.innerHTML = "";
+  captionNote("");
 });
 
 document.getElementById("pickFolder").addEventListener("click", async () => {
@@ -252,4 +388,5 @@ window.broadcast.authStatus().then(async (session) => {
   await loadDevices();
   await restoreDevice();
   await refreshPhones();
+  await refreshCaptions();
 }).catch(() => {});

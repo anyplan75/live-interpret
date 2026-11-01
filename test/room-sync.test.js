@@ -124,10 +124,13 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.doesNotMatch(roomHtml, /id="phoneCount"|id="langs"|id="pickBulletin"|진행자료|감도/);
   assert.match(roomHtml, /id="device"/);
   assert.match(roomHtml, /id="phoneDesks"/);
+  assert.match(roomHtml, /id="captionLinks"/);
+  assert.match(roomHtml, /성도 자막/);
   assert.match(roomHtml, /연결 번호/);
   assert.match(roomHtml, /설정 사이트/);
-  assert.match(main, /width:\s*480/);
-  assert.match(main, /height:\s*640/);
+  assert.match(main, /width:\s*520/);
+  assert.match(main, /height:\s*760/);
+  assert.match(main, /listenQr|save-image|caption-links/);
   assert.match(settingsHtml, /id="start"/);
   assert.match(settingsHtml, /id="stop"/);
   assert.match(settingsHtml, /id="langs"/);
