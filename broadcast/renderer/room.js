@@ -246,6 +246,19 @@ deviceEl.addEventListener("change", async () => {
   }
 });
 
+async function showVersionLine() {
+  const line = document.getElementById("versionLine");
+  if (!line || !window.broadcast.appVersion) return;
+  try {
+    const info = await window.broadcast.appVersion();
+    line.textContent = (info && info.line) || "앱 버전 · 빌드";
+  } catch (_) {
+    line.textContent = "앱 버전 · 빌드";
+  }
+}
+
+showVersionLine();
+
 window.broadcast.authStatus().then(async (session) => {
   if (!session || !session.signedIn || session.operator) return;
   openStudio(session.email, session.church);
