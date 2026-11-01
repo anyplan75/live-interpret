@@ -80,14 +80,16 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /showName:\s*showBox\.checked|showName: showBox\.checked/);
   assert.match(page, /id="placeLine"/);
   assert.match(page, /org-services\.js\?v=/);
-  assert.match(page, /desk-client\.js\?v=20261101a/);
-  assert.match(page, /desk-build/);
+  assert.match(page, /desk-client\.js\?v=20261101b/);
+  assert.match(page, /desk-build 20261101b/);
   assert.match(page, /LI\.orgServices/);
   assert.ok(page.indexOf("org-services.js") < page.indexOf("desk-client.js"));
   assert.match(client, /placeLine|placeLabel|cleanPlaceName/);
   assert.match(client, /LI && LI\.orgServices|services\.placeLabel/);
   assert.doesNotMatch(client, /start\.disabled = Array\.isArray\(gaps\) && gaps\.length > 0/);
   assert.doesNotMatch(client, /getElementById\("stop"\)\.disabled = !running/);
+  // 시작확인 단계에서 gaps가 있어도 room/desired 전송을 막지 않습니다.
+  assert.doesNotMatch(client, /if \(gaps\.length > 0\) \{\s*paintStartButton\(false, gaps\);\s*return;\s*\}/);
   assert.doesNotMatch(page, /id="device"|설교|교회/);
   assert.doesNotMatch(client, /console\.(log|info|debug)/);
   assert.doesNotMatch(client, /location\.hash/);

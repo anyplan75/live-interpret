@@ -165,6 +165,10 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(main, /securityScopedBookmarks:\s*true/);
   assert.match(main, /startAccessingSecurityScopedResource/);
   assert.match(main, /delete copy\.folderBookmark/);
+  const publishStatus = main.slice(main.indexOf("async function publishStatus"), main.indexOf("async function beginBroadcast"));
+  assert.match(publishStatus, /sessionKind:\s*saved\.sessionKind/);
+  assert.match(publishStatus, /sessionKind:\s*publicKind/);
+  assert.ok(publishStatus.indexOf("sessionKind: saved.sessionKind") < publishStatus.indexOf("sessionKind: publicKind"));
   const startMain = main.slice(main.indexOf("async function beginBroadcast"), main.indexOf("async function endBroadcast"));
   assert.ok(startMain.indexOf("openSavedFolder") < startMain.indexOf("engine.start"));
   assert.match(startMain, /고른 폴더에 기록을 만들 수 없습니다/);

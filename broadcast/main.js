@@ -504,13 +504,14 @@ function registerIpc() {
     const remaining = engine.remainingNow();
     const charged = engine.sessionCharge ? engine.sessionCharge.charged : 0;
     const saved = readSettings();
+    // 공개 status에는 설교를 비우지만, 갭 판정은 저장된 sessionKind(설교 포함)로 한다.
     const publicKind = ["강의", "연설", "행사"].includes(saved.sessionKind) ? saved.sessionKind : "";
     const deviceKey = (engine.device && engine.device.key) || saved.deviceKey || "";
     const gaps = setupReady.missingSetup({
       folder: saved.folder || "",
       folderReady: openSavedFolder(saved),
       preacherId: saved.preacherId || "",
-      sessionKind: publicKind,
+      sessionKind: saved.sessionKind || "",
       targets: engine.outputs || [],
       deviceKey,
     });

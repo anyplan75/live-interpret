@@ -361,7 +361,7 @@
     }
     if (startArmed) {
       // 같은 단추 글자만 「시작확인」으로 바꿉니다. 다시 누르면 방송이 시작됩니다.
-      // 준비 갭이 있어도 단추는 눌러지게 둡니다. 누르면 안내만 다시 보이고, 방송은 시작하지 않습니다.
+      // 준비 갭이 있어도 단추는 눌러지게 둡니다. 다시 누르면 room/desired 시작 명령을 보냅니다.
       // 「종료」는 이 단계에서 「취소」로 바뀌어 시작확인을 되돌립니다.
       start.textContent = "시작확인";
       start.classList.add("confirm-ready");
@@ -826,11 +826,8 @@
       paintStartButton(false, gaps);
       return;
     }
-    if (gaps.length > 0) {
-      paintStartButton(false, gaps);
-      return;
-    }
     // confirmStart: 같은 단추를 한 번 더 누르면 방송을 시작합니다.
+    // 준비 갭이 남아 있어도 room/desired 시작 명령은 보냅니다. 갭 안내는 화면에 그대로 둡니다.
     sendPatch({
       running: true,
       spoken,
