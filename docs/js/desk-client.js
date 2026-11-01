@@ -343,6 +343,7 @@
 
   function paintStartButton(running, gaps) {
     const start = document.getElementById("start");
+    const stop = document.getElementById("stop");
     const hint = document.getElementById("confirmHint");
     if (!start) return;
     if (running) {
@@ -351,15 +352,25 @@
       start.classList.remove("confirm-ready");
       start.disabled = true;
       start.setAttribute("aria-label", "시작");
+      if (stop) {
+        stop.disabled = false;
+        stop.textContent = "종료";
+      }
       if (hint) hint.hidden = true;
       return;
     }
     if (startArmed) {
       // 같은 단추 글자만 「시작확인」으로 바꿉니다. 다시 누르면 방송이 시작됩니다.
+      // 준비 갭이 있어도 단추는 눌러지게 둡니다. 누르면 안내만 다시 보이고, 방송은 시작하지 않습니다.
+      // 「종료」는 이 단계에서 「취소」로 바뀌어 시작확인을 되돌립니다.
       start.textContent = "시작확인";
       start.classList.add("confirm-ready");
       start.setAttribute("aria-label", "confirmStart");
-      start.disabled = Array.isArray(gaps) && gaps.length > 0;
+      start.disabled = false;
+      if (stop) {
+        stop.disabled = false;
+        stop.textContent = "취소";
+      }
       if (hint) {
         const row = latest || {};
         const spokenName = langLabel(row.spoken || spoken);
@@ -367,14 +378,18 @@
         const blocked = Array.isArray(gaps) && gaps.length > 0;
         hint.hidden = false;
         hint.textContent = blocked
-          ? `아직 준비되지 않았습니다: ${(gaps || []).join(", ")}. 입력 장치와 기록 폴더는 방송실 앱에서 맞춥니다.`
-          : `말하는 언어 ${spokenName}. 번역 ${targets}. 남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}. 다시 누르면 시작합니다.`;
+          ? `아직 준비되지 않았습니다: ${(gaps || []).join(", ")}. 입력 장치와 기록 폴더는 방송실 앱에서 맞춥니다. 「취소」로 되돌릴 수 있습니다.`
+          : `말하는 언어 ${spokenName}. 번역 ${targets}. 남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}. 다시 누르면 시작합니다. 아니면 「취소」를 누르세요.`;
       }
     } else {
       start.textContent = "시작";
       start.classList.remove("confirm-ready");
       start.setAttribute("aria-label", "시작");
       start.disabled = false;
+      if (stop) {
+        stop.disabled = true;
+        stop.textContent = "종료";
+      }
       if (hint) hint.hidden = true;
     }
   }
@@ -432,7 +447,6 @@
     const onAir = document.getElementById("onAir");
     const running = row.running === true;
     onAir.hidden = !running;
-    document.getElementById("stop").disabled = !running;
     const focus = document.activeElement;
     if (!focus || !focus.closest || !focus.closest("#sessionKind")) {
       markChoice(document.getElementById("sessionKind"), "data-kind", row.sessionKind || "");
