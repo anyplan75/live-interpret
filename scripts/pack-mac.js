@@ -109,8 +109,16 @@ function main() {
     console.log("ad-hoc 서명: codesign --force --deep --sign - \"" + displayApp + "\"");
     run("codesign", ["--force", "--deep", "--sign", "-", "--entitlements", entitlements, displayApp], env);
   } else {
-    console.log("표시 이름으로 다시 서명합니다: " + displayApp);
-    run("codesign", ["--force", "--deep", "--sign", signName, "--entitlements", entitlements, displayApp], env);
+    // 이름 바꾼 뒤 다시 서명할 때도 hardened runtime 을 켜야 Apple 공증이 통과합니다.
+    console.log("표시 이름으로 다시 서명합니다(hardened runtime): " + displayApp);
+    run("codesign", [
+      "--force",
+      "--deep",
+      "--options", "runtime",
+      "--sign", signName,
+      "--entitlements", entitlements,
+      displayApp,
+    ], env);
   }
   if (dist) {
     const dmg = path.join(root, "dist", `실시간 통역시스템-${pkg.version}-mac-arm64.dmg`);
