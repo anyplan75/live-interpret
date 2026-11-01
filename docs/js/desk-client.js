@@ -819,7 +819,7 @@
     }
   }
 
-  document.getElementById("start").addEventListener("click", () => {
+  document.getElementById("start").addEventListener("click", async () => {
     const gaps = latest && Array.isArray(latest.gaps) ? latest.gaps : [];
     if (!startArmed) {
       startArmed = true;
@@ -828,14 +828,21 @@
     }
     // confirmStart: 같은 단추를 한 번 더 누르면 방송을 시작합니다.
     // 준비 갭이 남아 있어도 room/desired 시작 명령은 보냅니다. 갭 안내는 화면에 그대로 둡니다.
-    sendPatch({
-      running: true,
-      spoken,
-      targets: [...chosen],
-      sessionKind: choiceValue(document.getElementById("sessionKind"), "data-kind", ""),
-      preacherName: document.getElementById("preacherName").value,
-      ...speechPatch(),
-    });
+    try {
+      await command({
+        running: true,
+        spoken,
+        targets: [...chosen],
+        sessionKind: choiceValue(document.getElementById("sessionKind"), "data-kind", ""),
+        preacherName: document.getElementById("preacherName").value,
+        ...speechPatch(),
+      });
+      notice.textContent = gaps.length
+        ? `시작 명령을 보냈습니다. 방송실 준비: ${gaps.join(", ")}`
+        : "시작 명령을 보냈습니다. 방송실이 받으면 방송 중으로 바뀝니다.";
+    } catch (err) {
+      notice.textContent = personText(err);
+    }
   });
 
   document.getElementById("stop").addEventListener("click", async () => {

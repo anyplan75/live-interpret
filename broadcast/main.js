@@ -394,6 +394,7 @@ function registerIpc() {
   let lastNotice = "";
   let noticeUntil = 0;
   let applying = false;
+  let pendingDesired = null;
   let cachedBalance = null;
   let balanceAt = 0;
 
@@ -692,36 +693,54 @@ function registerIpc() {
   }
 
   async function applyDesired(raw) {
-    if (applying || !roomChurchId) return;
+    if (!roomChurchId) return;
+    // 적용 중이면 최신 desired만 남겨 두고, 끝난 뒤 바로 이어서 적용합니다.
+    if (applying) {
+      pendingDesired = raw;
+      return;
+    }
     const plan = roomSync.actionsFor(appliedRev, raw);
     if (!plan.actions.length) return;
     applying = true;
+    let startFailed = false;
     try {
       for (const action of plan.actions) {
-        if (action.type === "showName") engine.setShowPreacherName(action.on);
-        else if (action.type === "languages") await engine.setTargets(roomChurchId, action.targets, action.spoken);
-        else if (action.type === "kind" && action.sessionKind) writeSettings({ sessionKind: action.sessionKind });
-        else if (action.type === "sensitivity" || action.type === "speech") applyDeskStyle(action);
-        else if (action.type === "phones") await applyPhoneCount(action.phoneCount);
-        else if (action.type === "preacher") applyPreacherName(action.name);
-        else if (action.type === "sheet") await applySheet(action);
-        else if (action.type === "input") await applyInput(action);
-        else if (action.type === "running" && action.on && !engine.running) {
-          await beginBroadcast({
-            sessionKind: action.sessionKind,
-            spoken: action.spoken,
-            targets: action.targets,
-            sensitivity: action.sensitivity,
-            preacherName: action.preacherName,
-          });
-        } else if (action.type === "running" && !action.on && engine.running) await endBroadcast();
+        try {
+          if (action.type === "showName") engine.setShowPreacherName(action.on);
+          else if (action.type === "languages") await engine.setTargets(roomChurchId, action.targets, action.spoken);
+          else if (action.type === "kind" && action.sessionKind) writeSettings({ sessionKind: action.sessionKind });
+          else if (action.type === "sensitivity" || action.type === "speech") applyDeskStyle(action);
+          else if (action.type === "phones") await applyPhoneCount(action.phoneCount);
+          else if (action.type === "preacher") applyPreacherName(action.name);
+          else if (action.type === "sheet") await applySheet(action);
+          else if (action.type === "input") await applyInput(action);
+          else if (action.type === "running" && action.on && !engine.running) {
+            await beginBroadcast({
+              sessionKind: action.sessionKind,
+              spoken: action.spoken,
+              targets: action.targets,
+              sensitivity: action.sensitivity,
+              preacherName: action.preacherName,
+            });
+          } else if (action.type === "running" && !action.on && engine.running) await endBroadcast();
+        } catch (err) {
+          note(err);
+          // 시작/종료 실패는 같은 rev를 다시 시도할 수 있게 남깁니다.
+          if (action.type === "running") {
+            startFailed = true;
+            break;
+          }
+        }
       }
-      appliedRev = plan.rev;
-    } catch (err) {
-      note(err);
+      if (!startFailed) appliedRev = plan.rev;
     } finally {
       applying = false;
       publishRoom();
+      if (pendingDesired) {
+        const next = pendingDesired;
+        pendingDesired = null;
+        await applyDesired(next);
+      }
     }
   }
 
@@ -1116,7 +1135,7 @@ function registerIpc() {
     if (!catalog.isPreacherId(preacherId)) {
       throw new Error("등록된 이름이 없습니다. 관리 페이지에서 이름을 먼저 등록해 주세요.");
     }
-    const kinds = ["강의", "연설", "행사"];
+    const kinds = ["설교", "강의", "연설", "행사"];
     const sessionKind = kinds.includes(opts && opts.sessionKind)
       ? opts.sessionKind
       : (kinds.includes(saved.sessionKind) ? saved.sessionKind : "강의");
