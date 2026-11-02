@@ -129,10 +129,16 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.match(roomHtml, /id="phoneDesks"/);
   assert.match(roomHtml, /id="phoneCountBox"/);
   assert.match(roomHtml, /id="captionLinks"/);
+  assert.match(roomHtml, /id="overlayLinks"/);
   assert.match(roomHtml, /자막링크/);
+  assert.match(roomHtml, /OBS 오버레이/);
   assert.doesNotMatch(roomHtml, /성도/);
   assert.match(roomHtml, /연결 번호/);
   assert.match(roomHtml, /설정 사이트/);
+  const roomJs = fs.readFileSync(path.join(root, "broadcast/renderer/room.js"), "utf8");
+  assert.match(roomJs, /paintOverlays|overlayQr|OBS-\$\{item\.code\}/);
+  assert.match(roomJs, /자막링크/);
+  assert.doesNotMatch(roomJs, /item\.listen/);
   assert.match(main, /width:\s*520/);
   assert.match(main, /height:\s*760/);
   assert.match(main, /save-image|caption-links|mirrorDesiredPhoneCount/);
