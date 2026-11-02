@@ -4,6 +4,7 @@ const signInMsg = document.getElementById("signInMsg");
 const meters = document.getElementById("meters");
 const desks = document.getElementById("phoneDesks");
 const captions = document.getElementById("captionLinks");
+const overlays = document.getElementById("overlayLinks");
 const deviceEl = document.getElementById("device");
 const phoneCountBox = document.getElementById("phoneCountBox");
 const levels = new Map();
@@ -33,7 +34,13 @@ function captionNote(text) {
   document.getElementById("captionMsg").textContent = text || "";
 }
 
-function actionButtons(url, qrDataUrl, fileName) {
+function overlayNote(text) {
+  const box = document.getElementById("overlayMsg");
+  if (box) box.textContent = text || "";
+}
+
+function actionButtons(url, qrDataUrl, fileName, shareTitle, noteFn) {
+  const note = typeof noteFn === "function" ? noteFn : captionNote;
   const row = document.createElement("div");
   row.className = "caption-actions";
   const copy = document.createElement("button");
@@ -43,9 +50,9 @@ function actionButtons(url, qrDataUrl, fileName) {
   copy.addEventListener("click", async () => {
     try {
       await window.broadcast.copy(url);
-      captionNote("링크를 복사했습니다.");
+      note("링크를 복사했습니다.");
     } catch (_) {
-      captionNote("복사하지 못했습니다.");
+      note("복사하지 못했습니다.");
     }
   });
   const open = document.createElement("button");
@@ -53,7 +60,7 @@ function actionButtons(url, qrDataUrl, fileName) {
   open.className = "ghost";
   open.textContent = "열기";
   open.addEventListener("click", () => {
-    window.broadcast.openExternal(url).catch(() => captionNote("열지 못했습니다."));
+    window.broadcast.openExternal(url).catch(() => note("열지 못했습니다."));
   });
   const save = document.createElement("button");
   save.type = "button";
@@ -61,14 +68,14 @@ function actionButtons(url, qrDataUrl, fileName) {
   save.textContent = "QR 저장";
   save.addEventListener("click", async () => {
     if (!qrDataUrl) {
-      captionNote("QR이 아직 없습니다.");
+      note("QR이 아직 없습니다.");
       return;
     }
     try {
       const result = await window.broadcast.saveImage(qrDataUrl, fileName);
-      captionNote(result && result.saved ? "QR을 저장했습니다." : "저장을 취소했습니다.");
+      note(result && result.saved ? "QR을 저장했습니다." : "저장을 취소했습니다.");
     } catch (err) {
-      captionNote(personText(err));
+      note(personText(err));
     }
   });
   const share = document.createElement("button");
@@ -78,21 +85,21 @@ function actionButtons(url, qrDataUrl, fileName) {
   share.addEventListener("click", async () => {
     try {
       if (navigator.share) {
-        await navigator.share({ title: "자막링크", url, text: url });
-        captionNote("공유 창을 열었습니다.");
+        await navigator.share({ title: shareTitle || "자막링크", url, text: url });
+        note("공유 창을 열었습니다.");
         return;
       }
       await window.broadcast.copy(url);
-      captionNote("공유가 안 되어 링크를 복사했습니다.");
+      note("공유가 안 되어 링크를 복사했습니다.");
     } catch (_) {
-      captionNote("공유하지 못했습니다.");
+      note("공유하지 못했습니다.");
     }
   });
   row.append(copy, open, save, share);
   return row;
 }
 
-function paintCaptionBlock(title, url, qrDataUrl, fileName) {
+function paintCaptionBlock(title, url, qrDataUrl, fileName, noteFn) {
   const card = document.createElement("article");
   card.className = "caption-desk";
   const head = document.createElement("h3");
@@ -107,7 +114,7 @@ function paintCaptionBlock(title, url, qrDataUrl, fileName) {
   const link = document.createElement("p");
   link.className = "caption-url";
   link.textContent = url;
-  card.append(link, actionButtons(url, qrDataUrl, fileName));
+  card.append(link, actionButtons(url, qrDataUrl, fileName, title, noteFn));
   return card;
 }
 
@@ -121,8 +128,26 @@ function paintCaptions(info) {
     captions.append(empty);
     return;
   }
-  // 언어별 링크는 빼고 메인 자막링크(홈)만 보여 줍니다.
-  captions.append(paintCaptionBlock("자막링크", info.home, info.homeQr, "자막링크-QR.png"));
+  // 자막은 메인 「자막링크」만 유지합니다. 언어별 listen은 넣지 않습니다.
+  captions.append(paintCaptionBlock("자막링크", info.home, info.homeQr, "자막링크-QR.png", captionNote));
+}
+
+function paintOverlays(info) {
+  if (!overlays) return;
+  overlays.innerHTML = "";
+  const items = ((info && info.items) || []).filter((item) => item && item.overlay);
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "번역할 언어를 고르면 OBS 오버레이 링크가 나옵니다.";
+    overlays.append(empty);
+    return;
+  }
+  // 언어별 OBS 오버레이만 따로 보여 줍니다. (자막 listen 카드는 넣지 않습니다.)
+  items.forEach((item) => {
+    const label = `${item.flag || ""} ${item.name || item.code} OBS`.trim();
+    overlays.append(paintCaptionBlock(label, item.overlay, item.overlayQr, `OBS-${item.code}-QR.png`, overlayNote));
+  });
 }
 
 async function refreshCaptions(targets, spoken) {
@@ -130,12 +155,23 @@ async function refreshCaptions(targets, spoken) {
     const info = await window.broadcast.links(targets, spoken);
     const nextKey = JSON.stringify({
       home: info && info.home,
+      overlays: ((info && info.items) || []).map((item) => item.overlay),
     });
-    if (nextKey === captionKey && captions.childElementCount) return;
+    if (
+      nextKey === captionKey
+      && captions
+      && captions.childElementCount
+      && overlays
+      && overlays.childElementCount
+    ) {
+      return;
+    }
     captionKey = nextKey;
     paintCaptions(info);
+    paintOverlays(info);
   } catch (err) {
     captionNote(personText(err));
+    overlayNote(personText(err));
   }
 }
 

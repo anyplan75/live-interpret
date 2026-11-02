@@ -80,13 +80,15 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /showName:\s*showBox\.checked|showName: showBox\.checked/);
   assert.match(page, /id="placeLine"/);
   assert.match(page, /org-services\.js\?v=/);
-  assert.match(page, /desk-client\.js\?v=20261102a/);
-  assert.match(page, /desk-build 20261102a/);
-  assert.match(page, /qrcode-browser\.js\?v=20261102a/);
+  assert.match(page, /desk-client\.js\?v=20261102b/);
+  assert.match(page, /desk-build 20261102b/);
+  assert.match(page, /qrcode-browser\.js\?v=20261102b/);
   assert.match(page, /id="captionLinks"/);
+  assert.match(page, /id="overlayLinks"/);
   assert.match(page, /id="fontRows"/);
   assert.match(page, /id="saveStyle"/);
   assert.match(page, /자막링크/);
+  assert.match(page, /OBS 오버레이/);
   assert.doesNotMatch(page, /성도/);
   assert.match(page, /나라별 글자/);
   assert.match(page, /말하는 언어/);
@@ -96,6 +98,7 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /placeLine|placeLabel|cleanPlaceName/);
   assert.match(client, /LI && LI\.orgServices|services\.placeLabel/);
   assert.match(client, /refreshCaptions|homeLink/);
+  assert.match(client, /refreshOverlays|buildLinks|overlay\.html/);
   assert.match(client, /spoken-pick|fillSpokenSelect/);
   assert.match(client, /applyStyleToSettings|live\/settings/);
   assert.match(client, /paintFontRows|readStyleForm/);
