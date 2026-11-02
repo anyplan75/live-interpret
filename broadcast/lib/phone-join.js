@@ -522,11 +522,19 @@ class PhoneJoin {
     const next = patch || {};
     if (next.name) desk.name = String(next.name);
     if (Object.prototype.hasOwnProperty.call(next, "showName")) desk.showName = next.showName !== false;
+    if (Object.prototype.hasOwnProperty.call(next, "spoken") && next.spoken != null) {
+      const code = String(next.spoken || "").trim();
+      if (catalog.langByCode[code]) {
+        desk.spoken = code;
+        desk.operatorSpoken = code;
+      }
+    }
     this._notify();
     return {
       connectionId: id,
       name: desk.name || "",
       showName: desk.showName !== false,
+      spoken: desk.spoken || desk.operatorSpoken || "",
     };
   }
 

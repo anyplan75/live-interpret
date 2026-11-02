@@ -13,18 +13,21 @@ test("a newer settings revision becomes engine actions in a fixed order", () => 
     targets: ["en", "ko", "nope", "en"],
     showName: false,
     inputs: [
-      { key: "c:0", live: false, name: "사회자" },
-      { key: "p:AB23CD", live: true, name: "손님" },
+      { key: "c:0", live: false, name: "사회자", spoken: "en" },
+      { key: "p:AB23CD", live: true, name: "손님", spoken: "ja" },
       { key: "bad", live: true, name: "버림" },
     ],
   });
   assert.equal(desired.rev, 1);
   assert.deepEqual(desired.targets, ["en"]);
+  assert.equal(desired.inputs[0].spoken, "en");
+  assert.equal(desired.inputs[1].spoken, "ja");
   const plan = room.actionsFor(0, desired);
   assert.equal(plan.rev, 1);
   assert.deepEqual(plan.actions.map((item) => item.type), ["showName", "languages", "running", "input", "input"]);
   assert.equal(plan.actions[0].on, false);
   assert.equal(plan.actions[2].on, true);
+  assert.equal(plan.actions[3].spoken, "en");
   assert.deepEqual(room.actionsFor(1, desired).actions, []);
 });
 
@@ -121,16 +124,19 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.match(openSettings, /shell\.openExternal/);
   assert.doesNotMatch(openSettings, /spawn\(/);
   assert.doesNotMatch(roomHtml, /id="start"|id="operator"|설교|교회/);
-  assert.doesNotMatch(roomHtml, /id="phoneCount"|id="langs"|id="pickBulletin"|진행자료|감도/);
+  assert.doesNotMatch(roomHtml, /id="langs"|id="pickBulletin"|진행자료|감도/);
   assert.match(roomHtml, /id="device"/);
   assert.match(roomHtml, /id="phoneDesks"/);
+  assert.match(roomHtml, /id="phoneCountBox"/);
   assert.match(roomHtml, /id="captionLinks"/);
-  assert.match(roomHtml, /성도 자막/);
+  assert.match(roomHtml, /자막링크/);
+  assert.doesNotMatch(roomHtml, /성도/);
   assert.match(roomHtml, /연결 번호/);
   assert.match(roomHtml, /설정 사이트/);
   assert.match(main, /width:\s*520/);
   assert.match(main, /height:\s*760/);
-  assert.match(main, /listenQr|save-image|caption-links/);
+  assert.match(main, /save-image|caption-links|mirrorDesiredPhoneCount/);
+  assert.match(main, /fromDesired:\s*true/);
   assert.match(settingsHtml, /id="start"/);
   assert.match(settingsHtml, /id="stop"/);
   assert.match(settingsHtml, /id="langs"/);

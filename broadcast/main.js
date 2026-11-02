@@ -453,6 +453,7 @@ function registerIpc() {
           kind: "phone",
           title: row.name || "휴대폰",
           name: row.name || "",
+          spoken: row.spoken || "ko",
           level: peaks.get(row.index) || 0,
           live: row.captionLive !== false,
           connected: !!row.connected,
@@ -467,6 +468,7 @@ function registerIpc() {
         kind: "mic",
         title: `채널 ${row.index + 1}`,
         name: row.name || "",
+        spoken: row.spoken || "ko",
         level: peaks.get(row.index) || 0,
         live: row.captionLive !== false,
         connected: true,
@@ -483,6 +485,7 @@ function registerIpc() {
         kind: "phone",
         title: `휴대폰 ${index + 1}`,
         name: desk.name || "",
+        spoken: desk.spoken || desk.operatorSpoken || "ko",
         level: 0,
         live: true,
         connected: !!desk.connected,
@@ -568,11 +571,20 @@ function registerIpc() {
       try {
         engine.setChannelCaption(index, { name: action.name, showName: action.showName });
         if ((rows[index].captionLive !== false) !== action.live) engine.setInputLive(index, action.live);
+        if (Object.prototype.hasOwnProperty.call(action, "spoken") && action.spoken) {
+          await engine.setChannelSpoken(roomChurchId, index, action.spoken);
+        }
       } catch (_) { /* 아직 없는 마이크 칸은 방송실에서 장치를 고른 뒤에 적용합니다 */ }
       return;
     }
     const connectionId = action.key.slice(2);
-    if (phoneJoin) phoneJoin.setDisplay(connectionId, { name: action.name, showName: action.showName });
+    if (phoneJoin) {
+      phoneJoin.setDisplay(connectionId, {
+        name: action.name,
+        showName: action.showName,
+        spoken: Object.prototype.hasOwnProperty.call(action, "spoken") ? action.spoken : undefined,
+      });
+    }
     const row = engine.publicChannels().find((item) => item.connectionId === connectionId);
     if (!row) return;
     try {
@@ -584,6 +596,9 @@ function registerIpc() {
     } catch (_) { /* 자막 칸이 없으면 연결 기록만 바꿉니다 */ }
     if ((row.captionLive !== false) !== action.live) {
       try { engine.setInputLive(row.index, action.live); } catch (_) { /* 꺼진 칸은 다음에 다시 맞춥니다 */ }
+    }
+    if (Object.prototype.hasOwnProperty.call(action, "spoken") && action.spoken) {
+      try { await engine.setChannelSpoken(roomChurchId, row.index, action.spoken); } catch (_) { /* 다음 연결에서 다시 맞춥니다 */ }
     }
   }
 
@@ -656,12 +671,26 @@ function registerIpc() {
     }
   }
 
-  async function applyPhoneCount(count) {
+  // 방송실에서 바꾼 휴대폰 대수를 설정 웹 desired에도 맞춰, 서로 덮어쓰지 않게 합니다.
+  async function mirrorDesiredPhoneCount(count) {
+    if (!roomChurchId) return;
+    try {
+      const current = await firebase.get(`churches/${roomChurchId}/room/desired`);
+      const next = roomSync.withRev(current, { phoneCount: count });
+      appliedRev = next.rev;
+      await firebase.set(`churches/${roomChurchId}/room/desired`, next);
+    } catch (_) { /* 다음 상태·설정 맞춤에서 다시 맞춥니다 */ }
+  }
+
+  async function applyPhoneCount(count, opts) {
     await ensureAuth();
     if (!phoneJoin) throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
     const next = Math.max(0, Math.min(8, Math.round(Number(count) || 0)));
+    const fromDesired = !!(opts && opts.fromDesired);
     if (phoneJoin.countChosen && phoneJoin.phoneCount === next) {
       writeSettings({ phoneCount: next });
+      send({ type: "phone-join", info: phoneJoin.info() });
+      publishRoom();
       return phoneJoin.info();
     }
     if (!/^[a-f0-9]{32}$/.test(phoneJoin.token || "")) await phoneJoin.start();
@@ -690,6 +719,8 @@ function registerIpc() {
     await phoneJoin.refreshQrs();
     writeSettings({ phoneCount: next });
     send({ type: "phone-join", info: phoneJoin.info() });
+    publishRoom();
+    if (!fromDesired) await mirrorDesiredPhoneCount(next);
     return phoneJoin.info();
   }
 
@@ -710,12 +741,12 @@ function registerIpc() {
           if (action.type === "showName") engine.setShowPreacherName(action.on);
           else if (action.type === "languages") {
             await engine.setTargets(roomChurchId, action.targets, action.spoken);
-            // 성도 자막 QR은 고른 언어가 바뀌면 바로 다시 그립니다.
+            // 자막링크 QR은 고른 언어가 바뀌면 바로 다시 그립니다.
             send({ type: "caption-links", spoken: action.spoken, targets: action.targets });
           }
           else if (action.type === "kind" && action.sessionKind) writeSettings({ sessionKind: action.sessionKind });
           else if (action.type === "sensitivity" || action.type === "speech") applyDeskStyle(action);
-          else if (action.type === "phones") await applyPhoneCount(action.phoneCount);
+          else if (action.type === "phones") await applyPhoneCount(action.phoneCount, { fromDesired: true });
           else if (action.type === "preacher") applyPreacherName(action.name);
           else if (action.type === "sheet") await applySheet(action);
           else if (action.type === "input") await applyInput(action);
@@ -1099,9 +1130,19 @@ function registerIpc() {
   ipcMain.handle("source-style:set", (_event, key, style) => engine.applySourceStyle(key, style));
   ipcMain.handle("channel:caption", (_event, index, patch) => engine.setChannelCaption(index, patch || {}));
   ipcMain.handle("phone:display", (_event, connectionId, patch) => {
-    const shown = engine.setPhoneDisplay(connectionId, patch || {});
-    if (phoneJoin) phoneJoin.setDisplay(connectionId, shown);
-    return shown;
+    const next = patch || {};
+    try {
+      const shown = engine.setPhoneDisplay(connectionId, next);
+      if (phoneJoin) phoneJoin.setDisplay(connectionId, { ...shown, spoken: next.spoken });
+      return shown;
+    } catch (err) {
+      // 아직 안 들어온 휴대폰 칸은 연결 기록(이름·말하는 언어)만 바꿉니다.
+      if (phoneJoin) {
+        const saved = phoneJoin.setDisplay(connectionId, next);
+        if (saved) return saved;
+      }
+      throw err;
+    }
   });
   ipcMain.handle("channel:on", async (_event, index, on) => {
     const church = await requireChurch();
@@ -1314,7 +1355,13 @@ if (!gotLock) {
       writeLocalPrepaid,
     });
     phoneJoin = new PhoneJoin({
-      onHello: (phone) => engine.acceptPhone(phone),
+      onHello: (phone) => {
+        // 설정·방송실에서 미리 고른 말하는 언어가 있으면 그 값을 씁니다.
+        const desk = (phoneJoin.desks || []).find((item) => item.connectionId === phone.connectionId);
+        const preferred = desk && desk.operatorSpoken;
+        const spoken = preferred && catalog.langByCode[preferred] ? preferred : phone.spoken;
+        return engine.acceptPhone({ ...phone, spoken });
+      },
       onPcm: (phoneId, pcm) => engine.pushPhonePcm(phoneId, pcm),
       onLine: (phoneId, text) => engine.hearPhoneLine(phoneId, text),
       onLeave: (phoneId) => engine.markPhoneAway(phoneId),

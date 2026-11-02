@@ -5,9 +5,11 @@ const meters = document.getElementById("meters");
 const desks = document.getElementById("phoneDesks");
 const captions = document.getElementById("captionLinks");
 const deviceEl = document.getElementById("device");
+const phoneCountBox = document.getElementById("phoneCountBox");
 const levels = new Map();
 let lastChannels = [];
 let captionKey = "";
+let phoneCountBusy = false;
 
 function personText(err) {
   const raw = err && err.message ? err.message : err;
@@ -76,7 +78,7 @@ function actionButtons(url, qrDataUrl, fileName) {
   share.addEventListener("click", async () => {
     try {
       if (navigator.share) {
-        await navigator.share({ title: "성도 자막", url, text: url });
+        await navigator.share({ title: "자막링크", url, text: url });
         captionNote("공유 창을 열었습니다.");
         return;
       }
@@ -115,28 +117,12 @@ function paintCaptions(info) {
   if (!info || !info.home) {
     const empty = document.createElement("p");
     empty.className = "hint";
-    empty.textContent = "로그인하면 성도 자막 링크와 QR이 나옵니다.";
+    empty.textContent = "로그인하면 자막링크와 QR이 나옵니다.";
     captions.append(empty);
     return;
   }
-  captions.append(paintCaptionBlock("성도 홈", info.home, info.homeQr, "성도-홈-QR.png"));
-  (info.items || []).forEach((item) => {
-    const label = `${item.flag || ""} ${item.name || item.code} 자막`.trim();
-    captions.append(paintCaptionBlock(label, item.listen, item.listenQr, `자막-${item.code}-QR.png`));
-    if (item.overlay) {
-      const obs = document.createElement("p");
-      obs.className = "hint";
-      obs.textContent = `OBS ${item.overlay}`;
-      const wrap = captions.lastElementChild;
-      if (wrap) {
-        const obsRow = actionButtons(item.overlay, item.overlayQr, `OBS-${item.code}-QR.png`);
-        const obsTitle = document.createElement("p");
-        obsTitle.className = "hint";
-        obsTitle.textContent = "OBS 오버레이";
-        wrap.append(obsTitle, obs, obsRow);
-      }
-    }
-  });
+  // 언어별 링크는 빼고 메인 자막링크(홈)만 보여 줍니다.
+  captions.append(paintCaptionBlock("자막링크", info.home, info.homeQr, "자막링크-QR.png"));
 }
 
 async function refreshCaptions(targets, spoken) {
@@ -144,7 +130,6 @@ async function refreshCaptions(targets, spoken) {
     const info = await window.broadcast.links(targets, spoken);
     const nextKey = JSON.stringify({
       home: info && info.home,
-      items: (info && info.items || []).map((item) => item.listen),
     });
     if (nextKey === captionKey && captions.childElementCount) return;
     captionKey = nextKey;
@@ -220,13 +205,44 @@ function paintMeters(channels) {
   });
 }
 
+function paintPhoneCount(count) {
+  if (!phoneCountBox) return;
+  if (!phoneCountBox.childElementCount) {
+    for (let n = 0; n <= 8; n += 1) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.dataset.count = String(n);
+      btn.textContent = String(n);
+      btn.addEventListener("click", async () => {
+        if (phoneCountBusy) return;
+        phoneCountBusy = true;
+        paintPhoneCount(n);
+        try {
+          const info = await window.broadcast.setPhoneCount(n);
+          paintDesks(info || {});
+        } catch (err) {
+          note(personText(err));
+        } finally {
+          phoneCountBusy = false;
+        }
+      });
+      phoneCountBox.append(btn);
+    }
+  }
+  const value = String(Math.max(0, Math.min(8, Math.round(Number(count) || 0))));
+  phoneCountBox.querySelectorAll("button").forEach((btn) => {
+    btn.classList.toggle("on", btn.dataset.count === value);
+  });
+}
+
 function paintDesks(info) {
   desks.innerHTML = "";
   const channels = info && Array.isArray(info.channels) ? info.channels : [];
+  paintPhoneCount(channels.length);
   if (!channels.length) {
     const empty = document.createElement("p");
     empty.className = "hint";
-    empty.textContent = "설정 사이트에서 휴대폰 대수를 정하면 여기에 연결 번호와 QR이 나옵니다.";
+    empty.textContent = "휴대폰 대수를 고르면 연결 번호와 QR이 나옵니다.";
     desks.append(empty);
     note(info && info.note ? info.note : "");
     return;
