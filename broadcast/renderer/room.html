@@ -76,13 +76,29 @@
       font-size: 0.82rem;
       color: var(--muted, #9bb0c5);
     }
+    body.room-compact .choice {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 6px 0 10px;
+    }
+    body.room-compact .choice button {
+      margin-top: 0;
+      padding: 8px 10px;
+      min-width: 36px;
+    }
+    body.room-compact .choice button.on {
+      background: var(--accent);
+      color: #fff;
+      border-color: transparent;
+    }
   </style>
 </head>
 <body class="room-compact">
   <header class="top">
     <div>
       <h1>방송실</h1>
-      <p class="hint" id="lead">이 컴퓨터의 마이크와 휴대폰만 연결합니다. 시작·언어·충전금은 설정 사이트에서 합니다.</p>
+      <p class="hint" id="lead">이 컴퓨터의 마이크와 휴대폰만 연결합니다. 입력 언어·시작·충전금은 설정 사이트에서 합니다.</p>
     </div>
   </header>
   <main>
@@ -119,15 +135,17 @@
       </section>
 
       <section class="card" id="captionCard">
-        <h2>성도 자막</h2>
-        <p class="hint">설정 사이트에서 고른 언어의 자막 링크와 QR입니다. 복사·저장·공유로 나눠 주세요. 주소 형식은 listen.html?church=…&amp;lang=… 입니다.</p>
+        <h2>자막링크</h2>
+        <p class="hint">복사·저장·공유로 나눠 주세요.</p>
         <div id="captionLinks"></div>
         <p class="hint" id="captionMsg"></p>
       </section>
 
       <section class="card" id="phoneJoinCard">
         <h2>휴대폰</h2>
-        <p class="hint">휴대폰 대수는 설정 사이트에서 정합니다. 여기서는 연결 번호와 QR만 보여 줍니다. 휴대폰 카메라로 QR을 찍거나 연결 번호를 입력하세요.</p>
+        <p class="hint">대수를 정한 뒤, 휴대폰 카메라로 QR을 찍거나 연결 번호를 입력하세요. 설정 사이트에서도 같은 대수를 바꿀 수 있습니다.</p>
+        <label class="hint" for="phoneCountBox">휴대폰 대수</label>
+        <div class="choice" id="phoneCountBox" role="group" aria-label="휴대폰 대수"></div>
         <div id="phoneDesks"></div>
         <p class="hint" id="phoneMsg"></p>
       </section>

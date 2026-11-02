@@ -116,12 +116,17 @@
   function cleanInput(item) {
     const key = String(item && item.key || "");
     if (!PHONE_KEY.test(key) && !MIC_KEY.test(key)) return null;
-    return {
+    const row = {
       key,
       live: !(item && item.live === false),
       name: cleanName(item && item.name),
       showName: !(item && item.showName === false),
     };
+    // 말하는 언어는 보낸 칸에만 넣습니다. 없으면 방송실에 있는 값을 덮지 않습니다.
+    if (item && Object.prototype.hasOwnProperty.call(item, "spoken")) {
+      row.spoken = cleanLang(item.spoken, "ko");
+    }
+    return row;
   }
 
   function cleanDesired(raw) {

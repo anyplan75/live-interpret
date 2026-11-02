@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>통역 설정</title>
-  <!-- desk-build 20261101d: 성도 자막 QR·나라별 오버레이 -->
+  <!-- desk-build 20261102a: 자막링크 하나·입력 언어·나라별 오버레이 -->
   <link rel="stylesheet" href="../css/phone-app.css?v=20261031p2">
   <style>
     /* desk: 위는 조작·금액, 가운데는 모니터, 연결은 넓게 언어 위 */
@@ -293,9 +293,17 @@
     article.tile .state-off { color: #9aa8b8; }
     article.tile .tile-controls {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       align-items: center;
       margin-top: 6px;
+    }
+    article.tile select.spoken-pick {
+      min-width: 112px;
+      max-width: 160px;
+      margin: 0;
+      padding: 5px 7px;
+      font-size: 0.85rem;
     }
     article.tile input {
       width: 100px;
@@ -534,7 +542,7 @@
 
       <aside class="panel conn">
         <h2>연결 상태</h2>
-        <p class="hint">마이크·휴대폰·막대</p>
+        <p class="hint">마이크·휴대폰·말하는 언어·막대</p>
         <div id="inputs" class="inputs"></div>
         <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
         <details class="setup" style="margin-top:8px; width:100%; max-width:100%">
@@ -550,8 +558,8 @@
       </details>
 
       <details class="setup setup-info" open>
-        <summary>성도 자막 · OBS</summary>
-        <p class="hint">고른 언어의 성도 자막·OBS 링크와 QR입니다. 복사·저장·공유할 수 있습니다. 주소는 listen.html / overlay.html 에 church·lang 을 붙인 기존 형식입니다.</p>
+        <summary>자막링크</summary>
+        <p class="hint">복사·저장·공유로 나눠 주세요.</p>
         <div id="captionLinks" class="caption-grid"></div>
         <p class="hint" id="captionMsg"></p>
       </details>
@@ -632,7 +640,7 @@
 
         <details class="setup">
           <summary>휴대폰 대수</summary>
-          <p class="hint">0이면 휴대폰 없이 시작합니다. 연결 번호와 QR은 방송실에 나옵니다.</p>
+          <p class="hint">0이면 휴대폰 없이 시작합니다. 방송실 앱에서도 같은 대수를 바꿀 수 있고, 서로 바로 맞춰집니다. 연결 번호와 QR은 방송실에 나옵니다.</p>
           <div class="choice" id="phoneCount" role="group" aria-label="휴대폰 대수"></div>
         </details>
       </div>
@@ -651,13 +659,13 @@
       <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
     </section>
   </main>
-  <script src="../js/phone-firebase-env.js?v=20261101d"></script>
-  <script src="../js/languages.js?v=20261101d"></script>
-  <script src="../js/catalog.js?v=20261101d"></script>
-  <script src="../js/cost.js?v=20261101d"></script>
-  <script src="../js/org-services.js?v=20261101d"></script>
-  <script src="../js/room-sync.js?v=20261101d"></script>
-  <script src="../js/qrcode-browser.js?v=20261101d"></script>
-  <script src="../js/desk-client.js?v=20261101d"></script>
+  <script src="../js/phone-firebase-env.js?v=20261102a"></script>
+  <script src="../js/languages.js?v=20261102a"></script>
+  <script src="../js/catalog.js?v=20261102a"></script>
+  <script src="../js/cost.js?v=20261102a"></script>
+  <script src="../js/org-services.js?v=20261102a"></script>
+  <script src="../js/room-sync.js?v=20261102a"></script>
+  <script src="../js/qrcode-browser.js?v=20261102a"></script>
+  <script src="../js/desk-client.js?v=20261102a"></script>
 </body>
 </html>

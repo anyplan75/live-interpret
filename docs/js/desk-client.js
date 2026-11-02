@@ -381,7 +381,7 @@
     share.addEventListener("click", async () => {
       try {
         if (navigator.share) {
-          await navigator.share({ title: title || "성도 자막", url, text: url });
+          await navigator.share({ title: title || "자막링크", url, text: url });
           captionNote("공유 창을 열었습니다.");
           return;
         }
@@ -417,30 +417,16 @@
   async function refreshCaptions() {
     const box = document.getElementById("captionLinks");
     if (!box || !churchId) return;
-    const codes = styleOutputCodes();
-    const nextKey = `${churchId}|${codes.join(",")}`;
+    const home = LI.catalog.homeLink(LI.catalog.pagesBase, churchId);
+    const nextKey = `${churchId}|${home}`;
     if (nextKey === captionKey && box.childElementCount) return;
     const ticket = ++captionBusy;
     captionKey = nextKey;
-    const home = LI.catalog.homeLink(LI.catalog.pagesBase, churchId);
-    const items = LI.catalog.buildLinks(LI.catalog.pagesBase, churchId, codes);
     const homeQr = await makeQr(home);
-    const painted = [];
-    for (const item of items) {
-      painted.push({
-        ...item,
-        listenQr: await makeQr(item.listen),
-        overlayQr: await makeQr(item.overlay),
-      });
-    }
     if (ticket !== captionBusy) return;
     box.innerHTML = "";
-    box.append(paintCaptionCard("성도 홈", home, homeQr, "성도-홈-QR.png"));
-    painted.forEach((item) => {
-      const label = `${item.flag || ""} ${item.name || item.code}`.trim();
-      box.append(paintCaptionCard(`${label} 자막`, item.listen, item.listenQr, `자막-${item.code}-QR.png`));
-      box.append(paintCaptionCard(`${label} OBS`, item.overlay, item.overlayQr, `OBS-${item.code}-QR.png`));
-    });
+    // 언어별 링크는 빼고 메인 자막링크만 보여 줍니다.
+    box.append(paintCaptionCard("자막링크", home, homeQr, "자막링크-QR.png"));
   }
 
   function fillStyleControls() {
@@ -822,9 +808,24 @@
     }
   }
 
+  function fillSpokenSelect(select, current) {
+    select.innerHTML = "";
+    const codes = languages.length
+      ? languages
+      : (LI.catalog.languages || []).map((lang) => ({ code: lang.code, name: lang.name, flag: lang.flag }));
+    codes.forEach((lang) => {
+      const option = document.createElement("option");
+      option.value = lang.code;
+      option.textContent = `${lang.flag || ""} ${lang.name}`.trim();
+      select.append(option);
+    });
+    const known = codes.some((lang) => lang.code === current) ? current : "ko";
+    select.value = known;
+  }
+
   function paintInputs(status) {
     const rows = status && Array.isArray(status.inputs) ? status.inputs : [];
-    const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.joining}|${row.code}|${row.live}|${row.name}|${row.showName !== false}`).join(";");
+    const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.joining}|${row.code}|${row.live}|${row.name}|${row.spoken || "ko"}|${row.showName !== false}`).join(";");
     if (nextKey === inputKey && inputs.childElementCount) {
       rows.forEach((row) => {
         const fill = inputs.querySelector(`[data-level="${row.key}"]`);
@@ -860,6 +861,10 @@
       head.append(title);
       const controls = document.createElement("div");
       controls.className = "tile-controls";
+      const spokenSelect = document.createElement("select");
+      spokenSelect.className = "spoken-pick";
+      spokenSelect.setAttribute("aria-label", `${row.title || "입력"} 말하는 언어`);
+      fillSpokenSelect(spokenSelect, row.spoken || "ko");
       const name = document.createElement("input");
       name.value = row.name || "";
       name.maxLength = 40;
@@ -875,7 +880,7 @@
       showBox.checked = row.showName !== false;
       showBox.setAttribute("aria-label", `${row.title || "입력"} 이름을 자막에 표시`);
       show.append(showBox, document.createTextNode(" 이 이름을 자막에 표시"));
-      controls.append(name, live, show);
+      controls.append(spokenSelect, name, live, show);
       const bar = document.createElement("div");
       bar.className = "meter";
       const fill = document.createElement("span");
@@ -893,6 +898,7 @@
           notice.textContent = personText(err);
         }
       };
+      spokenSelect.addEventListener("change", () => save({ spoken: spokenSelect.value }));
       name.addEventListener("change", () => save({ name: name.value }));
       live.addEventListener("click", () => save({ live: row.live === false }));
       showBox.addEventListener("change", () => save({ showName: showBox.checked }));

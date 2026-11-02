@@ -58,7 +58,7 @@ LI.db = (() => {
   return {
     init,
     useChurch(id) {
-      if (!LI.catalog.isChurchId(id)) throw new Error("교회 링크가 올바르지 않습니다.");
+      if (!LI.catalog.isChurchId(id)) throw new Error("링크가 올바르지 않습니다.");
       churchLive = `churches/${id}/live`;
     },
     clearChurch() {
