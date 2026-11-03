@@ -22,7 +22,7 @@ test("consent dialog explains text-only storage and quits on decline", async () 
   assert.match(all, /이 계정/);
   assert.doesNotMatch(all, /교회/);
   assert.match(all, /종료/);
-  assert.match(all, /켤 때마다/);
+  assert.match(all, /켬 때마다/);
   assert.deepEqual(opts.buttons, ["동의하고 계속", "동의하지 않음 (종료)"]);
   assert.equal(opts.cancelId, consent.DECLINE);
 
@@ -208,6 +208,8 @@ test("installers build per OS and publish draft releases", () => {
   assert.match(read("build/entitlements.mas.plist"), /allow-unsigned-executable-memory/);
   assert.doesNotMatch(read("build/entitlements.mas.plist"), /disable-library-validation/);
   assert.equal(pkg.build.mas.extendInfo.ElectronTeamID, "ZJYZ656BL8");
+  assert.equal(pkg.build.mac.extendInfo.ITSAppUsesNonExemptEncryption, false);
+  assert.equal(pkg.build.mas.extendInfo.ITSAppUsesNonExemptEncryption, false);
   assert.match(pkg.build.mac.icon, /icon-1024\.png$/);
   assert.match(pkg.build.mas.icon, /icon-1024\.png$/);
   assert.match(read("build/entitlements.mas.inherit.plist"), /com\.apple\.security\.inherit/);
