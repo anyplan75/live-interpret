@@ -22,7 +22,7 @@ test("consent dialog explains text-only storage and quits on decline", async () 
   assert.match(all, /이 계정/);
   assert.doesNotMatch(all, /교회/);
   assert.match(all, /종료/);
-  assert.match(all, /켬 때마다/);
+  assert.match(all, /켤 때마다/);
   assert.deepEqual(opts.buttons, ["동의하고 계속", "동의하지 않음 (종료)"]);
   assert.equal(opts.cancelId, consent.DECLINE);
 
