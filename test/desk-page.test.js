@@ -80,9 +80,9 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /showName:\s*showBox\.checked|showName: showBox\.checked/);
   assert.match(page, /id="placeLine"/);
   assert.match(page, /org-services\.js\?v=/);
-  assert.match(page, /desk-client\.js\?v=20261107c/);
-  assert.match(page, /desk-build 20261107c/);
-  assert.match(page, /qrcode-browser\.js\?v=20261107c/);
+  assert.match(page, /desk-client\.js\?v=20261107d/);
+  assert.match(page, /desk-build 20261107d/);
+  assert.match(page, /qrcode-browser\.js\?v=20261107d/);
   assert.match(client, /\* 280/);
   assert.match(page, /모든 설정을 확인한 뒤 「시작」을 누르세요/);
   assert.match(client, /모든 설정을 확인한 뒤 「시작」을 누르세요/);
