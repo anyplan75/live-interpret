@@ -322,7 +322,8 @@ async function refreshPhones() {
 }
 
 function meterWidth(peak) {
-  const pct = Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * 140)));
+  // 표시 배율 280(예전 140의 2배). 작은 소리도 막대가 더 잘 보이게 합니다.
+  const pct = Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * 280)));
   return `${pct}%`;
 }
 

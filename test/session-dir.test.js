@@ -44,7 +44,7 @@ test("the room draws mic samples and the settings launch passes the login folder
   const main = fs.readFileSync(path.join(root, "broadcast/main.js"), "utf8");
   const settings = fs.readFileSync(path.join(root, "settings/main.js"), "utf8");
   assert.match(room, /event\.type === "levels"/);
-  assert.match(room, /\* 140/);
+  assert.match(room, /\* 280/);
   assert.match(main, /https:\/\/anyplan75\.github\.io\/live-interpret\/desk\//);
   assert.match(main, /payload\.type === "levels"/);
   assert.match(settings, /pickSessionDir/);

@@ -1207,7 +1207,7 @@ async function onChannelSpoken(index, code) {
 const levelWidths = new Map();
 
 function paintLevel(index, peak) {
-  const width = `${Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * 140)))}%`;
+  const width = `${Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * 280)))}%`;
   levelWidths.set(String(index), width);
   document.querySelectorAll(`[data-channel="${index}"], [data-phone-level="${index}"]`).forEach((bar) => {
     bar.style.width = width;

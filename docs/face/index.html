@@ -310,7 +310,7 @@
       const sendInput = (input) => {
         let peak = 0;
         for (let i = 0; i < input.length; i += 32) peak = Math.max(peak, Math.abs(input[i]));
-        levelEl.style.width = `${Math.max(0, Math.min(100, Math.round(peak * 140)))}%`;
+        levelEl.style.width = `${Math.max(0, Math.min(100, Math.round(peak * 280)))}%`;
         onPcm(LI.pcm.downsampleFloatToPcm16(input, audioContext.sampleRate, 24000));
       };
       try {
