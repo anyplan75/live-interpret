@@ -1,3 +1,4 @@
+const { readSource } = require("./read-source");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -98,7 +99,7 @@ test("server rules let only the operator read every account and add credit", () 
   const actions = html.slice(html.indexOf('id="broadcastActions"'), html.indexOf('id="costCard"'));
   assert.match(actions, /id="start">시작</);
   assert.match(html, /id="confirmStart">시작확인</);
-  const main = fs.readFileSync(path.join(root, "broadcast/main.js"), "utf8");
+  const main = readSource("broadcast/main.js");
   const listHandler = main.slice(main.indexOf('ipcMain.handle("operator:list"'), main.indexOf('ipcMain.handle("operator:credit"'));
   assert.match(listHandler, /operatorGate/);
   const creditHandler = main.slice(main.indexOf('ipcMain.handle("operator:credit"'), main.indexOf('ipcMain.handle("church:current"'));
@@ -106,7 +107,7 @@ test("server rules let only the operator read every account and add credit", () 
   assert.match(creditHandler, /충전할 금액을 적으세요/);
   assert.match(main, /isOperatorAccount/);
   assert.match(main, /operator:setTestPeriod/);
-  const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
+  const renderer = readSource("broadcast/renderer/renderer.js");
   const creditClick = renderer.slice(renderer.indexOf('getElementById("operatorCredit")'), renderer.indexOf('getElementById("pickBulletin").addEventListener'));
   assert.match(creditClick, /충전할 금액을 적으세요/);
   assert.match(renderer, /visibleError/);
