@@ -294,7 +294,8 @@
       preacherName: cleanName(src.preacherName),
       speech: cleanSpeech(src.speech),
       bulletinLabel: cleanNote(src.bulletinLabel, 120),
-      board: cleanBoard(src.board),
+      // 대기(종료)일 때는 이전 방송의 듣는 말·교정·번역을 모니터에 남기지 않습니다.
+      board: src.running === true ? cleanBoard(src.board) : { live: "", heard: [], cards: [] },
       logs: cleanLogs(src.logs),
     };
   }

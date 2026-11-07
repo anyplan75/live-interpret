@@ -123,9 +123,18 @@ test("status keeps connection facts and drops secrets", () => {
     logs: [{ level: "info", body: "방송을 기다리는 중입니다." }],
   });
   assert.equal(board.sessionKind, "");
-  assert.equal(board.board.heard[0].body, "듣는 말");
+  // 대기일 때는 이전 방송의 듣는 말·교정이 모니터에 남지 않습니다.
+  assert.deepEqual(board.board, { live: "", heard: [], cards: [] });
   assert.equal(JSON.stringify(board).includes("자막 원문"), false);
+  assert.equal(JSON.stringify(board).includes("듣는 말"), false);
   assert.equal(board.phaseLabel, "대기");
+  const liveBoard = room.publicStatus({
+    running: true,
+    board: { live: "지금", heard: [{ id: "1", body: "듣는 말", fixes: ["교정"], text: "숨김" }] },
+  });
+  assert.equal(liveBoard.board.heard[0].body, "듣는 말");
+  assert.equal(liveBoard.board.live, "지금");
+  assert.equal(liveBoard.phaseLabel, "방송 중");
 });
 
 test("a stream patch updates one field and a put replaces the record", () => {
