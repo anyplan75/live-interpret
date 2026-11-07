@@ -99,6 +99,17 @@ function main() {
     builderArgs.push("-c.mac.identity=-");
   }
 
+  // 마케팅 버전(package.json version)은 두고, 설치 파일 꼬리표용 빌드 번호만 올린다.
+  const buildVersion = String(env.MAC_BUILD_VERSION || "").trim();
+  if (buildVersion) {
+    if (!/^\d+(\.\d+){0,2}$/.test(buildVersion)) {
+      console.error("MAC_BUILD_VERSION 형식이 올바르지 않습니다. 예: 0.1.60");
+      process.exit(1);
+    }
+    builderArgs.push(`-c.buildVersion=${buildVersion}`);
+    console.log("빌드 번호: " + buildVersion);
+  }
+
   if (dist) builderArgs.push("--publish", "never");
   run(builder, builderArgs, env);
   run(process.execPath, [path.join(__dirname, "name-mac-app.js")], env);
