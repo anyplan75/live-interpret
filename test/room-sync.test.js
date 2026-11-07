@@ -1,3 +1,4 @@
+const { readSource } = require("./read-source");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -154,7 +155,7 @@ test("a stream patch updates one field and a put replaces the record", () => {
 });
 
 test("the broadcast window is hardware only and the settings window owns start", () => {
-  const main = fs.readFileSync(path.join(root, "broadcast/main.js"), "utf8");
+  const main = readSource("broadcast/main.js");
   const roomHtml = fs.readFileSync(path.join(root, "broadcast/renderer/room.html"), "utf8");
   const settingsHtml = fs.readFileSync(path.join(root, "settings/renderer/index.html"), "utf8");
   assert.match(main, /renderer", "room\.html"/);
@@ -184,7 +185,7 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.match(roomJs, /자막링크/);
   assert.match(roomJs, /device\.inputChannels \|\| device\.channels/);
   assert.doesNotMatch(roomJs, /item\.listen/);
-  const engineSrc = fs.readFileSync(path.join(root, "broadcast/lib/engine.js"), "utf8");
+  const engineSrc = readSource("broadcast/lib/engine.js");
   assert.match(engineSrc, /this\.ensureDeviceSlots\(\);\s*if \(picked\.switched\)/s);
   const syncSrc = fs.readFileSync(path.join(root, "docs/js/room-sync.js"), "utf8");
   assert.match(syncSrc, /MAX_MIC_CHANNELS = 64/);
