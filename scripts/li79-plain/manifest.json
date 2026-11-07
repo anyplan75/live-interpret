@@ -1,0 +1,56 @@
+[
+  {
+    "path": "broadcast/lib/engine.js",
+    "base": "broadcast__lib__engine.js",
+    "parts": 2,
+    "bytes": 79331
+  },
+  {
+    "path": "broadcast/lib/cost.js",
+    "base": "broadcast__lib__cost.js",
+    "parts": 1,
+    "bytes": 27351
+  },
+  {
+    "path": "broadcast/main.js",
+    "base": "broadcast__main.js",
+    "parts": 2,
+    "bytes": 61980
+  },
+  {
+    "path": "broadcast/renderer/renderer.js",
+    "base": "broadcast__renderer__renderer.js",
+    "parts": 2,
+    "bytes": 87232
+  },
+  {
+    "path": "docs/js/desk-client.js",
+    "base": "docs__js__desk-client.js",
+    "parts": 2,
+    "bytes": 55462
+  },
+  {
+    "path": "docs/js/cost.js",
+    "base": "docs__js__cost.js",
+    "parts": 1,
+    "bytes": 27351
+  },
+  {
+    "path": "docs/js/catalog.js",
+    "base": "docs__js__catalog.js",
+    "parts": 1,
+    "bytes": 23751
+  },
+  {
+    "path": "docs/desk/index.html",
+    "base": "docs__desk__index.html",
+    "parts": 1,
+    "bytes": 22540
+  },
+  {
+    "path": "전체구조안내서.md",
+    "base": "전체구조안내서.md",
+    "parts": 2,
+    "bytes": 51454
+  }
+]
