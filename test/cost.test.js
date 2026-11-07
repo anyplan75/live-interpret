@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const cost = require("../broadcast/lib/cost");
 const browserCost = require("../docs/js/cost");
@@ -308,7 +309,7 @@ test("admin shows both prices and the church app shows only the church price", (
   const admin = fs.readFileSync(path.join(root, "docs/admin.html"), "utf8");
   const adminJs = fs.readFileSync(path.join(root, "docs/js/admin.js"), "utf8");
   const broadcast = fs.readFileSync(path.join(root, "broadcast/renderer/index.html"), "utf8");
-  const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
+  const renderer = readSource("broadcast/renderer/renderer.js");
   const rules = JSON.parse(fs.readFileSync(path.join(root, "firebase/live-interpret.rules.json"), "utf8"));
   const usage = rules["live-interpret"].churches.$churchId.live.usage;
   assert.match(admin, /id="costList"/);
