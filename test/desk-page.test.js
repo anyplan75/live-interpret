@@ -1,3 +1,4 @@
+const { readSource } = require("./read-source");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -8,7 +9,7 @@ const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
 
 test("the web settings page starts a broadcast without picking a device", () => {
   const page = read("docs/desk/index.html");
-  const client = read("docs/js/desk-client.js");
+  const client = readSource("docs/js/desk-client.js");
   assert.match(page, /통역 설정/);
   assert.match(page, /id="start"/);
   assert.match(page, /id="stop"/);
