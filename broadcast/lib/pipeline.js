@@ -303,7 +303,7 @@ class Pipeline {
     this.holdHeard = 0;
     const id = this.sentenceId;
     this.sentenceId = Date.now() + Math.floor(Math.random() * 10);
-    if (this.liveOn) this.pushKorean(text, id, false);
+    /*LI79_NO_RAW_PUSH*/
     this.chain = this.chain
       .then(() => this.publish(text, id, owner))
       .catch((err) => this.onLog(`번역 대기 오류: ${err.message || err}`));
