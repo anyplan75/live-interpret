@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const { InputCapture } = require("../broadcast/lib/audio");
 const { Engine, normalizeChannelRows } = require("../broadcast/lib/engine");
@@ -97,11 +98,11 @@ test("name display off clears the device speaker for that channel", () => {
 });
 
 test("desk desired live turns mic channels on for recognition", () => {
-  const main = read("broadcast/main.js");
+  const main = readSource("broadcast/main.js");
   assert.match(main, /wantOn = action\.live !== false/);
   assert.match(main, /setChannelOn\(roomChurchId, index, wantOn\)/);
   assert.match(main, /channelRows\[index\]\.on = wantOn/);
   assert.match(main, /live: !!row\.on && row\.captionLive !== false/);
-  assert.match(read("broadcast/lib/engine.js"), /ensureCaptureForIndex/);
+  assert.match(readSource("broadcast/lib/engine.js"), /ensureCaptureForIndex/);
   assert.match(read("broadcast/lib/audio.js"), /ensureChannels/);
 });

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const catalog = require("../docs/js/catalog");
 const firebase = require("../broadcast/lib/firebase");
@@ -86,9 +87,9 @@ test("overlay and listener load only the selected face", () => {
 });
 
 test("broadcast language rows offer the font list", () => {
-  const renderer = read("broadcast/renderer/renderer.js");
+  const renderer = readSource("broadcast/renderer/renderer.js");
   const html = read("broadcast/renderer/index.html");
-  const main = read("broadcast/main.js");
+  const main = readSource("broadcast/main.js");
   assert.match(renderer, /글꼴/);
   assert.match(renderer, /data-font/);
   assert.match(renderer, /styleOutputLanguages/);
