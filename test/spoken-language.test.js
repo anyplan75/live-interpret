@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const catalog = require("../docs/js/catalog");
 const cost = require("../broadcast/lib/cost");
@@ -71,7 +72,7 @@ test("recognition follows the spoken language and does not translate it into its
 
 test("the broadcast window labels the heard language", () => {
   const html = read("broadcast/renderer/index.html");
-  const renderer = read("broadcast/renderer/renderer.js");
+  const renderer = readSource("broadcast/renderer/renderer.js");
   assert.match(html, /id="heardTitle"/);
   assert.match(renderer, /channel-spoken/);
   assert.match(renderer, /deviceChannels/);
