@@ -1,1 +1,678 @@
-$file:/home/ubuntu/live-interpret/docs/desk/index.html
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>통역 설정</title>
+  <!-- desk-build 20261107g: 시작확인 3초·방송잔존·교정표시·1시간시계 -->
+  <link rel="stylesheet" href="../css/phone-app.css?v=20261107g">
+  <style>
+    /* desk: 위는 조작·금액, 가운데는 모니터, 연결은 넓게 언어 위 */
+    body { padding: 16px 16px 40px; }
+    main.desk {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    header.top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 4px;
+    }
+    header.top h1 { margin: 0; font-size: 1.3rem; }
+    header.top .hint { margin: 4px 0 0; font-size: 0.9rem; }
+    .ops {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      width: fit-content;
+      max-width: 100%;
+      margin-left: auto;
+    }
+    .ops .place {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      margin-right: 4px;
+      min-width: 0;
+    }
+    .ops .place strong {
+      font-size: 1rem;
+      line-height: 1.2;
+    }
+    .ops .place .hint {
+      margin: 0;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .ops button,
+    .row button,
+    article.tile button,
+    .chip,
+    .choice button {
+      width: auto;
+      margin-top: 0;
+      padding: 8px 12px;
+      font-size: 0.95rem;
+    }
+    button.danger { background: #9b3b3b; }
+    button.confirm-ready {
+      background: #c47a1a;
+      border-color: #c47a1a;
+    }
+    .pill {
+      display: inline-block;
+      margin: 0 0 0 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #c4514b;
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.85rem;
+      vertical-align: middle;
+    }
+
+    .cost-mid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      align-items: baseline;
+      margin: 10px 0 14px;
+      padding: 12px 16px;
+      border-radius: 14px;
+      background: #172033;
+      color: #f6d56b;
+      font-weight: 800;
+      font-size: 0.98rem;
+      line-height: 1.4;
+    }
+    .cost-mid .cost-figure { color: #fff8d6; font-weight: 700; }
+    .cost-mid .time { color: #d7e6f5; font-weight: 700; }
+
+    .monitor {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-width: 0;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 700px) {
+      .monitor { grid-template-columns: 1fr; }
+      .ops { margin-left: 0; }
+    }
+
+    .panel {
+      margin: 0;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: #172033;
+      min-width: 0;
+    }
+    .panel.info {
+      min-height: 320px;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+    .live {
+      min-height: 72px;
+      margin: 0 0 10px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: #3a3114;
+      color: #f6d56b;
+      font-weight: 700;
+      font-size: 1.12rem;
+      line-height: 1.45;
+    }
+    .ko-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+      min-height: 180px;
+      max-height: 420px;
+      overflow: auto;
+    }
+    .ko-line { padding: 6px 0; border-bottom: 1px solid #243041; }
+    .ko-line p { margin: 0; font-size: 1.02rem; line-height: 1.45; }
+    .tag {
+      display: inline-block;
+      margin-right: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+    }
+    .corrected { color: #d7e6f5; }
+    .watch-langs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0 0 10px;
+    }
+    .watch-langs .chip {
+      padding: 6px 10px;
+      font-size: 0.88rem;
+    }
+    .grid {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+      min-height: 220px;
+      max-height: 520px;
+      overflow: auto;
+    }
+    .grid .card {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #121a24;
+    }
+    .grid .card p { margin: 0; font-size: 1.05rem; line-height: 1.45; }
+    .grid .card p:first-child { color: #9aa8b8; font-size: 0.85rem; margin-bottom: 4px; }
+    .grid .card[hidden] { display: none; }
+
+    .caption-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .caption-card {
+      margin: 0;
+      padding: 12px;
+      border-radius: 12px;
+      background: #121a24;
+      border: 1px solid #334155;
+    }
+    .caption-card h3 {
+      margin: 0 0 6px;
+      font-size: 0.95rem;
+    }
+    .caption-card img {
+      display: block;
+      width: 148px;
+      height: 148px;
+      margin: 8px 0;
+      padding: 6px;
+      background: #fff;
+      border-radius: 10px;
+    }
+    .caption-card .caption-url {
+      word-break: break-all;
+      font-size: 0.8rem;
+      color: #9aa8b8;
+      margin: 0 0 8px;
+    }
+    .caption-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .caption-actions button { margin-top: 0; padding: 7px 10px; font-size: 0.88rem; }
+    .style-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px;
+      margin: 8px 0 12px;
+    }
+    .style-grid label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 0.9rem;
+    }
+    .font-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      margin: 8px 0;
+      padding: 10px;
+      border-radius: 10px;
+      background: #121a24;
+    }
+    .font-row > span:first-child { min-width: 88px; font-weight: 700; }
+    .font-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      align-items: center;
+    }
+    .font-controls input[type="number"] {
+      width: 72px;
+      margin: 0;
+    }
+    .font-faces { display: flex; flex-wrap: wrap; gap: 4px; }
+
+    /* 연결 상태: 「오늘 번역할 언어」바로 위, 넓게 */
+    .conn {
+      width: 100%;
+      max-width: none;
+      margin: 0 0 12px;
+      padding: 14px 16px;
+    }
+    .conn h2 { font-size: 1.05rem; }
+    .conn .hint { margin: 0 0 8px; font-size: 0.88rem; }
+    .inputs {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    article.tile {
+      margin: 0;
+      padding: 10px;
+      border-radius: 10px;
+      background: #121a24;
+      border: 1px solid #334155;
+    }
+    article.tile .tile-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+    }
+    article.tile .tile-title {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #d7e6f5;
+      line-height: 1.3;
+    }
+    article.tile .state-on { color: #7dcea0; }
+    article.tile .state-wait { color: #f6d56b; }
+    article.tile .state-off { color: #9aa8b8; }
+    article.tile .tile-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin-top: 6px;
+    }
+    article.tile select.spoken-pick {
+      min-width: 112px;
+      max-width: 160px;
+      margin: 0;
+      padding: 5px 7px;
+      font-size: 0.85rem;
+    }
+    article.tile input {
+      width: 100px;
+      min-width: 0;
+      margin: 0;
+      padding: 5px 7px;
+      font-size: 0.85rem;
+    }
+    article.tile button {
+      padding: 6px 8px;
+      font-size: 0.85rem;
+    }
+    .meter {
+      height: 7px;
+      border-radius: 99px;
+      background: #0d1218;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .meter span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #1f8f6a, #ffd666 78%, #d64545);
+    }
+    .log { display: flex; flex-direction: column; gap: 4px; max-height: 100px; overflow: auto; }
+    .log p { margin: 0; color: #c9d5e2; font-size: 0.82rem; }
+    .log .error { color: #f0b4b4; }
+
+    details.setup {
+      display: block;
+      width: fit-content;
+      max-width: 100%;
+      background: #1a2332;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin: 10px 0 0;
+    }
+    details.setup.setup-info {
+      width: 100%;
+      max-width: none;
+      padding: 14px 16px;
+    }
+    details.setup > summary {
+      cursor: pointer;
+      font-weight: 800;
+      list-style: none;
+      color: #f6d56b;
+      font-size: 0.98rem;
+    }
+    details.setup > summary::-webkit-details-marker { display: none; }
+    details.setup > summary::after {
+      content: " 펼치기";
+      color: #9aa8b8;
+      font-weight: 600;
+      font-size: 0.85rem;
+    }
+    details.setup[open] > summary::after { content: " 접기"; }
+    details.setup[open] > summary { margin-bottom: 10px; }
+    details.setup .hint { margin: 4px 0 8px; font-size: 0.88rem; }
+    details.setup label { margin: 10px 0 6px; font-size: 0.92rem; }
+    details.setup input {
+      width: min(280px, 100%);
+      padding: 8px 10px;
+      font-size: 0.95rem;
+    }
+    details.setup.setup-info textarea {
+      width: 100%;
+      max-width: none;
+      min-height: 96px;
+      padding: 12px 14px;
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+    details.setup:not(.setup-info) textarea {
+      width: min(320px, 100%);
+      min-height: 56px;
+      padding: 8px 10px;
+      font-size: 0.95rem;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      width: 100%;
+    }
+    .chip,
+    .choice button {
+      border: 1px solid #334155;
+      background: #121a24;
+      color: #d5deea;
+      border-radius: 10px;
+      font-weight: 700;
+    }
+    .chip.on,
+    .choice button.on {
+      background: #1f8f6a;
+      border-color: #1f8f6a;
+      color: #fff;
+    }
+    .choice {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .setup-gaps { margin: 6px 0 0; padding-left: 18px; font-size: 0.9rem; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: flex-start;
+      margin-top: 4px;
+    }
+    .controls > details.setup { margin-top: 8px; }
+    input[type="file"] { width: auto; }
+    .check { font-weight: 700; }
+    .check input { width: auto; }
+    #signInCard.card,
+    #operator.card {
+      max-width: 360px;
+      width: fit-content;
+    }
+    #signInCard input,
+    #operator input {
+      width: min(320px, 100%);
+    }
+    #notice { margin: 0 0 8px; color: #9aa8b8; font-size: 0.88rem; }
+    #offline { margin: 6px 0 0; font-size: 0.82rem; }
+    #confirmHint {
+      margin: 0 0 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #3a3114;
+      color: #f6d56b;
+      font-size: 0.92rem;
+      line-height: 1.4;
+    }
+  </style>
+  <script>
+    // 방송실이 넘겨 준 로그인 열쇠는 주소 조각에만 있다가, 바로 이 탭 저장소로 옮기고 주소에서는 지웁니다.
+    (function () {
+      try {
+        var raw = location.hash ? location.hash.slice(1) : "";
+        if (raw) {
+          var params = new URLSearchParams(raw);
+          var refreshToken = params.get("r") || "";
+          if (refreshToken) {
+            sessionStorage.setItem("liDeskSession", JSON.stringify({
+              refreshToken: refreshToken,
+              email: params.get("e") || "",
+              localId: params.get("u") || "",
+            }));
+          }
+        }
+      } catch (err) { /* 열쇠를 못 읽으면 로그인 칸을 보여 줍니다 */ }
+      try { history.replaceState(null, "", location.pathname + location.search); } catch (err) { /* 주소 정리는 다음 열기에서 다시 합니다 */ }
+      // org-services.js 가 늦거나 옛 캐시라도 placeLabel 접근이 깨지지 않게 먼저 자리를 만듭니다.
+      var root = typeof globalThis !== "undefined" ? globalThis : window;
+      root.LI = root.LI || {};
+      if (!root.LI.orgServices) {
+        root.LI.orgServices = {
+          placeLabel: function (orgOrName, kind) {
+            try {
+              if (orgOrName == null) return "";
+              if (typeof orgOrName === "object") {
+                var objectName = String(orgOrName.name || "").replace(/\s+/g, " ").trim();
+                if (!objectName) return "";
+                var objectKind = orgOrName.kind || kind;
+                return (objectKind === "company" ? "기업" : "계정") + " " + objectName;
+              }
+              var plain = String(orgOrName || "").replace(/\s+/g, " ").trim();
+              if (!plain) return "";
+              return kind ? ((kind === "company" ? "기업" : "계정") + " " + plain) : plain;
+            } catch (err) { return ""; }
+          },
+          cleanPlaceName: function (value) {
+            return String(value || "").replace(/\s+/g, " ").trim();
+          },
+        };
+      }
+    })();
+  </script>
+</head>
+<body>
+  <main class="desk">
+    <header class="top">
+      <div>
+        <h1>통역 설정 <span id="onAir" class="pill" hidden>방송 중</span></h1>
+        <p class="hint">번역은 보고 싶은 언어만, 연결은 넓게. 마이크·폴더는 방송실 앱.</p>
+      </div>
+      <div class="ops" id="opsBar" hidden>
+        <div class="place">
+          <strong id="placeLine">계정</strong>
+          <span class="hint" id="accountLine"></span>
+        </div>
+        <button type="button" id="start">시작</button>
+        <button type="button" class="danger" id="stop">종료</button>
+        <button type="button" class="ghost" id="signOut">로그아웃</button>
+      </div>
+    </header>
+
+    <section class="card" id="signInCard">
+      <h2>로그인</h2>
+      <p class="hint">방송실 앱과 같은 계정으로 로그인하세요.</p>
+      <label for="email">이메일</label>
+      <input id="email" type="email" autocomplete="username">
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password">
+      <button type="button" id="signIn">로그인</button>
+      <p class="hint" id="signInMsg"></p>
+    </section>
+
+    <section id="desk" hidden>
+      <div class="cost-mid" id="costHead" hidden>
+        <div>남은 충전금 <span id="balanceCost" class="cost-figure">불러오는 중</span></div>
+        <div>이번 방송 차감 <span id="sessionCost" class="cost-figure">불러오는 중</span></div>
+        <div id="prepaidTime" class="cost-figure time">불러오는 중</div>
+      </div>
+      <p id="notice"></p>
+      <p id="confirmHint">모든 설정을 확인한 뒤 「시작」을 누르세요.</p>
+
+      <section class="monitor">
+        <article class="panel info">
+          <h2 id="heardTitle">지금 듣는 말 · 교정</h2>
+          <div id="live" class="live">대기 중...</div>
+          <div id="koStack" class="ko-stack"></div>
+        </article>
+        <article class="panel info">
+          <h2>번역</h2>
+          <p class="hint">실시간으로 보고 싶은 언어만 고릅니다. 번역 자체는 아래 「오늘 번역할 언어」에서 정합니다.</p>
+          <div id="watchLangs" class="watch-langs chips" role="group" aria-label="모니터할 번역 언어"></div>
+          <div id="cards" class="grid"></div>
+        </article>
+      </section>
+
+      <aside class="panel conn">
+        <h2>연결 상태</h2>
+        <p class="hint">마이크·휴대폰·말하는 언어·막대</p>
+        <div id="inputs" class="inputs"></div>
+        <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
+        <details class="setup" style="margin-top:8px; width:100%; max-width:100%">
+          <summary>안내 로그</summary>
+          <div id="log" class="log"></div>
+        </details>
+      </aside>
+
+      <details class="setup setup-info" open>
+        <summary>오늘 번역할 언어</summary>
+        <p class="hint">누른 언어로 번역합니다. 말하는 언어는 보통 한국어입니다.</p>
+        <div id="langs" class="chips"></div>
+      </details>
+
+      <details class="setup setup-info" open>
+        <summary>자막링크</summary>
+        <p class="hint">복사·저장·공유로 나눠 주세요.</p>
+        <div id="captionLinks" class="caption-grid"></div>
+        <p class="hint" id="captionMsg"></p>
+      </details>
+
+      <details class="setup setup-info" open>
+        <summary>OBS 오버레이</summary>
+        <p class="hint">고른 언어의 OBS 브라우저 소스 주소입니다. overlay.html?church=…&amp;lang=… 형식입니다.</p>
+        <div id="overlayLinks" class="caption-grid"></div>
+        <p class="hint" id="overlayMsg"></p>
+      </details>
+
+      <details class="setup setup-info">
+        <summary>자막 위치와 나라별 글자</summary>
+        <p class="hint">OBS 오버레이의 위치·색과, 나라(언어)마다 글꼴·크기·자간을 맞춥니다.</p>
+        <div class="style-grid">
+          <div>
+            <label>위치</label>
+            <div class="choice" id="layout" role="group" aria-label="자막 위치">
+              <button type="button" data-layout="bottom" class="on">아래</button>
+              <button type="button" data-layout="top">위</button>
+              <button type="button" data-layout="left">왼쪽</button>
+              <button type="button" data-layout="right">오른쪽</button>
+            </div>
+          </div>
+          <div>
+            <label>정렬</label>
+            <div class="choice" id="align" role="group" aria-label="자막 정렬">
+              <button type="button" data-align="left">왼쪽</button>
+              <button type="button" data-align="center" class="on">가운데</button>
+              <button type="button" data-align="right">오른쪽</button>
+            </div>
+          </div>
+          <label>글자색 <input id="color" type="color" value="#ffffff"></label>
+          <label>배경색 <input id="bgColor" type="color" value="#000000"></label>
+          <label>투명도 <input id="opacity" type="number" min="0" max="1" step="0.1" value="0.7"></label>
+        </div>
+        <div id="fontRows"></div>
+        <button type="button" id="saveStyle">자막 모양 저장</button>
+        <p class="hint" id="styleMsg"></p>
+      </details>
+
+      <details class="setup setup-info">
+        <summary>말투와 감도</summary>
+        <p class="hint">감도는 방송 중에도 바로 적용됩니다. 말투·교정·용어는 넓게 보입니다.</p>
+        <label>인식 감도</label>
+        <div class="choice" id="sensitivity" role="group" aria-label="인식 감도">
+          <button type="button" data-sense="high">감도 높음</button>
+          <button type="button" data-sense="normal" class="on">감도 보통</button>
+          <button type="button" data-sense="low">감도 낮음</button>
+        </div>
+        <label for="traits">말투</label>
+        <textarea id="traits"></textarea>
+        <label for="fixes">교정</label>
+        <textarea id="fixes"></textarea>
+        <label for="terms">용어</label>
+        <textarea id="terms"></textarea>
+      </details>
+
+      <div class="controls">
+        <details class="setup">
+          <summary>시작 전 준비</summary>
+          <p class="hint">기록 폴더는 방송실 앱에서 고릅니다. 폴더가 준비되기 전에는 시작할 수 없습니다.</p>
+          <p class="hint" id="folderLine">기록 폴더는 방송실 앱에서 고릅니다.</p>
+          <ul id="setupGaps" class="setup-gaps" hidden></ul>
+          <h2>진행자료</h2>
+          <p class="hint">순서지 사진을 올리면 방송실 컴퓨터에 저장하고 분석합니다.</p>
+          <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+          <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
+        </details>
+
+        <details class="setup">
+          <summary>내용과 이름</summary>
+          <p class="hint">자막에 보일 이름과 오늘 내용 종류를 정합니다.</p>
+          <label>종류</label>
+          <div class="choice" id="sessionKind" role="group" aria-label="종류">
+            <button type="button" data-kind="">선택 안 함</button>
+            <button type="button" data-kind="강의">강의</button>
+            <button type="button" data-kind="연설">연설</button>
+            <button type="button" data-kind="행사">행사</button>
+          </div>
+          <label for="preacherName">이름</label>
+          <input id="preacherName" maxlength="40" placeholder="자막에 보일 이름">
+          <label class="check"><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
+        </details>
+
+        <details class="setup">
+          <summary>휴대폰 대수</summary>
+          <p class="hint">0이면 휴대폰 없이 시작합니다. 방송실 앱에서도 같은 대수를 바꿀 수 있고, 서로 바로 맞춰집니다. 연결 번호와 QR은 방송실에 나옵니다.</p>
+          <div class="choice" id="phoneCount" role="group" aria-label="휴대폰 대수"></div>
+        </details>
+      </div>
+    </section>
+
+    <section class="card" id="operator" hidden>
+      <h2>계정 사용</h2>
+      <p class="hint">계정마다 남은 잔액, 남은 시간, 최근 사용을 보고 선불 잔액을 더합니다.</p>
+      <label class="check"><input id="testPeriod" type="checkbox"> 테스트 기간</label>
+      <p class="hint" id="testPeriodMsg"></p>
+      <div id="operatorRows"></div>
+      <label for="operatorAmount">선불 잔액 더하기</label>
+      <input id="operatorAmount" inputmode="numeric" placeholder="금액">
+      <button type="button" id="operatorCredit">선불 잔액 더하기</button>
+      <p class="hint" id="operatorMsg"></p>
+      <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
+    </section>
+  </main>
+  <script src="../js/phone-firebase-env.js?v=20261107g"></script>
+  <script src="../js/languages.js?v=20261107g"></script>
+  <script src="../js/catalog.js?v=20261107g"></script>
+  <script src="../js/cost.js?v=20261107g"></script>
+  <script src="../js/org-services.js?v=20261107g"></script>
+  <script src="../js/room-sync.js?v=20261107g"></script>
+  <script src="../js/qrcode-browser.js?v=20261107g"></script>
+  <script src="../js/desk-client.js?v=20261107g"></script>
+</body>
+</html>
