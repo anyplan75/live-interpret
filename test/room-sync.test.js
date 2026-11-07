@@ -135,6 +135,8 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.doesNotMatch(roomHtml, /성도/);
   assert.match(roomHtml, /연결 번호/);
   assert.match(roomHtml, /설정 사이트/);
+  assert.match(roomHtml, /모든 설정을 보고 「시작」을 누르세요/);
+  assert.match(roomHtml, /id="waitStartHint"/);
   const roomJs = fs.readFileSync(path.join(root, "broadcast/renderer/room.js"), "utf8");
   assert.match(roomJs, /paintOverlays|overlayQr|OBS-\$\{item\.code\}/);
   assert.match(roomJs, /자막링크/);
