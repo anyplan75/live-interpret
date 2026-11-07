@@ -1,1 +1,1 @@
-$file:/home/ubuntu/live-interpret/broadcast/main.js
+PLACEHOLDER_WILL_FAIL
