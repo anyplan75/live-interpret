@@ -1,1 +1,1 @@
-throw new Error('Run: node scripts/expand-li79-gz.js');\n
+throw new Error('Run: node scripts/expand-li79-gz.js');
