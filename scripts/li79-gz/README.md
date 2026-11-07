@@ -1,7 +1,17 @@
 # LI-79 large-file sidecars
 
 Five sources exceed GitHub MCP single-call embed size. They ship here as gzip+base64
-(either `NAME.b64` or `NAME.0.b64` + `NAME.1.b64` parts that concatenate).
+parts that `scripts/expand-li79-gz.js` concatenates in order:
+
+| logical name | parts on disk |
+|---|---|
+| `docs__js__desk-client.js.b64` | single full file |
+| `broadcast__main.js.b64` | `.0` + `.1` |
+| `guide.md.b64` | `.0` + `.1` |
+| `broadcast__lib__engine.js.b64` | `.0` … `.8` |
+| `broadcast__renderer__renderer.js.b64` | `.0` … `.17` |
+
+All five decode+gunzip to the fec02d9 local tree (verified via GitHub Contents API).
 
 ## Mac apply
 
@@ -16,20 +26,14 @@ git commit -m '교정 파이프라인·종료 잔존·시작 지연과 함께 �
 git push -u origin cursor/fix-pipeline-start-delay-117f
 ```
 
-Optional equivalent from `.agent-upload/gz`:
+After expand, optionally drop the upload scaffolding:
 
 ```bash
-node .agent-upload/gz/expand.js
+git rm -r --ignore-unmatch .agent-upload scripts/li79-gz scripts/expand-li79-gz.js
+# keep or drop in a follow-up commit — Mac content commit above is the important one
 ```
 
-Then remove `.agent-upload` before the final commit if desired:
-
-```bash
-git rm -r --ignore-unmatch .agent-upload
-git commit --amend --no-edit   # or a separate cleanup commit
-```
-
-## Sidecar checksums (sha256 of .b64 text)
+## Sidecar checksums (sha256 of reassembled .b64 text)
 
 ```
 docs__js__desk-client.js.b64  7f645f55517f0d1f60bb422a665487cce7b9d7bbbe53a98d93c9b647a2890de9
