@@ -239,7 +239,7 @@ function translateBreak(text, maxLen = TRANSLATE_MAX) {
 function canSilenceFlush(text, silenceMs, cfg) {
   const t = String(text || "").trim();
   if (!t || isNoise(t)) return false;
-  const minChars = (cfg && cfg.minFlushChars) || 8;
+  const minChars = (cfg && cfg.minFlushChars) || 2;
   const soft = (cfg && cfg.silenceFlushMs) || 1800;
   const hard = (cfg && cfg.silenceForceFlushMs) || 4500;
   if (silenceMs < soft) return false;
