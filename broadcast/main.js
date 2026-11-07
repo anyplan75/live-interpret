@@ -223,6 +223,7 @@ const peaks = new Map();
 const hearingBoard = { live: "", heard: [], cards: [] };
 const hearingLogs = [];
 let publishRoom = () => {};
+let shutdownBroadcast = async () => {};
 
 function clipHearing(value, max) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -401,6 +402,8 @@ function registerIpc() {
   let pendingDesired = null;
   let cachedBalance = null;
   let balanceAt = 0;
+  // 앱을 막 켠 직후 첫 desired는 이전 종료에서 남은 「시작」일 수 있어 자동 시작하지 않습니다.
+  let ignoreStaleDesiredStart = false;
 
   function note(text) {
     lastNotice = userText(text).slice(0, 180);
@@ -701,6 +704,23 @@ function registerIpc() {
     } catch (_) { /* 다음 상태·설정 맞춤에서 다시 맞춥니다 */ }
   }
 
+  // 앱 종료·강제 종료 뒤에도 desired.running 이 참이면 desk「방송 중」·재시작 자동방송이 남습니다.
+  async function clearDesiredRunning(current) {
+    if (!roomChurchId) return null;
+    try {
+      const base = current && typeof current === "object"
+        ? current
+        : await firebase.get(`churches/${roomChurchId}/room/desired`);
+      if (!base || base.running !== true) return base || null;
+      const next = roomSync.withRev(base, { running: false });
+      appliedRev = next.rev;
+      await firebase.set(`churches/${roomChurchId}/room/desired`, next);
+      return next;
+    } catch (_) {
+      return null;
+    }
+  }
+
   async function applyPhoneCount(count, opts) {
     await ensureAuth();
     if (!phoneJoin) throw new Error("휴대폰 연결을 아직 준비하지 못했습니다.");
@@ -770,6 +790,14 @@ function registerIpc() {
           else if (action.type === "sheet") await applySheet(action);
           else if (action.type === "input") await applyInput(action);
           else if (action.type === "running" && action.on && !engine.running) {
+            // 앱을 켠 직후 남은 「시작」명령은 끄고, desk에서 다시 시작하게 합니다.
+            if (ignoreStaleDesiredStart) {
+              ignoreStaleDesiredStart = false;
+              await clearDesiredRunning(raw);
+              // clearDesiredRunning 이 올린 rev 를 유지하려고 startFailed 로 둡니다.
+              startFailed = true;
+              break;
+            }
             await beginBroadcast({
               sessionKind: action.sessionKind,
               spoken: action.spoken,
@@ -778,6 +806,7 @@ function registerIpc() {
               preacherName: action.preacherName,
             });
           } else if (action.type === "running" && !action.on && engine.running) await endBroadcast();
+          else if (action.type === "running") ignoreStaleDesiredStart = false;
         } catch (err) {
           note(err);
           // 시작/종료 실패는 같은 rev를 다시 시도할 수 있게 남깁니다.
@@ -806,6 +835,7 @@ function registerIpc() {
     roomChurchId = churchId;
     if (placeNameCache.id !== churchId) placeNameCache = { id: "", name: "" };
     appliedRev = 0;
+    ignoreStaleDesiredStart = true;
     stopDesired = firebase.listen(`churches/${churchId}/room/desired`, (value) => {
       applyDesired(value).catch((err) => note(err));
     });
@@ -818,6 +848,7 @@ function registerIpc() {
     roomChurchId = "";
     placeNameCache = { id: "", name: "" };
     appliedRev = 0;
+    ignoreStaleDesiredStart = false;
   }
 
   ipcMain.handle("settings:get", () => {
@@ -1227,10 +1258,12 @@ function registerIpc() {
     const targets = Array.isArray(opts && opts.targets) && opts.targets.length
       ? opts.targets
       : (Array.isArray(engine.outputs) && engine.outputs.length ? engine.outputs : (saved.targets || []));
+    // 다른 계정에 남은 강연자 아이디(형식만 맞는 값)는 이 계정 목록에 없으면 버립니다.
+    const preachers = await firebase.listPreachers(church.id);
     let preacherId = (opts && opts.preacherId) || saved.preacherId || "";
-    if (!catalog.isPreacherId(preacherId)) {
-      const preachers = await firebase.listPreachers(church.id);
+    if (!catalog.isPreacherId(preacherId) || !preachers.some((row) => row && row.id === preacherId)) {
       preacherId = preachers[0] && preachers[0].id ? preachers[0].id : "";
+      if (preacherId) writeSettings({ preacherId });
     }
     if (!catalog.isPreacherId(preacherId)) {
       throw new Error("등록된 이름이 없습니다. 관리 페이지에서 이름을 먼저 등록해 주세요.");
@@ -1329,10 +1362,25 @@ function registerIpc() {
     for (const connectionId of fresh) {
       try { await writeLectureJoin(connectionId); } catch (_) { /* 다음 시작 때 다시 엽니다 */ }
     }
+    // desired.running 도 같이 꺼, 앱을 다시 켤 때 「방송 중」·자동 시작이 남지 않게 합니다.
+    try { await clearDesiredRunning(); } catch (_) { /* status 기록으로 화면은 맞춥니다 */ }
     // 종료 직후 빈 모니터를 room/status에 올려, desk가 이전 방송 글을 다시 읽지 않게 합니다.
     try { await publishStatus(); } catch (_) { publishRoom(); }
     return stopped;
   }
+
+  shutdownBroadcast = async () => {
+    if (!engine) return;
+    try {
+      if (engine.running) await endBroadcast();
+      else {
+        try { await clearDesiredRunning(); } catch (_) { /* 아래 status로 맞춥니다 */ }
+        try { await publishStatus(); } catch (_) { /* 종료 중이라 다음 실행에서 덮습니다 */ }
+      }
+    } finally {
+      try { engine.capture.stop(); } catch (_) { /* 이미 닫힌 장치는 무시합니다 */ }
+    }
+  };
 
   ipcMain.handle("broadcast:start", (_event, opts) => beginBroadcast(opts));
   ipcMain.handle("broadcast:stop", () => endBroadcast());
@@ -1452,17 +1500,12 @@ if (!gotLock) {
       releaseFolder();
       return;
     }
-    if (engine.running) {
-      event.preventDefault();
-      engine.stop().finally(() => {
-        engine.capture.stop();
-        releaseFolder();
-        quitting = true;
-        app.quit();
-      });
-      return;
-    }
-    engine.capture.stop();
-    releaseFolder();
+    // 종료 시 방송 끄기 + desired.running 해제 + status 반영. 안 하면 「방송 중」이 남거나 재실행 때 다시 켜집니다.
+    event.preventDefault();
+    shutdownBroadcast().finally(() => {
+      releaseFolder();
+      quitting = true;
+      app.quit();
+    });
   });
 }
