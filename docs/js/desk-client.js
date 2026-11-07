@@ -1,1 +1,1 @@
-@/tmp/li79-desk-content-only.txt
+throw new Error('Run: node scripts/expand-li79-gz.js');\n
