@@ -679,6 +679,7 @@
           : `말하는 언어 ${spokenName}. 번역 ${targets}. 남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}. 다시 누르면 시작합니다. 아니면 「취소」를 누르세요.`;
       }
     } else {
+      // 시작 전 대기: 설정을 다 본 뒤 「시작」을 누르라고 안내합니다.
       start.textContent = "시작";
       start.classList.remove("confirm-ready");
       start.setAttribute("aria-label", "시작");
@@ -687,7 +688,10 @@
         stop.disabled = true;
         stop.textContent = "종료";
       }
-      if (hint) hint.hidden = true;
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = "모든 설정을 확인한 뒤 「시작」을 누르세요.";
+      }
     }
   }
 
