@@ -1,1 +1,1 @@
-$file:/home/ubuntu/live-interpret/docs/js/cost.js
+$file:/tmp/cost.js
