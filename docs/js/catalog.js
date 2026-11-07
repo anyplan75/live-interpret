@@ -1,1 +1,1 @@
-PLACEHOLDER_WILL_FAIL
+$file:/tmp/c.js
