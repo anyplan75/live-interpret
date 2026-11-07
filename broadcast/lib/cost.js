@@ -1,1 +1,1 @@
-@/tmp/cost-plain-for-mcp.js
+PLACEHOLDER_USE_FILE
