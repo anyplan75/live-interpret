@@ -287,7 +287,8 @@ function clearHearing() {
 }
 
 function openSettingsApp() {
-  const page = "https://anyplan75.github.io/live-interpret/desk/?v=20261031p2";
+  // Pages desk 캐시는 HTML 안의 ?v= 꼬리표로 맞춥니다. 여기 옛 꼬리표를 붙이지 않습니다.
+  const page = "https://anyplan75.github.io/live-interpret/desk/";
   const session = secrets.readSession(userDir());
   const refresh = session && typeof session.refreshToken === "string" ? session.refreshToken : "";
   let target = page;
@@ -1239,9 +1240,12 @@ function registerIpc() {
       ? opts.sessionKind
       : (kinds.includes(saved.sessionKind) ? saved.sessionKind : "강의");
     const deskSpeech = saved.deskSpeech && typeof saved.deskSpeech === "object" ? saved.deskSpeech : {};
+    // 저장된 키가 없어도 기본 마이크를 엽니다. 마이크 무신호(레벨 0)는 시작을 막지 않습니다.
     if (!engine.capture.opened) {
       const key = (opts && opts.deviceKey) || saved.deviceKey || "";
-      if (key) engine.monitor(key, Number(opts && opts.channel) || 0);
+      engine.monitor(key, Number(opts && opts.channel) || 0);
+      const openedKey = engine.device && engine.device.key ? engine.device.key : "";
+      if (openedKey) writeSettings({ deviceKey: openedKey });
     }
     const started = await engine.start({
       ...(opts || {}),

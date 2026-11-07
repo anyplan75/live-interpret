@@ -40,6 +40,16 @@ test("incomplete setup lists every missing choice at once", () => {
     targets: ["en"],
     deviceKey: "core:0",
   }), ["저장 폴더"]);
+  // 마이크 레벨·신호 유무는 갭이 아닙니다. deviceKey만 봅니다.
+  assert.deepEqual(missingSetup({
+    folder: "/tmp/talks",
+    preacherId: "kim",
+    sessionKind: "강의",
+    targets: ["en"],
+    deviceKey: "core:0",
+    level: 0,
+    signal: false,
+  }), []);
 });
 
 test("the top of the app is settings, start, and stop, and start opens settings until setup is done", () => {
@@ -176,6 +186,17 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.ok(startMain.indexOf("openSavedFolder") < startMain.indexOf("engine.start"));
   assert.match(startMain, /고른 폴더에 기록을 만들 수 없습니다/);
   assert.match(startMain, /\["설교", "강의", "연설", "행사"\]/);
+  // 장치 키가 비어도 monitor를 호출해 기본 마이크를 엽니다. 무신호도 시작을 막지 않습니다.
+  assert.match(startMain, /engine\.monitor\(key/);
+  assert.doesNotMatch(startMain, /if \(key\) engine\.monitor/);
+  assert.match(main, /anyplan75\.github\.io\/live-interpret\/desk\/"/);
+  assert.doesNotMatch(main, /desk\/\?v=20261031p2/);
+  const engineStart = read("broadcast/lib/engine.js");
+  assert.match(engineStart, /this\.monitor\(opts\.deviceKey \|\| ""/);
+  assert.doesNotMatch(engineStart, /if \(!opts\.deviceKey\) throw new Error\("입력 장치를 먼저 선택해 주세요\."\)/);
+  const room = read("broadcast/renderer/room.js");
+  assert.match(room, /listed\[0\]/);
+  assert.match(room, /무신호/);
   const settingsBlock = html.slice(settingsAt, html.indexOf('id="heardTitle"'));
   assert.doesNotMatch(settingsBlock, /id="start"|id="stop"/);
   assert.match(settingsBlock, /id="sensitivity"/);

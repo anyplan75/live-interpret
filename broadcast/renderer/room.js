@@ -188,11 +188,14 @@ function openStudio(email, church) {
 async function restoreDevice() {
   const saved = await window.broadcast.getSettings();
   if (saved && saved.folderReady) document.getElementById("folderLine").textContent = "기록 폴더를 골랐습니다.";
-  if (!saved || !saved.deviceKey) return;
-  const match = [...deviceEl.options].some((option) => option.value === saved.deviceKey);
-  if (!match) return;
-  deviceEl.value = saved.deviceKey;
-  await window.broadcast.monitor(saved.deviceKey, 0);
+  // 저장된 마이크가 없거나 사라졌으면 목록의 첫 장치를 엽니다.
+  // 소리가 없어도(무신호) 열어 두어 desk 시작확인이 입력 장치 갭에 막히지 않게 합니다.
+  let key = saved && saved.deviceKey ? String(saved.deviceKey) : "";
+  const listed = [...deviceEl.options].map((option) => option.value).filter(Boolean);
+  if (!key || !listed.includes(key)) key = listed[0] || "";
+  if (!key) return;
+  deviceEl.value = key;
+  await window.broadcast.monitor(key, 0);
 }
 
 async function loadDevices() {
