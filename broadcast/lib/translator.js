@@ -136,7 +136,6 @@ async function translate(koreanText, opts) {
   const source = sourceLanguage(opts);
   const targetCodes = (opts.targetCodes && opts.targetCodes.length ? opts.targetCodes : [])
     .filter((code) => code !== source && langByCode[code]);
-  if (!targetCodes.length) return { [source]: koreanText };
   const baseOpts = {
     apiKey,
     model,
@@ -148,6 +147,16 @@ async function translate(koreanText, opts) {
     fetchImpl: opts.fetchImpl,
     retryDelayMs: opts.retryDelayMs,
   };
+
+  // 번역할 언어가 없어도 한국어 본문은 교정합니다. 추임새만 AI가 빈 칸으로 걸러 냅니다.
+  if (!targetCodes.length) {
+    if (source !== "ko") return { [source]: koreanText };
+    const onlyKo = await callWithRetry(koreanText, [], baseOpts);
+    const fixed = onlyKo.ko != null && String(onlyKo.ko).trim()
+      ? String(onlyKo.ko).trim()
+      : koreanText;
+    return { ko: fixed };
+  }
 
   const firstBatch = targetCodes.slice(0, BATCH_SIZE);
   const first = await callWithRetry(koreanText, firstBatch, baseOpts);
