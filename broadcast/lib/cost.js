@@ -589,7 +589,7 @@
   }
 
   function sanitizeDepositId(id) {
-    return String(id || "").replace(/[.#$[\]/g, "_").slice(0, 128);
+    return String(id || "").replace(/[.#$[\]/]/g, "_").slice(0, 128);
   }
 
   function ledgerEntry(fields) {
