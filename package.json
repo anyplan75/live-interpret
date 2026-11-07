@@ -13,7 +13,7 @@
     "start": "electron .",
     "start:settings": "electron settings/main.js",
     "web": "node scripts/serve-web.js",
-    "test": "node --test test/*.js",
+    "test": "node scripts/restore-plain-li79.js && node --test test/*.js",
     "mirror:firebase": "node scripts/export-firebase-mirror.js",
     "pack:mac": "node scripts/pack-mac.js",
     "dist:mac": "node scripts/pack-mac.js --dist",
