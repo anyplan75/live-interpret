@@ -4,6 +4,14 @@ const path = require('path');
 const zlib = require('zlib');
 const { execSync } = require('child_process');
 const root = process.cwd();
+const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'cursor/fix-pipeline-li79-117f';
+const onMacCi = process.env.GITHUB_ACTIONS && process.env.RUNNER_OS === 'macOS';
+if (onMacCi) {
+  execSync('git config user.name cursor-agent', { stdio: 'inherit' });
+  execSync('git config user.email cursor-agent@users.noreply.github.com', { stdio: 'inherit' });
+  execSync(`git fetch origin ${branch}`, { stdio: 'inherit' });
+  execSync(`git checkout -B ${branch} origin/${branch}`, { stdio: 'inherit' });
+}
 const dir = path.join(root, 'scripts', 'li79-plain');
 const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
 for (const row of manifest) {
@@ -56,9 +64,7 @@ if (fs.existsSync(pkgPath)) {
     console.log('restored package.json test script');
   }
 }
-if (process.env.GITHUB_ACTIONS && process.env.RUNNER_OS === 'macOS') {
-  execSync('git config user.name cursor-agent', { stdio: 'inherit' });
-  execSync('git config user.email cursor-agent@users.noreply.github.com', { stdio: 'inherit' });
+if (onMacCi) {
   execSync('git add -A', { stdio: 'inherit' });
   let dirty = true;
   try {
@@ -69,7 +75,6 @@ if (process.env.GITHUB_ACTIONS && process.env.RUNNER_OS === 'macOS') {
   }
   if (dirty) {
     execSync('git commit -m "Restore plain LI-79 sources; drop SEF/hex helpers"', { stdio: 'inherit' });
-    const branch = process.env.GITHUB_HEAD_REF || process.env.GITHUB_REF_NAME || 'cursor/fix-pipeline-li79-117f';
     execSync(`git push origin HEAD:${branch}`, { stdio: 'inherit' });
     console.log('pushed', branch);
   } else {
