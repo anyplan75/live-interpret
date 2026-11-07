@@ -110,6 +110,28 @@ class InputCapture {
     return this.snapshot();
   }
 
+  /** 선택한 채널 번호까지 한 번에 들을 수 있게 다시 엽니다. 이미 충분하면 그대로 둡니다. */
+  ensureChannels(count, hooks) {
+    const need = Math.max(1, Math.min(Number(count) || 1, this.device ? this.device.inputChannels : 1));
+    if (hooks) {
+      if (hooks.onPcm) this.onPcm = hooks.onPcm;
+      if (hooks.onError) this.onError = hooks.onError;
+    }
+    if (!this.device) throw new Error("입력 장치를 먼저 선택해 주세요.");
+    if (this.opened && this.opened.mode === "all" && this.opened.nChannels >= need) {
+      return this.snapshot();
+    }
+    this.opened = this._open(this.device, {
+      mode: "all",
+      nChannels: Math.max(need, this.device.inputChannels),
+      firstChannel: 0,
+      minChannels: need,
+    });
+    this.opened.selected = Math.min(this.opened.selected || 0, this.opened.nChannels - 1);
+    this.opened.deviceChannel = this.opened.selected;
+    return this.snapshot();
+  }
+
   selectChannel(index) {
     if (!this.device) throw new Error("입력 장치를 먼저 선택해 주세요.");
     if (index < 0 || index >= this.device.inputChannels) throw new Error("채널 범위 밖입니다.");
@@ -225,9 +247,28 @@ class InputCapture {
 
   _plans(device, requested) {
     if (requested.mode === "single") return [requested];
-    const plans = [{ mode: "all", nChannels: device.inputChannels, firstChannel: 0 }];
-    if (device.inputChannels > 2) plans.push({ mode: "all", nChannels: 2, firstChannel: 0 });
-    if (device.inputChannels > 1) plans.push({ mode: "single", nChannels: 1, firstChannel: 0 });
+    const total = Math.max(1, Number(device.inputChannels) || 1);
+    const want = Math.max(1, Math.min(Number(requested.nChannels) || total, total));
+    const floor = Math.max(1, Math.min(Number(requested.minChannels) || want, total));
+    const plans = [];
+    const seen = new Set();
+    const addAll = (n) => {
+      const count = Math.max(1, Math.min(Number(n) || 1, total));
+      const key = `all:${count}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      plans.push({ mode: "all", nChannels: count, firstChannel: 0 });
+    };
+    addAll(want);
+    addAll(total);
+    // 장치마다 한 번에 여는 채널 수가 다를 수 있어, 필요한 수 이상부터 줄여 가며 시도합니다.
+    for (let n = total; n >= floor; n = n > 16 ? n - 8 : (n > 8 ? n - 4 : n - 1)) {
+      addAll(n);
+    }
+    addAll(floor);
+    if (floor <= 1 && total > 1) {
+      plans.push({ mode: "single", nChannels: 1, firstChannel: 0 });
+    }
     return plans;
   }
 

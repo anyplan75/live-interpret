@@ -968,12 +968,39 @@ class Engine {
     return { ok: true };
   }
 
+  /** 마이크 채널 여러 개를 들으려면 장치도 그 채널 수만큼 함께 열려 있어야 합니다. */
+  ensureCaptureForIndex(index) {
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0 || !this.device || !this.capture) return null;
+    const snap = this.capture.snapshot();
+    if (snap && snap.mode === "all" && snap.openedChannels > i) return snap;
+    try {
+      const next = this.capture.ensureChannels(i + 1, {
+        onPcm: (buffer, info) => this._onPcm(buffer, info),
+        onError: (message) => this._onAudioStreamError(message),
+      });
+      this.emit({ type: "audio", audio: next });
+      if (!(next && next.mode === "all" && next.openedChannels > i)) {
+        this.emit({
+          type: "log",
+          level: "error",
+          text: `입력 장치에서 채널 ${i + 1}까지 함께 열지 못했습니다. 채널 1 소리만 인식될 수 있습니다.`,
+        });
+      }
+      return next;
+    } catch (err) {
+      this.emit({ type: "log", level: "error", text: err.message || String(err) });
+      return snap;
+    }
+  }
+
   async openChannel(index) {
     if (!this.channelSessions) this.channelSessions = new Map();
     if (!this.sharedTexts) this.sharedTexts = { texts: {}, chain: Promise.resolve() };
     if (this.channelSessions.has(index)) return this.channelSessions.get(index);
     const row = this.channelRows[index] || { spoken: "ko", on: true, source: "device" };
     const phone = row.source === "phone";
+    if (!phone) this.ensureCaptureForIndex(index);
     const plan = channelRecognition(row, this.outputs || [], this.deviceSpeaker(row, index));
     const spoken = plan.spoken;
     const speaker = plan.speaker;
@@ -1756,8 +1783,13 @@ class Engine {
       });
       const requested = this.channelRows.map((row, index) => (row.on ? index : -1)).filter((index) => index >= 0);
       if (!requested.length) requested.push(0);
+      const deviceNeeded = requested
+        .filter((index) => this.channelRows[index] && this.channelRows[index].source !== "phone")
+        .reduce((max, index) => Math.max(max, index), -1);
+      if (deviceNeeded >= 0) this.ensureCaptureForIndex(deviceNeeded);
       for (const index of requested.sort((a, b) => a - b)) {
         this.channelRows[index].on = true;
+        this.channelRows[index].captionLive = true;
         await this.openChannel(index);
       }
       this.channelRows.forEach((row) => {

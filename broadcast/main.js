@@ -455,7 +455,7 @@ function registerIpc() {
           name: row.name || "",
           spoken: row.spoken || "ko",
           level: peaks.get(row.index) || 0,
-          live: row.captionLive !== false,
+          live: !!row.on && row.captionLive !== false,
           connected: !!row.connected,
           joining: false,
           showName: row.showName !== false,
@@ -470,7 +470,8 @@ function registerIpc() {
         name: row.name || "",
         spoken: row.spoken || "ko",
         level: peaks.get(row.index) || 0,
-        live: row.captionLive !== false,
+        // 마이크는 실제로 켠 채널(on)만 켜짐으로 보여, 선택·인식이 맞습니다.
+        live: !!row.on && row.captionLive !== false,
         connected: true,
         showName: row.showName !== false,
         joinUrl: "",
@@ -566,13 +567,27 @@ function registerIpc() {
   async function applyInput(action) {
     if (action.key.startsWith("c:")) {
       const index = Number(action.key.slice(2));
+      try { engine.ensureDeviceSlots(); } catch (_) { /* 장치가 아직 없으면 아래 칸 검사에서 넘어갑니다 */ }
       const rows = engine.publicChannels();
-      if (!rows[index] || rows[index].source === "phone") return;
+      if (!Number.isInteger(index) || index < 0 || !rows[index] || rows[index].source === "phone") return;
       try {
         engine.setChannelCaption(index, { name: action.name, showName: action.showName });
-        if ((rows[index].captionLive !== false) !== action.live) engine.setInputLive(index, action.live);
         if (Object.prototype.hasOwnProperty.call(action, "spoken") && action.spoken) {
           await engine.setChannelSpoken(roomChurchId, index, action.spoken);
+        }
+        // 통역 설정의 켜짐/꺼짐은 그 채널 STT·교정·번역을 열고 닫습니다.
+        const wantOn = action.live !== false;
+        if (engine.running) {
+          const listening = !!(engine.channelSessions && engine.channelSessions.has(index));
+          if (wantOn !== listening) {
+            await engine.setChannelOn(roomChurchId, index, wantOn);
+          } else if (wantOn) {
+            try { engine.setInputLive(index, true); } catch (_) { /* 이미 켠 칸은 그대로 둡니다 */ }
+          }
+        } else if (engine.channelRows && engine.channelRows[index]) {
+          engine.channelRows[index].on = wantOn;
+          engine.channelRows[index].captionLive = wantOn;
+          engine.emitPhones();
         }
       } catch (_) { /* 아직 없는 마이크 칸은 방송실에서 장치를 고른 뒤에 적용합니다 */ }
       return;
