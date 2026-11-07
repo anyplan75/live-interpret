@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const catalog = require("../broadcast/lib/catalog");
 
@@ -78,8 +79,8 @@ test("owner and church logins split the controls", () => {
   const admin = fs.readFileSync(path.join(root, "docs/admin.html"), "utf8");
   const adminJs = fs.readFileSync(path.join(root, "docs/js/admin.js"), "utf8");
   const broadcast = fs.readFileSync(path.join(root, "broadcast/renderer/index.html"), "utf8");
-  const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
-  const main = fs.readFileSync(path.join(root, "broadcast/main.js"), "utf8");
+  const renderer = readSource("broadcast/renderer/renderer.js");
+  const main = readSource("broadcast/main.js");
   const listen = fs.readFileSync(path.join(root, "docs/listen.html"), "utf8");
   const overlay = fs.readFileSync(path.join(root, "docs/overlay.html"), "utf8");
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
