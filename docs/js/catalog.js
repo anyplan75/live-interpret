@@ -1,1 +1,1 @@
-$file:/home/ubuntu/live-interpret/docs/js/catalog.js
+PLACEHOLDER_WILL_FAIL
