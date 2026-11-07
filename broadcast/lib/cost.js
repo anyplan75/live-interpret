@@ -1,1 +1,1 @@
-$file:/home/ubuntu/live-interpret/broadcast/lib/cost.js
+PLACEHOLDER_WILL_FAIL
