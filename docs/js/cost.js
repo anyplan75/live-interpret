@@ -1,1 +1,1 @@
-$file:/tmp/cost.js
+PLACEHOLDER
