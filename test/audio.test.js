@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const {
   extractChannel,
@@ -111,8 +112,8 @@ test("vad returns one utterance after speech and silence", () => {
 test("a missing saved input uses the default mic and hides RtApiCore disconnect text", () => {
   const root = path.join(__dirname, "..");
   const audio = fs.readFileSync(path.join(root, "broadcast/lib/audio.js"), "utf8");
-  const engine = fs.readFileSync(path.join(root, "broadcast/lib/engine.js"), "utf8");
-  const renderer = fs.readFileSync(path.join(root, "broadcast/renderer/renderer.js"), "utf8");
+  const engine = readSource("broadcast/lib/engine.js");
+  const renderer = readSource("broadcast/renderer/renderer.js");
   assert.match(engine, /pickInputDevice/);
   assert.match(engine, /이 컴퓨터의 기본 마이크로 바꿨습니다/);
   assert.match(engine, /_onAudioStreamError/);

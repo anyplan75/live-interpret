@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const cost = require("../broadcast/lib/cost");
 const catalog = require("../docs/js/catalog");
@@ -44,7 +45,7 @@ test("a channel spoken language is not billed again as an output", () => {
 
 test("channel pickers follow the device input count", () => {
   const audio = read("broadcast/lib/audio.js");
-  const renderer = read("broadcast/renderer/renderer.js");
+  const renderer = readSource("broadcast/renderer/renderer.js");
   assert.match(audio, /deviceChannels: this\.device\.inputChannels/);
   assert.match(renderer, /renderChannels\(state\.audio\.deviceChannels\)/);
   assert.match(renderer, /channel-spoken/);
