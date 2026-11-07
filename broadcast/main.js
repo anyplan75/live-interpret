@@ -303,6 +303,8 @@ function openSettingsApp() {
 
 function send(payload) {
   rememberHearing(payload);
+  // 엔진이 스스로 방송을 끄면(충전금 부족 등) 모니터 잔여 글도 바로 지웁니다.
+  if (payload && payload.type === "session" && payload.running === false) clearHearing();
   if (payload && payload.type === "level" && Number.isInteger(payload.channel)) {
     peaks.set(payload.channel, Number(payload.peak) || 0);
   }
@@ -548,7 +550,8 @@ function registerIpc() {
         terms: speech.terms || "",
       },
       bulletinLabel: bulletinStatusLabel(roomChurchId),
-      board: hearingBoard,
+      // 방송이 꺼져 있으면 모니터용 board를 비워, Firebase에 남은 이전 글을 덮어씁니다.
+      board: engine.running ? hearingBoard : { live: "", heard: [], cards: [] },
       logs: hearingLogs,
     });
     try {
@@ -1309,6 +1312,7 @@ function registerIpc() {
 
   async function endBroadcast() {
     const stopped = await engine.stop();
+    clearHearing();
     const ids = phoneJoin ? phoneJoin.closeSession() : [];
     const fresh = phoneJoin && Array.isArray(phoneJoin.preparedAfterClose) ? phoneJoin.preparedAfterClose : [];
     if (phoneJoin) {
@@ -1321,6 +1325,8 @@ function registerIpc() {
     for (const connectionId of fresh) {
       try { await writeLectureJoin(connectionId); } catch (_) { /* 다음 시작 때 다시 엽니다 */ }
     }
+    // 종료 직후 빈 모니터를 room/status에 올려, desk가 이전 방송 글을 다시 읽지 않게 합니다.
+    try { await publishStatus(); } catch (_) { publishRoom(); }
     return stopped;
   }
 
