@@ -17,6 +17,8 @@
   let watched = new Set();
   let prevChosen = new Set();
   let startArmed = false;
+  let startPaintKey = "";
+  let statusShellKey = "";
   let spoken = "ko";
   let latest = null;
   let operatorAccounts = [];
@@ -643,6 +645,22 @@
     const stop = document.getElementById("stop");
     const hint = document.getElementById("confirmHint");
     if (!start) return;
+    // 마이크 레벨만 자주 바뀌어도 시작/시작확인 단추 DOM을 다시 쓰지 않습니다.
+    // textContent를 거듭 고치면 클릭이 씹혀 「시작확인」이 되다 말다 합니다.
+    const row = latest || {};
+    const gapText = Array.isArray(gaps) ? gaps.join("|") : "";
+    const targetsKey = (row.targets || [...chosen]).join(",");
+    const nextPaint = [
+      running ? "1" : "0",
+      startArmed ? "1" : "0",
+      gapText,
+      row.spoken || spoken,
+      targetsKey,
+      row.balanceLabel || "",
+      row.remainingLabel || "",
+    ].join("|");
+    if (nextPaint === startPaintKey) return;
+    startPaintKey = nextPaint;
     if (running) {
       startArmed = false;
       start.textContent = "시작";
@@ -658,7 +676,7 @@
     }
     if (startArmed) {
       // 같은 단추 글자만 「시작확인」으로 바꿉니다. 다시 누르면 방송이 시작됩니다.
-      // 준비 갭이 있어도 단추는 눌러지게 둡니다. 다시 누르면 room/desired 시작 명령을 보냅니다.
+      // 준비 갭·마이크 무신호(레벨 0)가 있어도 단추는 눌러지게 둡니다.
       // 「종료」는 이 단계에서 「취소」로 바뀌어 시작확인을 되돌립니다.
       start.textContent = "시작확인";
       start.classList.add("confirm-ready");
@@ -669,14 +687,13 @@
         stop.textContent = "취소";
       }
       if (hint) {
-        const row = latest || {};
         const spokenName = langLabel(row.spoken || spoken);
         const targets = (row.targets || [...chosen]).map(langLabel).join(", ") || "번역 없음";
         const blocked = Array.isArray(gaps) && gaps.length > 0;
         hint.hidden = false;
         hint.textContent = blocked
-          ? `아직 준비되지 않았습니다: ${(gaps || []).join(", ")}. 입력 장치와 기록 폴더는 방송실 앱에서 맞춥니다. 「취소」로 되돌릴 수 있습니다.`
-          : `말하는 언어 ${spokenName}. 번역 ${targets}. 남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}. 다시 누르면 시작합니다. 아니면 「취소」를 누르세요.`;
+          ? `아직 준비되지 않았습니다: ${(gaps || []).join(", ")}. 입력 장치와 기록 폴더는 방송실 앱에서 맞춥니다. 마이크에 소리가 없어도 시작할 수 있습니다. 「취소」로 되돌릴 수 있습니다.`
+          : `말하는 언어 ${spokenName}. 번역 ${targets}. 남은 충전금 ${row.balanceLabel || "0원"}. ${row.remainingLabel || "남은 시간 없음"}. 마이크에 소리가 없어도 됩니다. 다시 누르면 시작합니다. 아니면 「취소」를 누르세요.`;
       }
     } else {
       // 시작 전 대기: 설정을 다 본 뒤 「시작」을 누르라고 안내합니다.
@@ -693,6 +710,39 @@
         hint.textContent = "모든 설정을 확인한 뒤 「시작」을 누르세요.";
       }
     }
+  }
+
+  // 소리 막대(level)만 바뀐 갱신인지 봅니다. 시작 단추·언어 목록은 그대로 둡니다.
+  function statusShell(status) {
+    const row = status || {};
+    const inputs = Array.isArray(row.inputs) ? row.inputs : [];
+    const inputShell = inputs.map((item) => (
+      `${item.key}|${item.title}|${item.connected}|${item.joining}|${item.code}|${item.live}|${item.name}|${item.spoken || "ko"}|${item.showName !== false}`
+    )).join(";");
+    return [
+      row.running === true ? "1" : "0",
+      row.online === false ? "0" : "1",
+      (row.gaps || []).join("|"),
+      row.spoken || "",
+      (row.targets || []).join(","),
+      row.sessionKind || "",
+      row.preacherName || "",
+      row.sensitivity || "",
+      String(row.phoneCount || 0),
+      row.folderReady === true ? "1" : "0",
+      row.folderLabel || "",
+      row.deviceReady === true ? "1" : "0",
+      row.balanceLabel || "",
+      row.remainingLabel || "",
+      row.sessionLabel || "",
+      row.notice || "",
+      row.bulletinLabel || "",
+      row.showName === false ? "0" : "1",
+      JSON.stringify(row.speech || {}),
+      inputShell,
+      JSON.stringify(row.board || {}),
+      JSON.stringify(row.logs || []),
+    ].join("\n");
   }
 
   function markChoice(box, attr, value) {
@@ -959,6 +1009,13 @@
   function showStatus(status) {
     latest = status || latest;
     if (!latest) return;
+    const nextShell = statusShell(latest);
+    // 마이크 레벨만 바뀌면 막대만 고칩니다. 시작/시작확인 단추는 건드리지 않습니다.
+    if (nextShell === statusShellKey) {
+      paintInputs(latest);
+      return;
+    }
+    statusShellKey = nextShell;
     if (Array.isArray(latest.targets)) chosen = new Set(latest.targets);
     if (latest.spoken) spoken = latest.spoken;
     paintMoney(latest);
@@ -985,6 +1042,8 @@
     chosen = new Set(LI.catalog.defaultSelectedTargets());
     watched = new Set(chosen);
     startArmed = false;
+    startPaintKey = "";
+    statusShellKey = "";
     captionKey = "";
     overlayKey = "";
     fontKey = "";
@@ -1096,6 +1155,8 @@
     churchId = "";
     placeName = "";
     startArmed = false;
+    startPaintKey = "";
+    statusShellKey = "";
     writeSession(null);
     desk.hidden = true;
     operator.hidden = true;

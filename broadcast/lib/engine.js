@@ -1633,9 +1633,9 @@ class Engine {
     if (!["설교", "강의", "연설", "행사"].includes(opts.sessionKind)) throw new Error("내용을 선택해 주세요.");
     const outputCodes = cleanTargets(opts.targets);
     if (!outputCodes.length) throw new Error("번역할 언어를 하나 이상 선택해 주세요.");
+    // 장치 키가 비어도 기본 마이크를 엽니다. 소리가 없어도(무신호) 시작은 됩니다.
     if (!this.capture.opened) {
-      if (!opts.deviceKey) throw new Error("입력 장치를 먼저 선택해 주세요.");
-      this.monitor(opts.deviceKey, opts.channel || 0);
+      this.monitor(opts.deviceKey || "", opts.channel || 0);
     }
     const channelCount = this.device && this.device.inputChannels ? this.device.inputChannels : 1;
     const keptPhones = (this.channelRows || []).filter((row) => row && row.source === "phone" && row.connected !== false && row.name && row.phoneId);
