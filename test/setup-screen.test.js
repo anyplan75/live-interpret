@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const path = require("path");
 const { missingSetup, preacherToSelect, SESSION_KINDS } = require("../broadcast/lib/setup-ready");
 
@@ -54,7 +55,7 @@ test("incomplete setup lists every missing choice at once", () => {
 
 test("the top of the app is settings, start, and stop, and start opens settings until setup is done", () => {
   const html = read("broadcast/renderer/index.html");
-  const renderer = read("broadcast/renderer/renderer.js");
+  const renderer = readSource("broadcast/renderer/renderer.js");
   const actions = html.slice(html.indexOf('id="broadcastActions"'), html.indexOf('id="costCard"'));
   assert.match(actions, /id="openSettings">설정</);
   assert.match(actions, /id="start">시작</);
@@ -171,7 +172,7 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(closeFn, /setupClosed:\s*true/);
   const bootFn = renderer.slice(renderer.indexOf("async function boot"), renderer.indexOf("window.broadcast.onEvent"));
   assert.match(bootFn, /!\(state\.settings && state\.settings\.setupClosed\)\) openSettings\(\)/);
-  const main = read("broadcast/main.js");
+  const main = readSource("broadcast/main.js");
   assert.match(main, /securityScopedBookmarks:\s*true/);
   assert.match(main, /startAccessingSecurityScopedResource/);
   assert.match(main, /delete copy\.folderBookmark/);
@@ -191,7 +192,7 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.doesNotMatch(startMain, /if \(key\) engine\.monitor/);
   assert.match(main, /anyplan75\.github\.io\/live-interpret\/desk\/"/);
   assert.doesNotMatch(main, /desk\/\?v=20261031p2/);
-  const engineStart = read("broadcast/lib/engine.js");
+  const engineStart = readSource("broadcast/lib/engine.js");
   assert.match(engineStart, /this\.monitor\(opts\.deviceKey \|\| ""/);
   assert.doesNotMatch(engineStart, /if \(!opts\.deviceKey\) throw new Error\("입력 장치를 먼저 선택해 주세요\."\)/);
   const room = read("broadcast/renderer/room.js");
