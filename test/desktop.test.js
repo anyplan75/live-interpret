@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
+const { readSource } = require("./read-source");
 const os = require("os");
 const path = require("path");
 const { EventEmitter } = require("events");
@@ -34,7 +35,7 @@ test("consent dialog explains text-only storage and quits on decline", async () 
 
   const source = read("broadcast/lib/consent.js");
   assert.doesNotMatch(source, /require\(["']fs["']\)|writeFile|settings/);
-  const main = read("broadcast/main.js");
+  const main = readSource("broadcast/main.js");
   const ready = main.slice(main.indexOf("app.whenReady()"));
   assert.ok(ready.indexOf("askConsent") < ready.indexOf("registerIpc()"));
   assert.ok(ready.indexOf("askConsent") < ready.indexOf("createWindow()"));
