@@ -1,3 +1,4 @@
+const { readSource } = require("./read-source");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -41,7 +42,7 @@ test("a settings window opened alone does not borrow another folder", () => {
 test("the room draws mic samples and the settings launch passes the login folder", () => {
   const root = path.join(__dirname, "..");
   const room = fs.readFileSync(path.join(root, "broadcast/renderer/room.js"), "utf8");
-  const main = fs.readFileSync(path.join(root, "broadcast/main.js"), "utf8");
+  const main = readSource("broadcast/main.js");
   const settings = fs.readFileSync(path.join(root, "settings/main.js"), "utf8");
   assert.match(room, /event\.type === "levels"/);
   assert.match(room, /\* 280/);
