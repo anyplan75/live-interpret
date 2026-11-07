@@ -98,7 +98,8 @@
     vadSilenceMs: 500,
     silenceFlushMs: 1800,
     silenceForceFlushMs: 4500,
-    minFlushChars: 8,
+    // 추임새(음·아)는 isNoise 로 걸러지고, 그 외 짧은 본문도 침묵 후 교정으로 넘깁니다.
+    minFlushChars: 2,
     maxSpeechMs: 12000,
   };
 
