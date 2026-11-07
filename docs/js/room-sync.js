@@ -10,7 +10,10 @@
   root.LI.roomSync = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const PHONE_KEY = /^p:[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
-  const MIC_KEY = /^c:([0-9]|1[0-5])$/;
+  // 마이크 칸은 선택한 장치의 실제 채널 수까지 씁니다. 64채널 오디오 인터페이스까지 허용합니다.
+  const MAX_MIC_CHANNELS = 64;
+  const MAX_INPUTS = MAX_MIC_CHANNELS + 8;
+  const MIC_KEY = /^c:(\d+)$/;
   const LANG = /^[a-z]{2,3}(?:-[A-Za-z]{2})?$/;
 
   function cleanName(value) {
@@ -113,9 +116,16 @@
     return gaps;
   }
 
+  function isMicKey(key) {
+    const match = MIC_KEY.exec(String(key || ""));
+    if (!match) return false;
+    const index = Number(match[1]);
+    return Number.isInteger(index) && index >= 0 && index < MAX_MIC_CHANNELS;
+  }
+
   function cleanInput(item) {
     const key = String(item && item.key || "");
-    if (!PHONE_KEY.test(key) && !MIC_KEY.test(key)) return null;
+    if (!PHONE_KEY.test(key) && !isMicKey(key)) return null;
     const row = {
       key,
       live: !(item && item.live === false),
@@ -139,7 +149,7 @@
       targets.push(lang);
     });
     const inputs = [];
-    (Array.isArray(src.inputs) ? src.inputs : []).slice(0, 16).forEach((item) => {
+    (Array.isArray(src.inputs) ? src.inputs : []).slice(0, MAX_INPUTS).forEach((item) => {
       const row = cleanInput(item);
       if (row && !inputs.some((kept) => kept.key === row.key)) inputs.push(row);
     });
@@ -257,7 +267,7 @@
       if (lang && lang !== spoken && !targets.includes(lang) && targets.length < 12) targets.push(lang);
     });
     const inputs = [];
-    (Array.isArray(src.inputs) ? src.inputs : []).slice(0, 16).forEach((item) => {
+    (Array.isArray(src.inputs) ? src.inputs : []).slice(0, MAX_INPUTS).forEach((item) => {
       const row = cleanStatusInput(item);
       if (row) inputs.push(row);
     });

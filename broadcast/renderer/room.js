@@ -203,7 +203,7 @@ async function loadDevices() {
     const option = document.createElement("option");
     option.value = device.key;
     option.textContent = device.name || device.key;
-    option.dataset.channels = String(device.channels || 1);
+    option.dataset.channels = String(device.inputChannels || device.channels || 1);
     deviceEl.append(option);
   });
   if (current && [...deviceEl.options].some((option) => option.value === current)) deviceEl.value = current;

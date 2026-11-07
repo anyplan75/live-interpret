@@ -51,6 +51,39 @@ test("desired keeps 설교 and runs start before phones or sheet", () => {
   assert.equal(kind.sessionKind, "설교");
 });
 
+test("status and desired keep every mic channel of a 32-input device", () => {
+  const many = [];
+  for (let i = 0; i < 32; i += 1) many.push({ key: `c:${i}`, live: i === 0, name: `마이크${i + 1}`, spoken: "ko" });
+  many.push({ key: "p:AB23CD", live: true, name: "손님", spoken: "ja" });
+  const desired = room.withRev(null, { running: false, spoken: "ko", targets: ["en"], inputs: many });
+  assert.equal(desired.inputs.length, 33);
+  assert.equal(desired.inputs[31].key, "c:31");
+  assert.equal(desired.inputs[32].key, "p:AB23CD");
+  const status = room.publicStatus({
+    updatedAt: 1,
+    online: true,
+    running: false,
+    spoken: "ko",
+    targets: ["en"],
+    inputs: many.map((row, index) => ({
+      ...row,
+      kind: row.key.startsWith("p:") ? "phone" : "mic",
+      title: row.key.startsWith("p:") ? "휴대폰" : `채널 ${index + 1}`,
+      level: 0.2,
+      connected: true,
+    })),
+  });
+  assert.equal(status.inputs.length, 33);
+  assert.equal(status.inputs[31].key, "c:31");
+  assert.equal(status.inputs[15].key, "c:15");
+  const rejected = room.withRev(null, {
+    spoken: "ko",
+    targets: ["en"],
+    inputs: [{ key: "c:64", live: true, name: "밖" }, { key: "c:0", live: true, name: "첫" }],
+  });
+  assert.deepEqual(rejected.inputs.map((row) => row.key), ["c:0"]);
+});
+
 test("status keeps connection facts and drops secrets", () => {
   const status = room.publicStatus({
     updatedAt: 10,
@@ -140,7 +173,13 @@ test("the broadcast window is hardware only and the settings window owns start",
   const roomJs = fs.readFileSync(path.join(root, "broadcast/renderer/room.js"), "utf8");
   assert.match(roomJs, /paintOverlays|overlayQr|OBS-\$\{item\.code\}/);
   assert.match(roomJs, /자막링크/);
+  assert.match(roomJs, /device\.inputChannels \|\| device\.channels/);
   assert.doesNotMatch(roomJs, /item\.listen/);
+  const engineSrc = fs.readFileSync(path.join(root, "broadcast/lib/engine.js"), "utf8");
+  assert.match(engineSrc, /this\.ensureDeviceSlots\(\);\s*if \(picked\.switched\)/s);
+  const syncSrc = fs.readFileSync(path.join(root, "docs/js/room-sync.js"), "utf8");
+  assert.match(syncSrc, /MAX_MIC_CHANNELS = 64/);
+  assert.doesNotMatch(syncSrc, /1\[0-5\]/);
   assert.match(main, /width:\s*520/);
   assert.match(main, /height:\s*760/);
   assert.match(main, /save-image|caption-links|mirrorDesiredPhoneCount/);

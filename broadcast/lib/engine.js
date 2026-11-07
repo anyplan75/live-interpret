@@ -642,6 +642,8 @@ class Engine {
       onError: (message) => this._onAudioStreamError(message),
     });
     this.device = device;
+    // 선택한 장치의 실제 입력 채널 수만큼 마이크 칸을 맞춥니다.
+    this.ensureDeviceSlots();
     if (picked.switched) {
       this.emit({ type: "log", level: "info", text: "이 컴퓨터의 기본 마이크로 바꿨습니다." });
     }
@@ -650,6 +652,7 @@ class Engine {
       Object.assign(snap, applied);
     }
     this.emit({ type: "audio", audio: snap });
+    this.emitPhones();
     return snap;
   }
 
