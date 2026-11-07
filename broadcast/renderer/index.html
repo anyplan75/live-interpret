@@ -1,1 +1,264 @@
-@/tmp/exact-index-args.json
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 통역시스템</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="title-block">
+      <h1>실시간 통역시스템</h1>
+      <p id="churchLine">계정으로 로그인하면 그 계정만 열립니다.</p>
+    </div>
+    <div class="header-status">
+      <div class="header-money">
+        <span class="header-kicker">남은 충전금</span>
+        <span id="balanceCost" class="cost-figure">0원</span>
+      </div>
+      <div class="header-money">
+        <span class="header-kicker">이번 방송 차감</span>
+        <span id="churchCost" class="cost-figure">0원</span>
+      </div>
+      <div id="prepaidTime" class="cost-figure time" aria-live="polite">남은 시간 없음</div>
+      <div id="status" class="pill">대기</div>
+    </div>
+  </header>
+  <main>
+    <section>
+      <div class="card" id="signInCard">
+        <h2>계정 로그인</h2>
+        <p class="hint">관리자가 만든 이 계정의 이메일과 비밀번호로 로그인합니다. 다른 계정은 고를 수 없습니다.</p>
+        <label for="churchEmail">이메일</label>
+        <input id="churchEmail" type="email" autocomplete="username">
+        <label for="churchPassword">비밀번호</label>
+        <input id="churchPassword" type="password" autocomplete="current-password">
+        <div class="row" style="margin-top:10px;">
+          <button type="button" id="churchSignIn">로그인</button>
+        </div>
+        <p class="hint" id="signInMsg"></p>
+      </div>
+
+      <div id="studio" hidden>
+        <div class="card" id="broadcastActions">
+          <h2 id="churchName">계정</h2>
+          <p class="hint" id="churchHint"></p>
+          <div class="row">
+            <button type="button" class="ghost" id="openSettings">설정</button>
+            <button type="button" id="start">시작</button>
+            <button type="button" class="danger" id="stop" disabled>종료</button>
+          </div>
+          <p class="hint" id="setupSummary">설정을 마친 뒤에 시작할 수 있습니다.</p>
+          <div id="phoneLevels" class="phone-levels" hidden></div>
+          <div id="phoneCodes" class="phone-codes" hidden></div>
+        </div>
+
+        <div class="card" id="costCard">
+          <p class="hint" id="prepaidHint">시작하려면 다음 1시간 요금이 충전금에 있어야 합니다. 1시간을 다 쓰지 않고 끄면 쓰지 않은 만큼 충전금으로 돌아갑니다.</p>
+          <p class="hint">한국어와 영어, 첫 입력은 시간당 10,000원입니다. 그 밖 언어는 시간당 2,000원, 추가 입력은 시간당 3,000원입니다. 휴대폰을 연결할 때 10,000원을 빼지 않습니다.</p>
+        </div>
+
+        <div class="card" id="startConfirm" hidden>
+          <h2>방송 시작 확인</h2>
+          <p id="confirmLangs"></p>
+          <p id="confirmPrice"></p>
+          <p id="confirmOvertime"></p>
+          <p id="confirmBalance"></p>
+          <p id="confirmShort" class="hint" hidden></p>
+          <div class="row" style="margin-top:10px;">
+            <button type="button" id="confirmStart">시작확인</button>
+            <button type="button" class="ghost" id="confirmCancel">취소</button>
+          </div>
+        </div>
+
+        <div id="settingsPanel" hidden>
+        <div class="card">
+          <h2>설정</h2>
+          <p class="hint" id="setupReady">시작 전에 필요한 항목을 여기서 맞춥니다.</p>
+          <ul id="setupGaps" class="setup-gaps" hidden></ul>
+          <div class="row" style="margin-top:10px;">
+            <button type="button" class="ghost" id="closeSettings">닫기</button>
+            <button type="button" class="ghost" id="signOut">로그아웃</button>
+          </div>
+        </div>
+
+        <details class="card fold">
+          <summary><span class="fold-title">내용</span><span class="fold-value" id="kindGlance">선택 안 함</span></summary>
+          <p class="hint">이번 시간에 무엇을 통역하는지 고릅니다.</p>
+          <label for="sessionKind">종류</label>
+          <select id="sessionKind">
+            <option value="">선택</option>
+            <option value="설교">설교</option>
+            <option value="강의">강의</option>
+            <option value="연설">연설</option>
+            <option value="행사">행사</option>
+          </select>
+        </details>
+
+        <details class="card fold">
+          <summary><span class="fold-title">진행자료</span><span class="fold-value" id="bulletinGlance">없음</span></summary>
+          <p class="hint">큐시트나 순서지 사진을 올리면 이 컴퓨터와 이번 기록에 남깁니다. 번호, 곡 제목, 본문, 제목, 강연자 이름을 뽑아 인식과 번역에 넣습니다.</p>
+          <button type="button" class="warn" id="pickBulletin">진행자료 올리기</button>
+          <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
+          <pre id="bulletinText" class="extract" hidden></pre>
+        </details>
+
+        <details class="card fold">
+          <summary><span class="fold-title">강연자</span><span class="fold-value" id="preacherGlance">선택 안 함</span></summary>
+          <p class="hint">이번 시간의 강연자 한 명을 고릅니다. 끝나면 말투, 교정, 용어가 쌓여 다음에 반영됩니다.</p>
+          <select id="preacher"></select>
+          <label for="preacherName">이름</label>
+          <input id="preacherName" type="text" maxlength="80">
+          <label class="check" for="showPreacherName">
+            <input id="showPreacherName" type="checkbox" checked>
+            강연자 이름을 자막에 표시
+          </label>
+          <details class="fold-inner">
+            <summary><span class="fold-title">말투와 교정</span><span class="fold-value" id="speechGlance">감도 보통</span></summary>
+            <label for="traits">말투</label>
+            <textarea id="traits"></textarea>
+            <label for="corrections">교정</label>
+            <textarea id="corrections"></textarea>
+            <label for="terms">용어</label>
+            <textarea id="terms"></textarea>
+            <label for="sensitivity">인식 감도</label>
+            <select id="sensitivity" title="입력 감도">
+              <option value="high">감도 높음</option>
+              <option value="normal" selected>감도 보통</option>
+              <option value="low">감도 낮음</option>
+            </select>
+            <p class="hint" id="keyHint">번역 키는 관리 페이지에 있습니다. 이 계정은 그 키를 읽지 않습니다.</p>
+            <label for="learned">방송에서 쌓인 내용 (자동, 보기만)</label>
+            <pre id="learned" class="hint extract"></pre>
+          </details>
+          <div class="row" style="margin-top:8px;">
+            <button type="button" id="addPreacher">새 강연자</button>
+            <button type="button" class="ghost" id="savePreacher">프로필 저장</button>
+          </div>
+          <p class="hint" id="preacherMsg"></p>
+        </details>
+
+        <details class="card fold">
+          <summary><span class="fold-title">오늘 번역할 언어</span><span class="fold-value" id="langGlance">번역 없음</span></summary>
+          <div class="row">
+            <button type="button" class="ghost" id="pickDefault">추천만</button>
+            <button type="button" class="ghost" id="pickAll">전체</button>
+            <button type="button" class="ghost" id="pickNone">번역 없음</button>
+          </div>
+          <div id="langs" class="langs" style="margin-top:10px;"></div>
+          <p class="hint" id="langCount"></p>
+        </details>
+
+        <div class="card" id="phoneJoinCard">
+          <h2>휴대폰</h2>
+          <p class="glance" id="phoneGlance">휴대폰 수 0</p>
+          <details class="fold-inner">
+            <summary><span class="fold-title">참여 안내</span><span class="fold-value">안내</span></summary>
+            <p class="hint">송출 컴퓨터에서 휴대폰 수를 고릅니다. 칸마다 연결 번호, 웹 마이크 주소, QR이 나옵니다. 브라우저는 그 주소를 열고 연결 번호를 입력합니다. 휴대폰 앱은 QR을 스캔한 뒤 이름과 말하는 언어를 입력합니다. 비밀번호는 치지 않습니다.</p>
+          </details>
+          <label for="phoneCount">휴대폰 수</label>
+          <input id="phoneCount" type="number" min="0" max="8" step="1" value="0">
+          <div id="phoneDesks"></div>
+          <p class="hint" id="phoneCountMsg">0이면 휴대폰 없이 시작합니다. 8대까지 고를 수 있습니다.</p>
+        </div>
+
+        <details class="card fold" id="inputCard">
+          <summary><span class="fold-title">입력 소스와 채널</span><span class="fold-value" id="inputGlance">채널 없음</span></summary>
+          <div class="row">
+            <select id="device" class="grow"></select>
+            <button type="button" class="ghost" id="reloadDevices">장치 새로고침</button>
+          </div>
+          <div id="channels" class="channels"></div>
+          <p class="hint" id="audioHint">채널 수는 선택한 장치의 입력 채널 수입니다. 말하는 언어는 그 칸 너비로 펼칩니다. 첫 입력은 기본 요금에 포함됩니다. 그 다음 채널이나 휴대폰은 시간당 3,000원이고, 연결할 때 따로 빼지 않습니다.</p>
+        </details>
+
+        <details class="card fold">
+          <summary><span class="fold-title">저장 폴더</span><span class="fold-value" id="folderGlance">선택 안 함</span></summary>
+          <div class="row">
+            <button type="button" class="warn" id="pickFolder">폴더 선택</button>
+            <button type="button" class="ghost" id="showSession" disabled>저장 폴더 열기</button>
+          </div>
+          <p class="hint" id="folderHint">계정 이름 / 날짜_시각 / 언어.txt 로 저장됩니다.</p>
+        </details>
+
+        <details class="card fold" id="subtitleStyleCard">
+          <summary><span class="fold-title">자막 위치와 글자</span><span class="fold-value" id="styleGlance">아래 · 가운데</span></summary>
+          <div class="style-grid">
+            <label>위치
+              <select id="layout">
+                <option value="bottom">아래</option>
+                <option value="top">위</option>
+                <option value="left">왼쪽</option>
+                <option value="right">오른쪽</option>
+              </select>
+            </label>
+            <label>정렬
+              <select id="align">
+                <option value="left">왼쪽</option>
+                <option value="center">가운데</option>
+                <option value="right">오른쪽</option>
+              </select>
+            </label>
+            <label>글자색 <input id="color" type="color" value="#ffffff"></label>
+            <label>배경색 <input id="bgColor" type="color" value="#000000"></label>
+            <label>투명도 <input id="opacity" type="number" min="0" max="1" step="0.1" value="0.7"></label>
+          </div>
+          <div id="fontRows"></div>
+          <button type="button" id="saveStyle" style="margin-top:10px;">자막 모양 저장</button>
+          <p class="hint" id="styleMsg"></p>
+        </details>
+        </div>
+      </div>
+
+      <div id="operator" hidden>
+        <div class="card">
+          <h2>테스트 기간</h2>
+          <label class="row" for="testPeriod">
+            <input id="testPeriod" type="checkbox">
+            테스트 기간
+          </label>
+          <p class="hint">켜면 방송, 강연, 대면 모두 충전금을 빼지 않습니다. 끄면 기본 시간 10,000원, 추가 언어 2,000원, 추가 입력 3,000원으로 1시간마다 빠집니다.</p>
+          <p class="hint" id="testPeriodMsg"></p>
+        </div>
+        <div class="card">
+          <h2>계정 사용</h2>
+          <p class="hint">이 계정만 모든 계정의 남은 잔액, 남은 시간, 최근 사용을 봅니다.</p>
+          <div id="operatorList"></div>
+          <div class="row" style="margin-top:10px;">
+            <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>선불 잔액</h2>
+          <label for="operatorAccount">계정</label>
+          <select id="operatorAccount"></select>
+          <label for="operatorAmount">더할 금액 (원)</label>
+          <input id="operatorAmount" type="number" min="1" step="1" inputmode="numeric">
+          <div class="row" style="margin-top:10px;">
+            <button type="button" id="operatorCredit">선불 잔액 더하기</button>
+          </div>
+          <p class="hint" id="operatorMsg"></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="heardSection">
+      <div class="card">
+        <h2 id="heardTitle">지금 듣는 한국어</h2>
+        <p class="hint">말하는 언어는 채널마다 고릅니다. 노란 칸은 지금 듣는 말입니다. 끝난 말은 아래에 듣는 말로 쌓이고, 교정은 그 듣는 말 바로 아래에 붙습니다.</p>
+        <div id="live" class="live">대기 중...</div>
+        <div id="koStack" class="ko-stack"></div>
+        <h2>안내</h2>
+        <div id="log" class="log"></div>
+        <div id="cards" class="grid"></div>
+      </div>
+    </section>
+  </main>
+  <script src="../lib/setup-ready.js"></script>
+  <script src="../lib/user-text.js"></script>
+  <script src="hearing.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
