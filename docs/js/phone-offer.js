@@ -107,7 +107,7 @@
         const value = Math.abs(input[i]);
         if (value > peak) peak = value;
       }
-      onLevel(Math.max(0, Math.min(100, Math.round(peak * 140))));
+      onLevel(Math.max(0, Math.min(100, Math.round(peak * 280))));
       if (!sending) return;
       const current = active && active.channel;
       if (!current || current.readyState !== "open") return;

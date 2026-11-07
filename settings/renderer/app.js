@@ -61,7 +61,7 @@ function paintInputs(status) {
   if (nextKey === inputKey && inputs.childElementCount) {
     rows.forEach((row) => {
       const fill = inputs.querySelector(`[data-level="${row.key}"]`);
-      if (fill) fill.style.width = `${Math.round((row.level || 0) * 100)}%`;
+      if (fill) fill.style.width = `${Math.max(0, Math.min(100, Math.round((row.level || 0) * 280)))}%`;
     });
     return;
   }
@@ -99,7 +99,7 @@ function paintInputs(status) {
     bar.className = "meter";
     const fill = document.createElement("span");
     fill.dataset.level = row.key;
-    fill.style.width = `${Math.round((row.level || 0) * 100)}%`;
+    fill.style.width = `${Math.max(0, Math.min(100, Math.round((row.level || 0) * 280)))}%`;
     bar.append(fill);
     const save = async (patch) => {
       const next = (latest && latest.inputs ? latest.inputs : []).map((item) => (

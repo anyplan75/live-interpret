@@ -2,9 +2,25 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
-const { extractChannel, resampleInt16, selectedChannelPcm, wavFromPcm16, channelPeaks } = require("../broadcast/lib/audio-util");
+const {
+  extractChannel,
+  resampleInt16,
+  selectedChannelPcm,
+  wavFromPcm16,
+  channelPeaks,
+  METER_GAIN,
+  meterPercent,
+} = require("../broadcast/lib/audio-util");
 const { UtteranceVad } = require("../broadcast/lib/vad");
 const { listInputDevices } = require("../broadcast/lib/audio");
+
+test("meter display gain makes quiet peaks easier to see", () => {
+  assert.equal(METER_GAIN, 280);
+  assert.equal(meterPercent(0), 0);
+  assert.equal(meterPercent(0.1), 28);
+  assert.equal(meterPercent(0.5), 100);
+  assert.equal(meterPercent(2), 100);
+});
 
 test("recognition uses only the selected channel", () => {
   const interleaved = Buffer.alloc(8);

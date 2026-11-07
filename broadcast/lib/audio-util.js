@@ -1,5 +1,16 @@
 /** 인터리브 PCM16에서 채널 하나를 고르고, 인식용 24kHz로 바꿉니다. */
 
+/**
+ * 화면 소리 막대 표시 배율.
+ * 봉우리(0~1)에 이 값을 곱해 퍼센트로 그립니다. 100에서 자릅니다.
+ * 예전 140보다 민감하게 보이도록 280으로 올렸습니다.
+ */
+const METER_GAIN = 280;
+
+function meterPercent(peak) {
+  return Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * METER_GAIN)));
+}
+
 function extractChannel(interleaved, nChannels, channelIndex) {
   const channels = nChannels | 0;
   const index = channelIndex | 0;
@@ -94,6 +105,8 @@ function peakInt16(buf) {
 }
 
 module.exports = {
+  METER_GAIN,
+  meterPercent,
   extractChannel,
   channelPeaks,
   resampleInt16,
