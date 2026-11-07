@@ -1,1 +1,1 @@
-$file:/home/ubuntu/live-interpret/docs/js/desk-client.js
+@/tmp/li79-desk-content-only.txt
