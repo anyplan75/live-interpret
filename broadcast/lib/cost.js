@@ -1,1 +1,1 @@
-FILE_CONTENT_FROM_DISK_PLACEHOLDER_RETRY
+$JSON:/tmp/cu-cost-short.json
