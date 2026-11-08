@@ -303,7 +303,7 @@ class Pipeline {
     this.holdHeard = 0;
     const id = this.sentenceId;
     this.sentenceId = Date.now() + Math.floor(Math.random() * 10);
-    if (this.liveOn) this.pushKorean(text, id, false);
+    // 교정 전 원문을 자막에 미리 올리면 raw↔교정으로 깜빡입니다. 교정·번역 결과만 올립니다.
     this.chain = this.chain
       .then(() => this.publish(text, id, owner))
       .catch((err) => this.onLog(`번역 대기 오류: ${err.message || err}`));
