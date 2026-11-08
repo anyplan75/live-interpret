@@ -181,3 +181,22 @@
   }
 
   function blockSpanSeconds(kind) {
+    return kind === "hour" ? HOUR_SECONDS : HALF_SECONDS;
+  }
+
+  function unusedRefundKrw(block) {
+    if (!block || typeof block !== "object") return 0;
+    const amount = Math.round(Number(block.amountKrw) || 0);
+    const span = blockSpanSeconds(block.kind === "hour" ? "hour" : "half");
+    const left = Math.max(0, Math.min(span, Math.round(Number(block.remainingSeconds) || 0)));
+    if (amount <= 0 || left <= 0) return 0;
+    return Math.min(amount, Math.round((amount * left) / span));
+  }
+
+  function applyCharge(balance, amount) {
+    const current = Math.round(Number(balance) || 0);
+    const charge = Math.round(Number(amount) || 0);
+    if (charge <= 0 || current < charge) {
+      return { ok: false, short: charge > 0, balance: current, deducted: 0 };
+    }
+    return { ok: true, short: false, ba
