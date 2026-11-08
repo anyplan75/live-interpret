@@ -21,7 +21,7 @@ const HANGING_TAIL =
 const NOISE = /^(네+|예+|음+|어+|아+|으+|그+|저+|응+|오+|어\s*어+|아\s*아+)$/;
 
 function stripTrailing(text) {
-  return String(text || "").replace(/[\s.,?!…·"'”’)\]]+$/g, "").trim();
+  return String(text || "").replace(/[\s.,?!…·"'\”’)\]]+$/g, "").trim();
 }
 
 function endsSentence(text) {
@@ -36,7 +36,7 @@ function lastWord(text) {
 }
 
 function firstWord(text) {
-  const words = String(text || "").replace(/^[\s.,?!…·"'“‘(\[]+/g, "").split(/\s+/).filter(Boolean);
+  const words = String(text || "").replace(/^[\s.,?!…·"'\“‘(\[]+/g, "").split(/\s+/).filter(Boolean);
   return words.length ? words[0].replace(/[.,?!…]+$/g, "") : "";
 }
 
@@ -86,7 +86,7 @@ function findClauseCut(text) {
 
 /** 중국어·영어처럼 한국어 어미가 없는 말도 문장 부호에서 끊습니다. */
 function punctuationCut(text, preferLast) {
-  const re = /[.?!。！？]+[…"'”’)\]]*/g;
+  const re = /[.?!。！？]+[…"'\”’)\]]*/g;
   let first = null;
   let last = null;
   let match;
@@ -160,7 +160,7 @@ function findCutMatch(text) {
 const TRANSLATE_MAX = 140;
 /** 목표 길이의 앞뒤로 이만큼까지 자연스러운 경계를 찾습니다. */
 const TRANSLATE_WINDOW = 40;
-const SENTENCE_STOP = /[.?!。！？]+[…"'”’)\]]*(?=\s|$|[^\d.?!。！？…"'”’)\]])/g;
+const SENTENCE_STOP = /[.?!。！？]+[…"'\”’)\]]*(?=\s|$|[^\d.?!。！？…"'\”’)\]])/g;
 const COMMA = /[,，](?=\s|$)/g;
 
 function nearTarget(end, target) {
@@ -239,7 +239,7 @@ function translateBreak(text, maxLen = TRANSLATE_MAX) {
 function canSilenceFlush(text, silenceMs, cfg) {
   const t = String(text || "").trim();
   if (!t || isNoise(t)) return false;
-  const minChars = (cfg && cfg.minFlushChars) || 8;
+  const minChars = (cfg && cfg.minFlushChars) || 2;
   const soft = (cfg && cfg.silenceFlushMs) || 1800;
   const hard = (cfg && cfg.silenceForceFlushMs) || 4500;
   if (silenceMs < soft) return false;
