@@ -16,7 +16,7 @@ test("an extra input is 3000 won per hour and does not charge on connect", () =>
   assert.equal(cost.halfBlockKrw(["en"]), 5000);
   assert.equal(cost.halfBlockKrw(["en", "zh-CN"], 1), 7500);
   assert.equal(cost.packageKrw({ minutes: 60, languages: ["en"] }), 10000);
-  assert.equal(cost.packageKrw({ minutes: 90, languages: ["en"] }), 15000);
+  assert.equal(cost.packageKrw({ minutes: 90, languages: ["en"] }), 20000);
   assert.deepEqual(cost.extraChannelIndexes([0, 1, 1, -1, 2]), [1, 2]);
 
   const none = cost.channelFeePlan({ balance: 50000, channels: [0], paid: [] });
@@ -29,9 +29,9 @@ test("an extra input is 3000 won per hour and does not charge on connect", () =>
   assert.equal(one.balance, 25000);
 
   const half = cost.openHalfBlock({ balance: 100000, languages: ["en"], extraInputs: 1 });
-  assert.equal(half.charged, 6500);
+  assert.equal(half.charged, 13000);
   assert.equal(half.halfKrw, 6500);
-  assert.equal(half.balance, 93500);
+  assert.equal(half.balance, 87000);
 });
 
 test("a channel spoken language is not billed again as an output", () => {
@@ -65,13 +65,14 @@ test("turning a channel on does not take 10000, and a short balance blocks that 
     { spoken: "ja", on: false },
   ];
   engine.prepaid = cost.normalizePrepaid({
-    remainingSeconds: 1800,
+    remainingSeconds: 3600,
     languageKey: "en",
-    kind: "half",
-    amountKrw: 5000,
+    kind: "hour",
+    amountKrw: 10000,
     extraCount: 0,
     updatedAt: 1,
   });
+  engine.readTestPeriod = async () => false;
   const opened = [];
   engine.openChannel = async (index) => { opened.push(index); };
   engine.closeChannel = async (index) => { opened.push(["off", index]); };
@@ -88,22 +89,23 @@ test("turning a channel on does not take 10000, and a short balance blocks that 
   assert.equal(engine.sessionCharge.balance, 0);
   assert.deepEqual(opened, []);
 
-  engine.sessionCharge.balance = 2000;
+  engine.sessionCharge.balance = 5000;
   const started = await engine.setChannelOn("", 1, true);
   assert.equal(started.on, true);
   assert.equal(started.blocked, undefined);
-  assert.equal(engine.sessionCharge.balance, 500);
-  assert.equal(engine.sessionCharge.charged, 6500);
+  assert.equal(engine.sessionCharge.balance, 2000);
+  // 이전 차감 5,000 − 환불 10,000 + 새 1시간 13,000
+  assert.equal(engine.sessionCharge.charged, 8000);
   assert.deepEqual(opened, [1]);
 
   await engine.setChannelOn("", 1, false);
-  assert.equal(engine.sessionCharge.charged, 6500);
-  assert.equal(engine.sessionCharge.balance, 500);
+  assert.equal(engine.sessionCharge.charged, 8000);
+  assert.equal(engine.sessionCharge.balance, 2000);
 
   const calls = [];
   engine.speech = { async setLanguage(code) { calls.push(code); } };
   engine.pipeline = { setSourceLang(code) { calls.push(["src", code]); } };
   await engine.setChannelSpoken("", 0, "ja");
-  assert.equal(engine.sessionCharge.charged, 6500);
+  assert.equal(engine.sessionCharge.charged, 8000);
   assert.ok(calls.includes("ja"));
 });
