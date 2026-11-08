@@ -404,3 +404,119 @@
       languages,
       paidLanguages: languages,
       extraInputs: extras,
+      firstHourKrw: hour,
+      halfKrw: half,
+      chargeKrw: hour,
+      extraFeeKrw: 0,
+      addedLanguages: [],
+      resumed: false,
+      noExtraCharge: false,
+      overtimeText: overtime,
+      note: "1시간",
+      kind: "hour",
+    };
+    if (source.testPeriod === true) {
+      return {
+        ...base,
+        ok: true,
+        short: false,
+        running: true,
+        charged: 0,
+        refundKrw: 0,
+        balance,
+        balanceAfterRefund: balance,
+        remainingSeconds: HOUR_SECONDS,
+        amountKrw: 0,
+        chargeKrw: 0,
+        testPeriod: true,
+        note: "테스트 기간",
+        prepaid: {
+          remainingSeconds: HOUR_SECONDS,
+          languages,
+          kind: "hour",
+          amountKrw: 0,
+          extraCount: extraLanguageCount(languages),
+          extraInputs: extras,
+          languageKey: languageKey(languages),
+        },
+      };
+    }
+    if (afterRefund < hour) {
+      if (keep || refundKrw <= 0) {
+        return {
+          ...base,
+          ok: false,
+          short: true,
+          running: false,
+          charged: 0,
+          refundKrw: 0,
+          balance,
+          balanceAfterRefund: balance,
+          remainingSeconds: prepaid ? prepaid.remainingSeconds : 0,
+          amountKrw: prepaid ? prepaid.amountKrw : 0,
+          prepaid: prepaid ? { ...prepaid } : null,
+        };
+      }
+      return {
+        ...base,
+        ok: false,
+        short: true,
+        running: false,
+        charged: 0,
+        refundKrw,
+        balance: afterRefund,
+        balanceAfterRefund: afterRefund,
+        remainingSeconds: 0,
+        amountKrw: 0,
+        prepaid: clearedPrepaid(prepaid),
+        note: "쓰지 않은 시간",
+      };
+    }
+    return {
+      ...base,
+      ok: true,
+      short: false,
+      running: true,
+      charged: hour,
+      refundKrw,
+      balance: afterRefund - hour,
+      balanceAfterRefund: afterRefund,
+      remainingSeconds: HOUR_SECONDS,
+      amountKrw: hour,
+      prepaid: next,
+    };
+  }
+
+  function consumePrepaid(prepaid, elapsedSeconds) {
+    const block = normalizePrepaid(prepaid);
+    if (!block) return { remainingSeconds: 0, expired: true, prepaid: null };
+    const elapsed = Math.max(0, Number(elapsedSeconds) || 0);
+    const left = Math.max(0, Math.round(block.remainingSeconds - elapsed));
+    if (left <= 0) return { remainingSeconds: 0, expired: true, prepaid: null };
+    return {
+      remainingSeconds: left,
+      expired: false,
+      prepaid: { ...block, remainingSeconds: left },
+    };
+  }
+
+  function openHalfBlock(input) {
+    // 이름은 예전 API를 유지하고, 실제 묶음은 1시간입니다.
+    const source = input || {};
+    const languages = paidLanguageSet(source.languages);
+    const extras = extraInputCount(source.extraInputs != null ? source.extraInputs : source.channels);
+    const balance = Math.round(Number(source.balance) || 0);
+    const hour = hourlyRateKrw(languages, extras);
+    const half = halfBlockKrw(languages, extras);
+    if (source.testPeriod === true) {
+      return {
+        ok: true,
+        short: false,
+        running: true,
+        charged: 0,
+        chargeKrw: 0,
+        balance,
+        languages,
+        remainingSeconds: HOUR_SECONDS,
+        kind: "hour",
+        amountKrw: 0,
