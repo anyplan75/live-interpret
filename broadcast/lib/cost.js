@@ -528,3 +528,121 @@
           languages,
           kind: "hour",
           amountKrw: 0,
+          extraCount: extraLanguageCount(languages),
+          extraInputs: extras,
+          languageKey: languageKey(languages),
+        },
+        note: "테스트 기간",
+      };
+    }
+    const step = applyCharge(balance, hour);
+    if (!step.ok) {
+      return {
+        ok: false,
+        short: true,
+        running: false,
+        charged: 0,
+        chargeKrw: hour,
+        balance,
+        languages,
+        remainingSeconds: 0,
+        kind: "hour",
+        amountKrw: 0,
+        halfKrw: half,
+        firstHourKrw: hour,
+        prepaid: null,
+        note: "추가 1시간",
+      };
+    }
+    const prepaid = {
+      remainingSeconds: HOUR_SECONDS,
+      languages,
+      kind: "hour",
+      amountKrw: step.deducted,
+      extraCount: extraLanguageCount(languages),
+      extraInputs: extras,
+      languageKey: languageKey(languages),
+    };
+    return {
+      ok: true,
+      short: false,
+      running: true,
+      charged: step.deducted,
+      chargeKrw: hour,
+      balance: step.balance,
+      languages,
+      extraInputs: extras,
+      remainingSeconds: HOUR_SECONDS,
+      kind: "hour",
+      amountKrw: step.deducted,
+      halfKrw: half,
+      firstHourKrw: hour,
+      prepaid,
+      note: "추가 1시간",
+    };
+  }
+
+  function ledgerId(now) {
+    const stamp = now == null ? Date.now() : now;
+    const salt = Math.random().toString(36).slice(2, 8);
+    return `e${stamp}_${salt}`;
+  }
+
+  function sanitizeDepositId(id) {
+    return String(id || "").replace(/[.#$[\]/g, "_").slice(0, 128);
+  }
+
+  function ledgerEntry(fields) {
+    const source = fields || {};
+    const delta = Math.round(Number(source.deltaKrw) || 0);
+    const balanceAfter = Math.round(Number(source.balanceAfter) || 0);
+    return {
+      id: source.id || ledgerId(source.at),
+      type: source.type || "charge",
+      deltaKrw: delta,
+      amountKrw: delta,
+      balanceAfter,
+      at: source.at == null ? Date.now() : source.at,
+      who: source.who || "",
+      note: source.note || "",
+      depositId: source.depositId || "",
+      churchId: source.churchId || "",
+    };
+  }
+
+  function applyCredit(input) {
+    const source = input || {};
+    const credit = Math.round(Number(source.amount) || 0);
+    const current = Math.round(Number(source.balance) || 0);
+    if (credit <= 0) return { ok: false, balance: current, duplicate: false };
+    const next = current + credit;
+    const entry = ledgerEntry({
+      id: source.id,
+      type: source.type || "manual",
+      deltaKrw: credit,
+      balanceAfter: next,
+      at: source.at,
+      who: source.who,
+      note: source.note,
+      depositId: source.depositId,
+      churchId: source.churchId,
+    });
+    return { ok: true, balance: next, entry, duplicate: false };
+  }
+
+  function billingState(state) {
+    const current = state && typeof state === "object" ? state : {};
+    return {
+      balances: { ...(current.balances || {}) },
+      deposits: { ...(current.deposits || {}) },
+      ledger: Array.isArray(current.ledger) ? current.ledger.slice() : [],
+    };
+  }
+
+  function prepareDeposit(state, body) {
+    const source = body || {};
+    const depositId = sanitizeDepositId(source.depositId);
+    const churchId = String(source.churchId || "").trim();
+    const amount = Math.round(Number(source.amountKrw) || 0);
+    const snapshot = billingState(state);
+    if (!depositId || !churchId || amount <= 0) {
