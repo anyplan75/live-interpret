@@ -98,7 +98,8 @@
     vadSilenceMs: 500,
     silenceFlushMs: 1800,
     silenceForceFlushMs: 4500,
-    minFlushChars: 8,
+    // 추임새(음·아)는 isNoise 로 걸러지고, 그 외 짧은 본문도 침묵 후 교정으로 넘깁니다.
+    minFlushChars: 2,
     maxSpeechMs: 12000,
   };
 
@@ -158,7 +159,7 @@
       .toLowerCase()
       .replace(/\s+/g, "-")
       .replace(/[.#$[\]/]/g, "")
-      .replace(/[^\p{L}\p{N}_-]/gu, "")
+      .replace(/[^\p{L}\p{N}_-]+/gu, "")
       .slice(0, 40);
     const rand = Math.random().toString(36).slice(2, 8);
     let id = `${slug || "preacher"}-${rand}`;
@@ -190,7 +191,7 @@
   function underRoot(rel) {
     let clean = String(rel || "").replace(/^\/+|\/+$/g, "");
     if (clean === firebase.rootPath || clean.startsWith(`${firebase.rootPath}/`)) {
-      clean = clean.slice(firebase.rootPath.length).replace(/^\//, "");
+      clean = clean.slice(firebase.rootPath.length).replace(/^\/#, "");
     }
     if (!clean) throw new Error("빈 Firebase 경로");
     return assertFirebasePath(`${firebase.rootPath}/${clean}`);
