@@ -194,10 +194,13 @@ test("the broadcast window is hardware only and the settings window owns start",
   assert.match(main, /save-image|caption-links|mirrorDesiredPhoneCount/);
   assert.match(main, /fromDesired:\s*true/);
   assert.match(main, /clearDesiredRunning/);
-  assert.match(main, /ignoreStaleDesiredStart/);
+  assert.match(main, /publishIdleStatus/);
+  assert.match(main, /boardHeardId/);
   assert.match(main, /shutdownBroadcast/);
   assert.match(main, /preachers\.some\(\(row\) => row && row\.id === preacherId\)/);
   assert.match(main, /before-quit[\s\S]*shutdownBroadcast/s);
+  assert.match(main, /desired\.running[\s\S]*running: false/s);
+  assert.doesNotMatch(main, /ignoreStaleDesiredStart/);
   assert.match(settingsHtml, /id="start"/);
   assert.match(settingsHtml, /id="stop"/);
   assert.match(settingsHtml, /id="langs"/);
