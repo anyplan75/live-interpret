@@ -520,3 +520,11 @@
         remainingSeconds: HOUR_SECONDS,
         kind: "hour",
         amountKrw: 0,
+        halfKrw: half,
+        firstHourKrw: hour,
+        testPeriod: true,
+        prepaid: {
+          remainingSeconds: HOUR_SECONDS,
+          languages,
+          kind: "hour",
+          amountKrw: 0,
