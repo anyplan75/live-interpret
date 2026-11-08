@@ -308,3 +308,99 @@
   function normalizePrepaid(raw) {
     if (!raw || typeof raw !== "object") return null;
     const remaining = Math.round(Number(raw.remainingSeconds) || 0);
+    const languages = languagesFromPrepaid(raw);
+    const kind = raw.kind === "half" ? "half" : (raw.kind === "hour" ? "hour" : "");
+    const amountKrw = Math.round(Number(raw.amountKrw) || 0);
+    if (remaining <= 0 || !languages.length || !kind || amountKrw < 0) return null;
+    return {
+      remainingSeconds: remaining,
+      languages,
+      kind,
+      amountKrw,
+      extraCount: extraLanguageCount(languages),
+      extraInputs: extraInputCount(raw.extraInputs),
+      languageKey: languageKey(languages),
+      updatedAt: Math.round(Number(raw.updatedAt) || 0),
+    };
+  }
+
+  function choosePrepaid(remote, local) {
+    const cloud = normalizePrepaid(remote);
+    const disk = normalizePrepaid(local);
+    if (!cloud) return disk;
+    if (!disk) return cloud;
+    return (cloud.updatedAt || 0) >= (disk.updatedAt || 0) ? cloud : disk;
+  }
+
+  function firebasePrepaid(block, now) {
+    const current = block && typeof block === "object" ? block : {};
+    const languages = languagesFromPrepaid(current);
+    const kind = current.kind === "half" ? "half" : "hour";
+    return {
+      remainingSeconds: Math.max(0, Math.round(Number(current.remainingSeconds) || 0)),
+      languageKey: languageKey(languages),
+      kind,
+      amountKrw: Math.max(0, Math.round(Number(current.amountKrw) || 0)),
+      extraCount: extraLanguageCount(languages),
+      extraInputs: extraInputCount(current.extraInputs),
+      updatedAt: now == null ? Date.now() : now,
+    };
+  }
+
+  function formatClock(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const minutes = Math.floor(total / 60);
+    const rest = total % 60;
+    return `${minutes}:${String(rest).padStart(2, "0")}`;
+  }
+
+  function prepaidLabel(seconds) {
+    return `남은 시간 ${formatClock(seconds)}`;
+  }
+
+  function addedLanguages(paidLanguages, selected) {
+    const paid = new Set(paidLanguageSet(paidLanguages).map((code) => code.toLowerCase()));
+    return paidLanguageSet(selected).filter((code) => !isBaseLanguage(code) && !paid.has(code.toLowerCase()));
+  }
+
+  function clearedPrepaid(block) {
+    const current = normalizePrepaid(block);
+    if (!current) return null;
+    return {
+      remainingSeconds: 0,
+      languages: current.languages.slice(),
+      kind: current.kind,
+      amountKrw: 0,
+      extraCount: current.extraCount,
+      extraInputs: extraInputCount(current.extraInputs),
+      languageKey: current.languageKey,
+      updatedAt: current.updatedAt,
+    };
+  }
+
+  function planBroadcastStart(input) {
+    const source = input || {};
+    const languages = paidLanguageSet(source.languages);
+    const extras = extraInputCount(source.extraInputs != null ? source.extraInputs : source.channels);
+    const balance = Math.round(Number(source.balance) || 0);
+    const prepaid = normalizePrepaid(source.prepaid);
+    const overtime = overtimeText();
+    const hour = hourlyRateKrw(languages, extras);
+    const half = halfBlockKrw(languages, extras);
+    const refundKrw = prepaid ? unusedRefundKrw(prepaid) : 0;
+    const afterRefund = balance + refundKrw;
+    const keep = !!source.keepBlockOnShort;
+    const next = {
+      remainingSeconds: HOUR_SECONDS,
+      languages,
+      kind: "hour",
+      amountKrw: hour,
+      extraCount: extraLanguageCount(languages),
+      extraInputs: extras,
+      languageKey: languageKey(languages),
+    };
+    const base = {
+      mode: "hour",
+      languages,
+      paidLanguages: languages,
+      extraInputs: extras,
