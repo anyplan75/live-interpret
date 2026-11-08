@@ -204,3 +204,109 @@
 
   function openBroadcast(input) {
     const languages = languageList(input && input.languages);
+    const extras = extraInputCount(input && (input.extraInputs != null ? input.extraInputs : input.channels));
+    const first = hourlyRateKrw(languages, extras);
+    const half = halfBlockKrw(languages, extras);
+    const result = applyCharge(input && input.balance, first);
+    const session = {
+      ok: result.ok,
+      running: result.ok,
+      short: !result.ok,
+      charged: result.deducted,
+      balance: result.balance,
+      languages,
+      extraInputs: extras,
+      firstHourKrw: hourlyRateKrw(languages, extras),
+      halfKrw: half,
+      overtimeDone: 0,
+    };
+    return session;
+  }
+
+  function accrue(session, minutes) {
+    const current = session && typeof session === "object" ? session : {};
+    const languages = languageList(current.languages);
+    const extras = extraInputCount(current.extraInputs);
+    const hour = Number.isFinite(Number(current.firstHourKrw)) ? Math.round(Number(current.firstHourKrw)) : hourlyRateKrw(languages, extras);
+    const half = Number.isFinite(Number(current.halfKrw)) ? Math.round(Number(current.halfKrw)) : halfBlockKrw(languages, extras);
+    const needed = overtimeBlocks(minutes);
+    let balance = Math.round(Number(current.balance) || 0);
+    let charged = Math.round(Number(current.charged) || 0);
+    let done = Math.round(Number(current.overtimeDone) || 0);
+    let short = false;
+    if (current.running === false || current.ok === false) {
+      return {
+        ...current,
+        ok: false,
+        running: false,
+        short: true,
+        charged,
+        balance,
+        languages,
+        halfKrw: half,
+        firstHourKrw: hour,
+        overtimeDone: done,
+      };
+    }
+    while (done < needed) {
+      const step = applyCharge(balance, hour);
+      if (!step.ok) {
+        short = true;
+        break;
+      }
+      balance = step.balance;
+      charged += step.deducted;
+      done += 1;
+    }
+    return {
+      ...current,
+      ok: !short,
+      running: true,
+      short,
+      charged,
+      balance,
+      languages,
+      halfKrw: half,
+      overtimeDone: done,
+    };
+  }
+
+  function paidLanguageSet(languages) {
+    const seen = new Set();
+    const out = [];
+    languageList(languages).forEach((code) => {
+      const clean = String(code).trim();
+      const key = clean.toLowerCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(clean);
+    });
+    return out;
+  }
+
+  function languageKey(languages) {
+    return paidLanguageSet(languages)
+      .slice()
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .join(",");
+  }
+
+  function languagesFromKey(key) {
+    return paidLanguageSet(String(key || "").split(","));
+  }
+
+  function languagesFromPrepaid(raw) {
+    if (!raw || typeof raw !== "object") return [];
+    if (typeof raw.languageKey === "string" && raw.languageKey.trim()) return languagesFromKey(raw.languageKey);
+    if (Array.isArray(raw.languages)) return paidLanguageSet(raw.languages);
+    if (raw.languages && typeof raw.languages === "object") {
+      return paidLanguageSet(Object.keys(raw.languages).filter((code) => raw.languages[code]));
+    }
+    return [];
+  }
+
+  function normalizePrepaid(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const remaining = Math.round(Number(raw.remainingSeconds) || 0);
+    const languages = languagesFromPrepaid(raw);
+    const kind = raw.kind === "half" ? "half" : (raw.kind === "hour" ? "hour" : "");
