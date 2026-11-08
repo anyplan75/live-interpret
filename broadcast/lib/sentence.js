@@ -1,1 +1,1 @@
-PLACEHOLDER_LOAD_FROM_/tmp/li79-sentence-push-exact.json
+$JSON:/tmp/li79-sentence-push-exact.json
