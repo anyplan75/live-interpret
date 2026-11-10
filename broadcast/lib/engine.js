@@ -289,7 +289,7 @@ class Engine {
       addedLanguages: [],
       chargeKrw: plan.ok ? plan.charged : plan.chargeKrw,
       paidLanguages: plan.paidLanguages,
-      kind: "half",
+      kind: "hour",
       label: remaining > 0 ? cost.prepaidLabel(remaining) : "",
       channelFeeKrw: 0,
       extraChannels: [],
@@ -368,7 +368,7 @@ class Engine {
   shortStartMessage(plan) {
     const price = plan ? plan.chargeKrw : 0;
     const balance = plan ? plan.balance : 0;
-    return `충전금이 부족합니다. 다음 30분에 ${cost.formatKrw(price)}이 필요하지만 남은 충전금은 ${cost.formatKrw(balance)}입니다.`;
+    return `충전금이 부족합니다. 다음 1시간에 ${cost.formatKrw(price)}이 필요하지만 남은 충전금은 ${cost.formatKrw(balance)}입니다.`;
   }
 
   liveRemaining() {
@@ -456,7 +456,7 @@ class Engine {
       this.armPrepaid({
         remainingSeconds: 1800,
         languages,
-        kind: "half",
+        kind: "hour",
         amountKrw: 0,
         extraCount: this.prepaid.extraCount || 0,
         extraInputs: this.extraInputsOn(),
@@ -473,7 +473,7 @@ class Engine {
       this.prepaidBudget = 0;
       this.prepaidAnchor = Date.now();
       await this.writePrepaid(this.church.id, this.prepaid);
-      this.pendingStopReason = `충전금이 부족합니다. 다음 30분에 ${cost.formatKrw(half.chargeKrw)}이 필요하지만 남은 충전금은 ${cost.formatKrw(half.balance)}입니다. 방송을 종료합니다.`;
+      this.pendingStopReason = `충전금이 부족합니다. 다음 1시간에 ${cost.formatKrw(half.chargeKrw)}이 필요하지만 남은 충전금은 ${cost.formatKrw(half.balance)}입니다. 방송을 종료합니다.`;
       this.emit({ type: "log", level: "error", text: this.pendingStopReason });
       this.emitPrepaid();
       return;
@@ -511,7 +511,7 @@ class Engine {
     this.emit({
       type: "log",
       level: "info",
-      text: `다음 30분 ${cost.formatKrw(half.charged)}을 뺐습니다. 남은 시간 30:00부터 다시 셉니다.`,
+      text: `다음 1시간 ${cost.formatKrw(half.charged)}을 뺐습니다. 남은 시간 60:00부터 다시 셉니다.`,
     });
   }
 
@@ -579,7 +579,7 @@ class Engine {
       level: "info",
       text: plan.testPeriod
         ? "테스트 기간이라 충전금을 빼지 않습니다."
-        : `다음 30분 ${cost.formatKrw(plan.charged)}을 뺐습니다. ${cost.prepaidLabel(plan.remainingSeconds)}.`,
+        : `다음 1시간 ${cost.formatKrw(plan.charged)}을 뺐습니다. ${cost.prepaidLabel(plan.remainingSeconds)}.`,
     });
     return plan;
   }
@@ -864,7 +864,7 @@ class Engine {
         this.emit({
           type: "log",
           level: "info",
-          text: `${this.channelFeeLabel(i)}을 반영해 다음 30분 ${cost.formatKrw(plan.charged)}을 뺐습니다.`,
+          text: `${this.channelFeeLabel(i)}을 반영해 다음 1시간 ${cost.formatKrw(plan.charged)}을 뺐습니다.`,
         });
       }
       this.channelRows[i].on = true;
