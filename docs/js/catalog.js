@@ -191,7 +191,7 @@
   function underRoot(rel) {
     let clean = String(rel || "").replace(/^\/+|\/+$/g, "");
     if (clean === firebase.rootPath || clean.startsWith(`${firebase.rootPath}/`)) {
-      clean = clean.slice(firebase.rootPath.length).replace(/^\/#, "");
+      clean = clean.slice(firebase.rootPath.length).replace(/^\//, "");
     }
     if (!clean) throw new Error("빈 Firebase 경로");
     return assertFirebasePath(`${firebase.rootPath}/${clean}`);

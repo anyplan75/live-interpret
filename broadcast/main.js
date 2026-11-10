@@ -229,6 +229,14 @@ function clipHearing(value, max) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+// 교정 줄에 heardId가 없으면 마지막으로 들은 줄에 붙여, 교정이 새 줄로 따로 뜨지 않게 합니다.
+function boardHeardId(payload) {
+  const id = clipHearing(payload && payload.heardId, 24);
+  if (id) return id;
+  const last = hearingBoard.heard[hearingBoard.heard.length - 1];
+  return last ? last.id : "";
+}
+
 function rememberHearing(payload) {
   if (!payload || typeof payload !== "object") return;
   if (payload.type === "live") {
@@ -252,7 +260,7 @@ function rememberHearing(payload) {
     const spoken = engine && engine.spoken ? engine.spoken : "ko";
     if (!payload.lang || payload.lang === spoken) {
       if (body && raw && body !== raw) {
-        const id = clipHearing(payload.heardId, 24);
+        const id = boardHeardId(payload);
         let row = hearingBoard.heard.find((item) => item.id === id);
         if (!row) {
           row = { id: id || `h${hearingBoard.heard.length + 1}`, body: raw || body, fixes: [] };
@@ -402,8 +410,6 @@ function registerIpc() {
   let pendingDesired = null;
   let cachedBalance = null;
   let balanceAt = 0;
-  // 앱을 막 켠 직후 첫 desired는 이전 종료에서 남은 「시작」일 수 있어 자동 시작하지 않습니다.
-  let ignoreStaleDesiredStart = false;
 
   function note(text) {
     lastNotice = userText(text).slice(0, 180);
@@ -561,6 +567,12 @@ function registerIpc() {
     try {
       await firebase.set(`churches/${roomChurchId}/room/status`, status);
     } catch (_) { /* 다음 상태 기록에서 다시 보냅니다 */ }
+  }
+
+  // 방송이 꺼진 뒤 이전 방송 글과 「방송 중」이 desk에 남지 않게 빈 상태를 올립니다.
+  async function publishIdleStatus() {
+    clearHearing();
+    await publishStatus();
   }
 
   publishRoom = () => {
@@ -790,14 +802,6 @@ function registerIpc() {
           else if (action.type === "sheet") await applySheet(action);
           else if (action.type === "input") await applyInput(action);
           else if (action.type === "running" && action.on && !engine.running) {
-            // 앱을 켠 직후 남은 「시작」명령은 끄고, desk에서 다시 시작하게 합니다.
-            if (ignoreStaleDesiredStart) {
-              ignoreStaleDesiredStart = false;
-              await clearDesiredRunning(raw);
-              // clearDesiredRunning 이 올린 rev 를 유지하려고 startFailed 로 둡니다.
-              startFailed = true;
-              break;
-            }
             await beginBroadcast({
               sessionKind: action.sessionKind,
               spoken: action.spoken,
@@ -806,7 +810,6 @@ function registerIpc() {
               preacherName: action.preacherName,
             });
           } else if (action.type === "running" && !action.on && engine.running) await endBroadcast();
-          else if (action.type === "running") ignoreStaleDesiredStart = false;
         } catch (err) {
           note(err);
           // 시작/종료 실패는 같은 rev를 다시 시도할 수 있게 남깁니다.
@@ -835,9 +838,12 @@ function registerIpc() {
     roomChurchId = churchId;
     if (placeNameCache.id !== churchId) placeNameCache = { id: "", name: "" };
     appliedRev = 0;
-    ignoreStaleDesiredStart = true;
-    stopDesired = firebase.listen(`churches/${churchId}/room/desired`, (value) => {
-      applyDesired(value).catch((err) => note(err));
+    // 앱을 켠 직후 이전 종료에서 남은 「시작」은 먼저 끈 뒤 desired를 듣습니다. 시작은 desk에서 다시 누릅니다.
+    clearDesiredRunning().catch(() => null).then(() => {
+      if (roomChurchId !== churchId || stopDesired) return;
+      stopDesired = firebase.listen(`churches/${churchId}/room/desired`, (value) => {
+        applyDesired(value).catch((err) => note(err));
+      });
     });
     publishRoom();
   }
@@ -848,7 +854,6 @@ function registerIpc() {
     roomChurchId = "";
     placeNameCache = { id: "", name: "" };
     appliedRev = 0;
-    ignoreStaleDesiredStart = false;
   }
 
   ipcMain.handle("settings:get", () => {
@@ -1365,7 +1370,7 @@ function registerIpc() {
     // desired.running 도 같이 꺼, 앱을 다시 켤 때 「방송 중」·자동 시작이 남지 않게 합니다.
     try { await clearDesiredRunning(); } catch (_) { /* status 기록으로 화면은 맞춥니다 */ }
     // 종료 직후 빈 모니터를 room/status에 올려, desk가 이전 방송 글을 다시 읽지 않게 합니다.
-    try { await publishStatus(); } catch (_) { publishRoom(); }
+    try { await publishIdleStatus(); } catch (_) { publishRoom(); }
     return stopped;
   }
 
@@ -1375,7 +1380,7 @@ function registerIpc() {
       if (engine.running) await endBroadcast();
       else {
         try { await clearDesiredRunning(); } catch (_) { /* 아래 status로 맞춥니다 */ }
-        try { await publishStatus(); } catch (_) { /* 종료 중이라 다음 실행에서 덮습니다 */ }
+        try { await publishIdleStatus(); } catch (_) { /* 종료 중이라 다음 실행에서 덮습니다 */ }
       }
     } finally {
       try { engine.capture.stop(); } catch (_) { /* 이미 닫힌 장치는 무시합니다 */ }

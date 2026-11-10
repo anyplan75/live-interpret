@@ -154,7 +154,7 @@
   function hourUnits(minutes) {
     const m = Number(minutes);
     if (!Number.isFinite(m) || m <= 0) return 0;
-    return Math.ceil(m / 30) * 0.5;
+    return Math.ceil(m / 60);
   }
 
   function hourlyKrw(minutes, languages, extraInputs) {
@@ -172,12 +172,12 @@
 
   function overtimeBlocks(minutes) {
     const m = Number(minutes);
-    if (!Number.isFinite(m) || m <= 30) return 0;
-    return Math.ceil(m / 30) - 1;
+    if (!Number.isFinite(m) || m <= 60) return 0;
+    return Math.ceil(m / 60) - 1;
   }
 
   function overtimeText() {
-    return "시작은 다음 30분 요금이 충전금에 있을 때만 됩니다. 30분이 끝나면 같은 시간당 요금으로 다음 30분이 빠집니다. 30분을 다 쓰지 않고 끄면 쓰지 않은 만큼 충전금으로 돌아갑니다.";
+    return "시작은 다음 1시간 요금이 충전금에 있을 때만 됩니다. 1시간이 끝나면 같은 시간당 요금으로 다음 1시간이 빠집니다. 1시간을 다 쓰지 않고 끄면 쓰지 않은 만큼 충전금으로 돌아갑니다.";
   }
 
   function blockSpanSeconds(kind) {
@@ -205,8 +205,8 @@
   function openBroadcast(input) {
     const languages = languageList(input && input.languages);
     const extras = extraInputCount(input && (input.extraInputs != null ? input.extraInputs : input.channels));
-    const first = halfBlockKrw(languages, extras);
-    const half = first;
+    const first = hourlyRateKrw(languages, extras);
+    const half = halfBlockKrw(languages, extras);
     const result = applyCharge(input && input.balance, first);
     const session = {
       ok: result.ok,
@@ -228,6 +228,7 @@
     const languages = languageList(current.languages);
     const extras = extraInputCount(current.extraInputs);
     const half = Number.isFinite(Number(current.halfKrw)) ? Math.round(Number(current.halfKrw)) : halfBlockKrw(languages, extras);
+    const hour = Number.isFinite(Number(current.firstHourKrw)) ? Math.round(Number(current.firstHourKrw)) : hourlyRateKrw(languages, extras);
     const needed = overtimeBlocks(minutes);
     let balance = Math.round(Number(current.balance) || 0);
     let charged = Math.round(Number(current.charged) || 0);
@@ -247,7 +248,7 @@
       };
     }
     while (done < needed) {
-      const step = applyCharge(balance, half);
+      const step = applyCharge(balance, hour);
       if (!step.ok) {
         short = true;
         break;
@@ -389,29 +390,29 @@
     const afterRefund = balance + refundKrw;
     const keep = !!source.keepBlockOnShort;
     const next = {
-      remainingSeconds: HALF_SECONDS,
+      remainingSeconds: HOUR_SECONDS,
       languages,
-      kind: "half",
-      amountKrw: half,
+      kind: "hour",
+      amountKrw: hour,
       extraCount: extraLanguageCount(languages),
       extraInputs: extras,
       languageKey: languageKey(languages),
     };
     const base = {
-      mode: "half",
+      mode: "hour",
       languages,
       paidLanguages: languages,
       extraInputs: extras,
       firstHourKrw: hour,
       halfKrw: half,
-      chargeKrw: half,
+      chargeKrw: hour,
       extraFeeKrw: 0,
       addedLanguages: [],
       resumed: false,
       noExtraCharge: false,
       overtimeText: overtime,
-      note: "30분",
-      kind: "half",
+      note: "1시간",
+      kind: "hour",
     };
     if (source.testPeriod === true) {
       return {
@@ -423,15 +424,15 @@
         refundKrw: 0,
         balance,
         balanceAfterRefund: balance,
-        remainingSeconds: HALF_SECONDS,
+        remainingSeconds: HOUR_SECONDS,
         amountKrw: 0,
         chargeKrw: 0,
         testPeriod: true,
         note: "테스트 기간",
         prepaid: {
-          remainingSeconds: HALF_SECONDS,
+          remainingSeconds: HOUR_SECONDS,
           languages,
-          kind: "half",
+          kind: "hour",
           amountKrw: 0,
           extraCount: extraLanguageCount(languages),
           extraInputs: extras,
@@ -439,7 +440,7 @@
         },
       };
     }
-    if (afterRefund < half) {
+    if (afterRefund < hour) {
       if (keep || refundKrw <= 0) {
         return {
           ...base,
@@ -475,12 +476,12 @@
       ok: true,
       short: false,
       running: true,
-      charged: half,
+      charged: hour,
       refundKrw,
-      balance: afterRefund - half,
+      balance: afterRefund - hour,
       balanceAfterRefund: afterRefund,
-      remainingSeconds: HALF_SECONDS,
-      amountKrw: half,
+      remainingSeconds: HOUR_SECONDS,
+      amountKrw: hour,
       prepaid: next,
     };
   }
@@ -504,6 +505,7 @@
     const extras = extraInputCount(source.extraInputs != null ? source.extraInputs : source.channels);
     const balance = Math.round(Number(source.balance) || 0);
     const half = halfBlockKrw(languages, extras);
+    const hour = hourlyRateKrw(languages, extras);
     if (source.testPeriod === true) {
       return {
         ok: true,
@@ -513,15 +515,15 @@
         chargeKrw: 0,
         balance,
         languages,
-        remainingSeconds: HALF_SECONDS,
-        kind: "half",
+        remainingSeconds: HOUR_SECONDS,
+        kind: "hour",
         amountKrw: 0,
         halfKrw: half,
         testPeriod: true,
         prepaid: {
-          remainingSeconds: HALF_SECONDS,
+          remainingSeconds: HOUR_SECONDS,
           languages,
-          kind: "half",
+          kind: "hour",
           amountKrw: 0,
           extraCount: extraLanguageCount(languages),
           extraInputs: extras,
@@ -530,28 +532,28 @@
         note: "테스트 기간",
       };
     }
-    const step = applyCharge(balance, half);
+    const step = applyCharge(balance, hour);
     if (!step.ok) {
       return {
         ok: false,
         short: true,
         running: false,
         charged: 0,
-        chargeKrw: half,
+        chargeKrw: hour,
         balance,
         languages,
         remainingSeconds: 0,
-        kind: "half",
+        kind: "hour",
         amountKrw: 0,
         halfKrw: half,
         prepaid: null,
-        note: "추가 30분",
+        note: "추가 1시간",
       };
     }
     const prepaid = {
-      remainingSeconds: HALF_SECONDS,
+      remainingSeconds: HOUR_SECONDS,
       languages,
-      kind: "half",
+      kind: "hour",
       amountKrw: step.deducted,
       extraCount: extraLanguageCount(languages),
       extraInputs: extras,
@@ -562,16 +564,16 @@
       short: false,
       running: true,
       charged: step.deducted,
-      chargeKrw: half,
+      chargeKrw: hour,
       balance: step.balance,
       languages,
       extraInputs: extras,
-      remainingSeconds: HALF_SECONDS,
-      kind: "half",
+      remainingSeconds: HOUR_SECONDS,
+      kind: "hour",
       amountKrw: step.deducted,
       halfKrw: half,
       prepaid,
-      note: "추가 30분",
+      note: "추가 1시간",
     };
   }
 
@@ -750,7 +752,7 @@
       "한국어와 영어, 그리고 첫 입력은 기본 1시간 10,000원입니다.",
       "한국어와 영어가 아닌 언어는 시간당 2,000원입니다.",
       "첫 입력 다음의 채널이나 휴대폰은 시간당 3,000원입니다. 휴대폰이 연결될 때 10,000원을 빼지 않습니다.",
-      "30분마다 그 시간당 요금의 절반이 빠집니다. 30분을 다 쓰지 않으면 쓰지 않은 만큼 충전금으로 돌아갑니다.",
+      "1시간마다 그 시간당 요금이 빠집니다. 1시간을 다 쓰지 않으면 쓰지 않은 만큼 충전금으로 돌아갑니다.",
       `50분, 영어만: ${formatKrw(english)}.`,
       `60분, 영어와 중국어: ${formatKrw(chinese)}.`,
       `90분, 영어만: ${formatKrw(ninety)}.`,

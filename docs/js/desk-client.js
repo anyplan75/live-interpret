@@ -17,6 +17,13 @@
   let watched = new Set();
   let prevChosen = new Set();
   let startArmed = false;
+  let startCountLeft = 0;
+  let startCountTimer = null;
+  // 방송실 앱이 꺼지거나 멈추면 status가 더 오지 않습니다. 오래된 running은 방송 중으로 보지 않습니다.
+  const STATUS_FRESH_MS = 30000;
+  function isBroadcastLive(row) {
+    return !!row && row.running === true && Date.now() - (Number(row.updatedAt) || 0) < STATUS_FRESH_MS;
+  }
   let startPaintKey = "";
   let statusShellKey = "";
   let spoken = "ko";
@@ -796,7 +803,7 @@
   function paintOps(status) {
     const row = status || {};
     const onAir = document.getElementById("onAir");
-    const running = row.running === true;
+    const running = isBroadcastLive(row);
     onAir.hidden = !running;
     const focus = document.activeElement;
     if (!focus || !focus.closest || !focus.closest("#sessionKind")) {
@@ -1213,8 +1220,33 @@
       paintStartButton(false, gaps);
       return;
     }
-    // confirmStart: 같은 단추를 한 번 더 누르면 방송을 시작합니다.
-    // 준비 갭이 남아 있어도 room/desired 시작 명령은 보냅니다. 갭 안내는 화면에 그대로 둡니다.
+    // confirmStart: 같은 단추를 한 번 더 누르면 3초를 센 뒤 시작합니다. 그 사이 「취소」로 멈출 수 있습니다.
+    if (startCountTimer) return;
+    beginStartCountdown(gaps);
+  });
+
+  function stopStartCountdown() {
+    if (startCountTimer) clearInterval(startCountTimer);
+    startCountTimer = null;
+    startCountLeft = 0;
+  }
+
+  function beginStartCountdown(gaps) {
+    startCountLeft = 3;
+    notice.textContent = `${startCountLeft}초 뒤 시작합니다. 멈추려면 「취소」를 누르세요.`;
+    startCountTimer = setInterval(() => {
+      startCountLeft -= 1;
+      if (startCountLeft > 0) {
+        notice.textContent = `${startCountLeft}초 뒤 시작합니다. 멈추려면 「취소」를 누르세요.`;
+        return;
+      }
+      stopStartCountdown();
+      sendStart(gaps);
+    }, 1000);
+  }
+
+  // 준비 갭이 남아 있어도 room/desired 시작 명령은 보냅니다. 갭 안내는 화면에 그대로 둡니다.
+  async function sendStart(gaps) {
     try {
       await command({
         running: true,
@@ -1230,10 +1262,11 @@
     } catch (err) {
       notice.textContent = personText(err);
     }
-  });
+  }
 
   document.getElementById("stop").addEventListener("click", async () => {
-    if (startArmed && !(latest && latest.running)) {
+    if (startArmed && !isBroadcastLive(latest)) {
+      stopStartCountdown();
       startArmed = false;
       paintStartButton(false, latest && Array.isArray(latest.gaps) ? latest.gaps : []);
       return;

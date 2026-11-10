@@ -320,7 +320,7 @@ function claimConnection(holderPeerId, peerId) {
       balanceAfter: opened.balance,
       at: source.now,
       who: source.who || "",
-      note: source.note || "추가 30분",
+      note: source.note || "추가 1시간",
       churchId: source.churchId || "",
     });
     const stored = cost.firebasePrepaid(opened.prepaid, entry.at);

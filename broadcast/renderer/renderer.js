@@ -1487,12 +1487,12 @@ function showPrepaid(info) {
   if (seconds > 0) {
     node.textContent = `남은 시간 ${formatClock(seconds)}`;
     hint.textContent = running
-      ? "이 30분이 끝나기 전에 끄면, 쓰지 않은 만큼 충전금으로 돌아갑니다."
+      ? "이 1시간이 끝나기 전에 끄면, 쓰지 않은 만큼 충전금으로 돌아갑니다."
       : "쓰지 않은 시간은 충전금으로 돌아갑니다.";
     return;
   }
   node.textContent = "남은 시간 없음";
-  hint.textContent = "시작하려면 다음 30분 요금이 충전금에 있어야 합니다. 30분을 다 쓰지 않고 끄면 쓰지 않은 만큼 충전금으로 돌아갑니다.";
+  hint.textContent = "시작하려면 다음 1시간 요금이 충전금에 있어야 합니다. 1시간을 다 쓰지 않고 끄면 쓰지 않은 만큼 충전금으로 돌아갑니다.";
 }
 
 function languageLabel(code) {
@@ -1509,14 +1509,14 @@ function paintConfirm(preview) {
   const extras = Math.max(0, Math.round(Number(preview.extraInputs) || 0));
   price.textContent = preview.testPeriod
     ? "테스트 기간이라 충전금을 빼지 않습니다."
-    : `다음 30분: ${formatKrw(preview.halfKrw || preview.chargeKrw)}. 시간당 ${formatKrw(preview.firstHourKrw)}. 한국어와 영어, 첫 입력이 포함됩니다.`;
+    : `다음 1시간: ${formatKrw(preview.chargeKrw)}. 시간당 ${formatKrw(preview.firstHourKrw)}. 한국어와 영어, 첫 입력이 포함됩니다.`;
   if (extras) price.textContent += ` 추가 입력 ${extras}개.`;
   document.getElementById("confirmOvertime").textContent = preview.overtimeText;
   document.getElementById("confirmBalance").textContent = `남은 충전금: ${formatKrw(preview.balanceKrw)}`;
   const short = document.getElementById("confirmShort");
   short.hidden = !preview.short;
   if (preview.short) {
-    short.textContent = `충전금이 부족합니다. 다음 30분에 ${formatKrw(preview.chargeKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`;
+    short.textContent = `충전금이 부족합니다. 다음 1시간에 ${formatKrw(preview.chargeKrw)}이 필요하지만 남은 충전금은 ${formatKrw(preview.balanceKrw)}입니다.`;
   } else {
     short.textContent = "";
   }
