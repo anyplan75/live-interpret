@@ -69,6 +69,34 @@ async function ensureAuth() {
   }
 }
 
+let quietRefresh = null;
+
+/** 방송 중 요청이 쓰는 토큰입니다. 갱신에 실패해도 로그아웃하지 않고 지금 토큰을 돌려줍니다. */
+function liveToken(force) {
+  if (!force && idToken && Date.now() < tokenExpiresAt - 60000) return Promise.resolve(idToken);
+  const session = secrets.readSession(userDir());
+  if (!session || !session.refreshToken) return Promise.resolve(idToken);
+  if (!quietRefresh) {
+    quietRefresh = googleAuth.refresh(session.refreshToken)
+      .then((next) => {
+        idToken = next.idToken;
+        tokenExpiresAt = Date.now() + next.expiresIn * 1000;
+        secrets.writeSession(userDir(), {
+          refreshToken: next.refreshToken,
+          email: session.email,
+          localId: next.localId || session.localId,
+        });
+        firebase.setIdToken(idToken);
+        return idToken;
+      })
+      .catch(() => idToken)
+      .finally(() => { quietRefresh = null; });
+  }
+  return quietRefresh;
+}
+
+firebase.setTokenProvider(liveToken);
+
 function resolveKey() {
   return secrets.readKey(userDir());
 }

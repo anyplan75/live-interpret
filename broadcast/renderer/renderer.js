@@ -1484,6 +1484,11 @@ function showPrepaid(info) {
   if (!node || !hint) return;
   const seconds = Math.max(0, Math.round(Number(info && info.remainingSeconds) || 0));
   const running = !!(info && info.running);
+  if (info && info.testPeriod) {
+    node.textContent = "테스트 기간 · 시간 제한 없음";
+    hint.textContent = "테스트 기간에는 남은 시간을 세지 않고 충전금도 빼지 않습니다.";
+    return;
+  }
   if (seconds > 0) {
     node.textContent = `남은 시간 ${formatClock(seconds)}`;
     hint.textContent = running

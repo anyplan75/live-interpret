@@ -389,7 +389,8 @@ class Engine {
       type: "prepaid",
       remainingSeconds: remaining,
       running: !!this.running,
-      label: remaining > 0 ? cost.prepaidLabel(remaining) : "남은 시간 0:00",
+      testPeriod: !!this.testPeriod,
+      label: this.testPeriod ? "테스트 기간 · 시간 제한 없음" : (remaining > 0 ? cost.prepaidLabel(remaining) : "남은 시간 0:00"),
     });
   }
 
@@ -433,6 +434,11 @@ class Engine {
     if (!this.running || !this.prepaid || !this.church) return;
     this.inPrepaidTick = true;
     try {
+      if (this.testPeriod) {
+        this.prepaidAnchor = Date.now();
+        this.emitPrepaid();
+        return;
+      }
       const remaining = this.liveRemaining();
       if (remaining > 0) {
         this.prepaid = { ...this.prepaid, remainingSeconds: remaining };
@@ -452,10 +458,13 @@ class Engine {
   async chargeNextBlock() {
     if (!this.running || !this.church || !this.prepaid || this.pendingStopReason) return;
     if (this.liveRemaining() > 0) return;
-    if (await this.readTestPeriod()) {
+    const wasTest = this.testPeriod;
+    const testPeriod = await this.readTestPeriod().catch(() => wasTest);
+    this.testPeriod = testPeriod;
+    if (testPeriod) {
       const languages = (this.prepaid.languages || this.targets || []).slice();
       this.armPrepaid({
-        remainingSeconds: 1800,
+        remainingSeconds: 3600,
         languages,
         kind: "hour",
         amountKrw: 0,
