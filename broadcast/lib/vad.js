@@ -27,10 +27,10 @@ class UtteranceVad {
   constructor(opts = {}) {
     this.sampleRate = opts.sampleRate || 24000;
     this.threshold = opts.threshold == null ? 0.016 : opts.threshold;
-    this.silenceLimit = Math.round((this.sampleRate * (opts.silenceMs == null ? 500 : opts.silenceMs)) / 1000);
+    this.silenceLimit = Math.round((this.sampleRate * (opts.silenceMs == null ? 700 : opts.silenceMs)) / 1000);
     this.preRollSamples = Math.round((this.sampleRate * (opts.preRollMs == null ? 300 : opts.preRollMs)) / 1000);
     this.minSpeechSamples = Math.round((this.sampleRate * (opts.minSpeechMs == null ? 250 : opts.minSpeechMs)) / 1000);
-    const maxMs = opts.maxSpeechMs == null ? 12000 : opts.maxSpeechMs;
+    const maxMs = opts.maxSpeechMs == null ? 20000 : opts.maxSpeechMs;
     this.maxSpeechSamples = maxMs > 0 ? Math.round((this.sampleRate * maxMs) / 1000) : 0;
     this.reset();
   }

@@ -18,13 +18,13 @@ const {
 const bulletin = require("./bulletin");
 const preacherLib = require("./preacher");
 const { listInputDevices, InputCapture } = require("./audio");
-const { channelPeaks, resampleInt16, extractChannel } = require("./audio-util");
+const { channelPeaks, resampleInt16, extractChannel, mixChannels } = require("./audio-util");
 const { SpeechSession } = require("./stt");
 const { METER_PEAK } = require("./vad");
 const { Pipeline } = require("./pipeline");
 const { UsageMeter } = require("./usage");
 const cost = require("./cost");
-const { createSubtitleBoard } = require("./subtitle-board");
+const { createSubtitleBoard, createSubtitleSender } = require("./subtitle-board");
 const { cleanDisplayName, cleanPhoneId } = require("./phone-name");
 const { createSessionWriter } = require("./files");
 const firebase = require("./firebase");
@@ -64,6 +64,7 @@ function deviceRow(row, index, fallbackSpoken) {
     source: "device",
     name: cleanDisplayName(row && row.name),
     showName: !(row && row.showName === false),
+    mix: !!(row && row.mix),
     phoneId: "",
     connected: true,
   };
@@ -691,7 +692,10 @@ class Engine {
       }
       this.channelSessions.forEach((session, index) => {
         if (!session || session.source === "phone" || index >= info.nChannels || session.captionLive === false) return;
-        const mono = extractChannel(buffer, info.nChannels, index);
+        const row = this.channelRows && this.channelRows[index];
+        const mono = row && row.mix && index + 1 < info.nChannels
+          ? mixChannels(buffer, info.nChannels, index, index + 1)
+          : extractChannel(buffer, info.nChannels, index);
         session.speech.push(resampleInt16(mono, rate, 24000));
       });
     } catch (err) {
@@ -809,6 +813,30 @@ class Engine {
     }
     this.emitPhones();
     return code;
+  }
+
+  /**
+   * 스테레오 입력에 마이크 두 개를 꽂았을 때, 이 채널과 다음 채널을 합쳐 한 줄로 인식합니다.
+   * 합치면 다음 채널은 따로 인식하지 않아 같은 말이 두 번 나오지 않습니다.
+   */
+  async setChannelMix(churchId, index, mix) {
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0 || !this.channelRows || !this.channelRows[i]) throw new Error("채널이 올바르지 않습니다.");
+    const row = this.channelRows[i];
+    const next = this.channelRows[i + 1];
+    const want = !!mix && row.source !== "phone" && !!next && next.source !== "phone";
+    if (!!row.mix === want) return { index: i, mix: want };
+    row.mix = want;
+    if (want) {
+      next.on = false;
+      if (this.running) {
+        await this.closeChannel(i + 1);
+        if (this.channelSessions && this.channelSessions.has(i)) this.ensureCaptureForIndex(i + 1);
+      }
+    }
+    if (churchId) await this.syncSettings(churchId, this.outputs || []);
+    this.emitPhones();
+    return { index: i, mix: want };
   }
 
   async setChannelOn(churchId, index, on) {
@@ -1000,7 +1028,7 @@ class Engine {
     if (this.channelSessions.has(index)) return this.channelSessions.get(index);
     const row = this.channelRows[index] || { spoken: "ko", on: true, source: "device" };
     const phone = row.source === "phone";
-    if (!phone) this.ensureCaptureForIndex(index);
+    if (!phone) this.ensureCaptureForIndex(row.mix ? index + 1 : index);
     const plan = channelRecognition(row, this.outputs || [], this.deviceSpeaker(row, index));
     const spoken = plan.spoken;
     const speaker = plan.speaker;
@@ -1130,6 +1158,7 @@ class Engine {
       signal: row.source === "phone" ? !!row.signal : false,
       showName: row.showName !== false,
       captionLive: row.captionLive !== false,
+      mix: row.source !== "phone" && !!row.mix,
     }));
   }
 
@@ -1765,11 +1794,9 @@ class Engine {
     this.lastUsageWrite = 0;
     this.sessionCharge = null;
     this.subtitleBoard = createSubtitleBoard();
+    const sendSubtitles = createSubtitleSender((body) => firebase.update(`churches/${church.id}/live/subtitles`, body));
     this.sessionCloud = {
-      updateSubtitles: (payload) => firebase.update(
-        `churches/${church.id}/live/subtitles`,
-        this.subtitleBoard.merge(payload),
-      ),
+      updateSubtitles: (payload) => sendSubtitles(this.subtitleBoard.merge(payload)),
       setText: (lang, text) => firebase.setSessionText(church.id, this.folderName, lang, text),
       appendSentence: (lang, id, text) => firebase.appendSessionSentence(church.id, this.folderName, lang, id, text),
       recordUsage: (record) => this.flushUsage(true, record),

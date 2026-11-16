@@ -82,6 +82,7 @@ class Pipeline {
     this.sentenceId = Number.isFinite(Number(opts.sentenceSeed)) ? Number(opts.sentenceSeed) : Date.now();
     this.lastSpeechTime = Date.now();
     this.lastLivePush = 0;
+    this.sentenceAt = 0;
     this.chain = Promise.resolve();
     this.timer = null;
     this.stopped = false;
@@ -93,6 +94,11 @@ class Pipeline {
 
   noteSpeech() {
     this.lastSpeechTime = Date.now();
+  }
+
+  /** 문장이 처음 들린 시각. 여러 마이크 자막을 말한 순서대로 세우는 데 씁니다. */
+  markSentence() {
+    if (!this.sentenceAt) this.sentenceAt = Date.now();
   }
 
   /**
@@ -112,6 +118,7 @@ class Pipeline {
       return;
     }
     this.noteSpeech();
+    this.markSentence();
     const start = this.spoken ? spokenEnd(value, this.spoken) : 0;
     let tail = value.slice(start);
     let consumed = start;
@@ -141,6 +148,7 @@ class Pipeline {
   onFinalChunk(text) {
     if (this.stopped) return;
     this.noteSpeech();
+    if (String(text || "").trim() || this.interim) this.markSentence();
     const raw = String(text || "").trim();
     let rest = this.interim;
     if (raw) {
@@ -302,10 +310,12 @@ class Pipeline {
     }
     this.holdHeard = 0;
     const id = this.sentenceId;
+    const at = this.sentenceAt || Date.now();
+    this.sentenceAt = 0;
     this.sentenceId = Date.now() + Math.floor(Math.random() * 10);
     // 교정 전 원문을 자막에 미리 올리면 raw↔교정으로 깜빡입니다. 교정·번역 결과만 올립니다.
     this.chain = this.chain
-      .then(() => this.publish(text, id, owner))
+      .then(() => this.publish(text, id, owner, at))
       .catch((err) => this.onLog(`번역 대기 오류: ${err.message || err}`));
   }
 
@@ -347,7 +357,7 @@ class Pipeline {
     this.onLive("");
   }
 
-  async publish(koreanText, id, heardId) {
+  async publish(koreanText, id, heardId, at) {
     koreanText = stripGuidance(koreanText);
     if (!koreanText || sentence.isNoise(koreanText) || isGuidanceEcho(koreanText)) return;
     const source = this.sourceLang;
@@ -375,11 +385,11 @@ class Pipeline {
       if (source !== "ko") result[source] = koreanText;
       this.remember(source === "ko" ? result.ko : koreanText);
       this.noteSample(result, source);
-      await this.writeLanguages(result, id, [source, ...targets], heardId);
+      await this.writeLanguages(result, id, [source, ...targets], heardId, at);
     } catch (err) {
       const kept = source === "ko" ? "한국어 원문" : "받아쓴 원문";
       this.onLog(`번역 실패, ${kept}을 남깁니다: ${err.message || err}`);
-      await this.writeLanguages({ [source]: koreanText, _raw: koreanText }, id, [source], heardId);
+      await this.writeLanguages({ [source]: koreanText, _raw: koreanText }, id, [source], heardId, at);
     }
   }
 
@@ -400,7 +410,7 @@ class Pipeline {
     if (this.recentContext.length > 2) this.recentContext.shift();
   }
 
-  async writeLanguages(result, id, codes, heardId) {
+  async writeLanguages(result, id, codes, heardId, at) {
     const payload = { _timestamp: Date.now() };
     for (const lang of codes) {
       if (!result[lang]) continue;
@@ -431,6 +441,7 @@ class Pipeline {
         this.onLog(`클라우드 ${lang} 문장 추가 실패: ${err.message || err}`);
       }
       payload[lang] = { text: shown, id, isFinal: true };
+      if (at) payload[lang].at = at;
       if (lang === this.sourceLang) {
         this.onLine({
           lang,
@@ -464,7 +475,7 @@ class Pipeline {
     this.lastLivePush = now;
     this.cloud.updateSubtitles(this.decoratePayload({
       _timestamp: now,
-      [this.sourceLang]: { text: speakerCaption(this.speaker, text), id: this.sentenceId, isFinal: false },
+      [this.sourceLang]: { text: speakerCaption(this.speaker, text), id: this.sentenceId, isFinal: false, at: this.sentenceAt || now },
     })).catch(() => {});
   }
 
@@ -497,7 +508,8 @@ class Pipeline {
     }
     if (leftover && !sentence.isNoise(leftover)) {
       const id = this.sentenceId;
-      this.chain = this.chain.then(() => this.publish(leftover, id, heardId));
+      const at = this.sentenceAt || Date.now();
+      this.chain = this.chain.then(() => this.publish(leftover, id, heardId, at));
     }
     await this.chain;
     

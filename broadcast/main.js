@@ -475,10 +475,17 @@ function registerIpc() {
         });
         return;
       }
+      const before = channels[row.index - 1];
+      // 앞 채널과 합쳐 듣는 채널은 따로 보여 주지 않습니다.
+      if (before && before.source !== "phone" && before.mix) return;
+      const after = channels[row.index + 1];
+      const canMix = !!after && after.source !== "phone";
       inputs.push({
         key: `c:${row.index}`,
         kind: "mic",
-        title: `채널 ${row.index + 1}`,
+        title: row.mix && canMix ? `채널 ${row.index + 1}·${row.index + 2}` : `채널 ${row.index + 1}`,
+        mix: !!row.mix && canMix,
+        canMix,
         name: row.name || "",
         spoken: row.spoken || "ko",
         level: peaks.get(row.index) || 0,
@@ -591,6 +598,9 @@ function registerIpc() {
       if (!Number.isInteger(index) || index < 0 || !rows[index] || rows[index].source === "phone") return;
       try {
         engine.setChannelCaption(index, { name: action.name, showName: action.showName });
+        if (Object.prototype.hasOwnProperty.call(action, "mix")) {
+          await engine.setChannelMix(roomChurchId, index, action.mix);
+        }
         if (Object.prototype.hasOwnProperty.call(action, "spoken") && action.spoken) {
           await engine.setChannelSpoken(roomChurchId, index, action.spoken);
         }

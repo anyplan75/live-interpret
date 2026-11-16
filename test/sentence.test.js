@@ -69,10 +69,10 @@ test("translation keeps several sentences, then cuts near the target", () => {
 });
 
 test("silence flush waits on a hanging tail until the hard limit", () => {
-  assert.equal(timing.vadSilenceMs, 500);
+  assert.equal(timing.vadSilenceMs, 700);
   assert.equal(timing.silenceFlushMs, 1800);
   assert.equal(timing.silenceForceFlushMs, 4500);
-  assert.equal(timing.maxSpeechMs, 12000);
+  assert.equal(timing.maxSpeechMs, 20000);
   assert.equal(sentence.canSilenceFlush("주님께서", 1000, timing), false);
   assert.equal(sentence.canSilenceFlush("주님께서", timing.silenceFlushMs + 10, timing), false);
   assert.equal(sentence.canSilenceFlush("주님께서", timing.silenceForceFlushMs, timing), true);

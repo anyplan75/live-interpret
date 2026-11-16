@@ -36,8 +36,8 @@ class SpeechSession {
       threshold: sensitivityThreshold(opts.sensitivity),
       // 말이 멈춘 뒤 이만큼 조용하면 한 발화로 확정합니다.
       // 0.8초마다 자르지는 않고, 말이 너무 길 때만 최대 길이로 닫습니다.
-      silenceMs: timing.vadSilenceMs == null ? 500 : timing.vadSilenceMs,
-      maxSpeechMs: timing.maxSpeechMs == null ? 12000 : timing.maxSpeechMs,
+      silenceMs: timing.vadSilenceMs == null ? 700 : timing.vadSilenceMs,
+      maxSpeechMs: timing.maxSpeechMs == null ? 20000 : timing.maxSpeechMs,
     });
     this.mode = "realtime";
     this.ws = null;

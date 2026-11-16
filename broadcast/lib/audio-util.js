@@ -11,6 +11,24 @@ function meterPercent(peak) {
   return Math.max(0, Math.min(100, Math.round((Number(peak) || 0) * METER_GAIN)));
 }
 
+/** 두 채널을 평균 내 한 채널로 합칩니다. 스테레오 입력에 마이크 두 개를 꽂았을 때 한 줄로 인식합니다. */
+function mixChannels(interleaved, nChannels, first, second) {
+  const channels = nChannels | 0;
+  const a = first | 0;
+  const b = second | 0;
+  if (channels < 1) throw new Error("채널 수가 없습니다.");
+  if (a < 0 || b < 0 || a >= channels || b >= channels) throw new Error("선택한 채널이 장치 범위를 벗어났습니다.");
+  const bytes = interleaved.length - (interleaved.length % (channels * 2));
+  const frames = bytes / (channels * 2);
+  const out = Buffer.alloc(frames * 2);
+  for (let i = 0; i < frames; i++) {
+    const left = interleaved.readInt16LE((i * channels + a) * 2);
+    const right = interleaved.readInt16LE((i * channels + b) * 2);
+    out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round((left + right) / 2))), i * 2);
+  }
+  return out;
+}
+
 function extractChannel(interleaved, nChannels, channelIndex) {
   const channels = nChannels | 0;
   const index = channelIndex | 0;
@@ -108,6 +126,7 @@ module.exports = {
   METER_GAIN,
   meterPercent,
   extractChannel,
+  mixChannels,
   channelPeaks,
   resampleInt16,
   selectedChannelPcm,
