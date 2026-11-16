@@ -209,3 +209,43 @@ test("remaining time save writes only the countdown and hides a permission error
     firebase.update = original.update;
   }
 });
+
+test("test period never counts down and keeps running when the period check fails", async () => {
+  const original = { get: firebase.get, set: firebase.set, update: firebase.update };
+  const updates = [];
+  let failRead = false;
+  firebase.get = async (rel) => {
+    if (rel === "billing/testPeriod") {
+      if (failRead) throw new Error("Firebase 401: Auth token is expired");
+      return true;
+    }
+    return null;
+  };
+  firebase.set = async () => {};
+  firebase.update = async (rel, value) => { updates.push([rel, value]); };
+  const events = [];
+  const engine = new Engine((evt) => events.push(evt), {});
+  engine.church = { id: "grace-ab", accountUid: "operator" };
+  try {
+    engine.targets = ["en"];
+    const opened = await engine.chargeOpening();
+    assert.equal(opened.testPeriod, true);
+    engine.running = true;
+    engine.armPrepaid(opened.prepaid);
+    engine.prepaidAnchor = Date.now() - 2 * 3600 * 1000;
+    await engine.tickPrepaid();
+    assert.equal(engine.liveRemaining(), 3600);
+    assert.equal(events.at(-1).testPeriod, true);
+
+    failRead = true;
+    engine.prepaidBudget = 0;
+    engine.prepaidAnchor = Date.now();
+    await engine.chargeNextBlock();
+    assert.equal(engine.pendingStopReason, "");
+    assert.equal(engine.liveRemaining(), 3600);
+    assert.equal(updates.length, 0);
+  } finally {
+    engine.running = false;
+    Object.assign(firebase, original);
+  }
+});

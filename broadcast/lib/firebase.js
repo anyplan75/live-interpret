@@ -4,9 +4,25 @@ const { isSessionFolder: folderOk } = require("./paths");
 const { applyStreamEvent } = require("./room-sync");
 
 let idToken = "";
+let tokenProvider = null;
 
 function setIdToken(token) {
   idToken = typeof token === "string" ? token : "";
+}
+
+/** 로그인 토큰은 1시간이면 끝납니다. 방송 중에도 요청마다 새 토큰을 받아 쓰도록 공급 함수를 둡니다. */
+function setTokenProvider(fn) {
+  tokenProvider = typeof fn === "function" ? fn : null;
+}
+
+async function freshAuth(force) {
+  if (!tokenProvider) return;
+  try {
+    const token = await tokenProvider(!!force);
+    if (typeof token === "string" && token) idToken = token;
+  } catch (_) {
+    // 갱신에 실패하면 지금 토큰으로 계속 시도합니다.
+  }
 }
 
 function withAuth(url) {
@@ -23,7 +39,8 @@ function assertFolder(folder) {
   if (!folderOk(folder)) throw new Error("세션 폴더 이름이 올바르지 않습니다.");
 }
 
-async function request(method, rel, body) {
+async function request(method, rel, body, retried) {
+  await freshAuth(false);
   const full = underRoot(rel);
   const url = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${full}.json`);
   const res = await netFetch(url, {
@@ -32,6 +49,10 @@ async function request(method, rel, body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
+  if (res.status === 401 && !retried && tokenProvider) {
+    await freshAuth(true);
+    return request(method, rel, body, true);
+  }
   if (!res.ok) throw new Error(`Firebase ${res.status}: ${redactSecrets(text).slice(0, 180)}`);
   if (!text || text === "null") return null;
   try {
@@ -69,6 +90,7 @@ function listen(rel, onValue) {
   const run = async () => {
     while (!stopped) {
       try {
+        await freshAuth(false);
         const full = underRoot(rel);
         const url = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${full}.json`);
         const res = await netFetch(url, {
@@ -139,6 +161,7 @@ async function listChurches() {
   const index = await get("churchIndex");
   const known = rowsFromIndex(index);
   if (known.length) return known.filter((row) => row.active);
+  await freshAuth(false);
   const shallowUrl = withAuth(`${firebase.databaseURL.replace(/\/$/, "")}/${underRoot("churches")}.json?shallow=true`);
   const res = await netFetch(shallowUrl);
   const text = await res.text();
@@ -275,6 +298,7 @@ async function setSessionMeta(churchId, folder, meta) {
 
 module.exports = {
   setIdToken,
+  setTokenProvider,
   withAuth,
   get,
   set,
