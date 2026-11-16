@@ -10,25 +10,30 @@ function publishLang(bucket) {
   const multi = entries.length > 1;
   if (!named && !multi) {
     const one = entries[0];
-    return { text: one.text, id: one.id, isFinal: one.isFinal };
+    return withAt({ text: one.text, id: one.id, isFinal: one.isFinal }, one.at);
   }
   const lines = {};
   entries.forEach((line) => {
-    lines[line.channelKey] = {
+    lines[line.channelKey] = withAt({
       text: line.text,
       id: line.id,
       isFinal: line.isFinal,
       name: line.name,
-    };
+    }, line.at);
   });
-  const latest = entries[entries.length - 1];
-  return {
+  const latest = entries.reduce((best, line) => ((line.at || 0) >= (best.at || 0) ? line : best), entries[0]);
+  return withAt({
     text: latest.text,
     id: latest.id,
     isFinal: latest.isFinal,
     name: latest.name,
     lines,
-  };
+  }, latest.at);
+}
+
+function withAt(row, at) {
+  if (at) row.at = at;
+  return row;
 }
 
 function createSubtitleBoard() {
@@ -45,7 +50,12 @@ function createSubtitleBoard() {
         const bucket = langs.get(lang);
         const channelKey = safeKey(row.channelKey || "main");
         const text = String(row.text || "").trim();
-        if (!text) bucket.delete(channelKey);
+        const prev = bucket.get(channelKey);
+        // 늦게 온 듣는 중 자막이 같은 문장의 확정 자막을 덮지 않게 합니다.
+        const stale = row.isFinal === false && prev && prev.isFinal && prev.id === row.id;
+        if (stale) {
+          /* 확정 자막을 그대로 둡니다 */
+        } else if (!text) bucket.delete(channelKey);
         else {
           bucket.set(channelKey, {
             channelKey,
@@ -53,6 +63,7 @@ function createSubtitleBoard() {
             id: row.id,
             isFinal: row.isFinal !== false,
             name: String(row.name || "").trim(),
+            at: Number(row.at) || 0,
           });
         }
         out[lang] = publishLang(bucket);
@@ -62,4 +73,36 @@ function createSubtitleBoard() {
   };
 }
 
-module.exports = { createSubtitleBoard, safeKey };
+/**
+ * 자막 쓰기를 한 번에 하나씩 순서대로 보냅니다. 앞 쓰기가 끝나기 전에 온 것은 하나로 합쳐 보냅니다.
+ * 늦게 출발한 쓰기가 먼저 도착해 최신 자막을 덮는 일을 막습니다.
+ */
+function createSubtitleSender(write) {
+  let queued = null;
+  let waiters = [];
+  let busy = false;
+  async function pump() {
+    busy = true;
+    while (queued) {
+      const body = queued;
+      const done = waiters;
+      queued = null;
+      waiters = [];
+      try {
+        await write(body);
+        done.forEach((waiter) => waiter.resolve());
+      } catch (err) {
+        done.forEach((waiter) => waiter.reject(err));
+      }
+    }
+    busy = false;
+  }
+  return function send(body) {
+    queued = queued ? { ...queued, ...body } : { ...body };
+    const result = new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+    if (!busy) pump();
+    return result;
+  };
+}
+
+module.exports = { createSubtitleBoard, createSubtitleSender, safeKey };

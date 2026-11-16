@@ -26,13 +26,15 @@
       text,
       name,
       isFinal: row.isFinal !== false,
+      at: Number(row.at) || 0,
       caption: speakerCaption(name, text),
     };
   }
 
   function entries(row) {
     if (row && row.lines && typeof row.lines === "object") {
-      const list = Object.values(row.lines).map(present).filter((line) => line.text);
+      const list = Object.values(row.lines).map(present).filter((line) => line.text)
+        .sort((a, b) => (a.at || 0) - (b.at || 0));
       if (list.length) return list;
     }
     if (row == null || row === "") return [];

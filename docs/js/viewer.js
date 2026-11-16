@@ -89,6 +89,7 @@ LI.viewer = (() => {
       text: String(text || ""),
       name: "",
       isFinal: typeof row === "object" && row.isFinal !== undefined ? row.isFinal : true,
+      at: typeof row === "object" ? Number(row.at) || 0 : 0,
     }];
   }
 
@@ -98,13 +99,23 @@ LI.viewer = (() => {
       text: entry.text,
       name: entry.name || "",
       isFinal: entry.isFinal !== false,
+      at: Number(entry.at) || 0,
     };
     const existing = list.findIndex((line) => line.id === next.id);
-    if (existing !== -1) list[existing] = next;
-    else {
-      list.push(next);
-      while (list.length > maxLines) list.shift();
+    if (existing !== -1) {
+      // 늦게 도착한 듣는 중 자막은 같은 문장의 확정 자막을 덮지 않습니다.
+      if (list[existing].isFinal && !next.isFinal) return;
+      if (!next.at) next.at = list[existing].at;
+      list[existing] = next;
+      return;
     }
+    // 여러 마이크 자막은 번역이 끝난 순서가 아니라 말을 시작한 순서대로 세웁니다.
+    let pos = list.length;
+    if (next.at) {
+      while (pos > 0 && list[pos - 1].at && list[pos - 1].at > next.at) pos -= 1;
+    }
+    list.splice(pos, 0, next);
+    while (list.length > maxLines) list.shift();
   }
 
   function activeLangCodesFromSettings(settings) {
@@ -246,6 +257,7 @@ LI.viewer = (() => {
           text: entry.text,
           name: entry.name || "",
           isFinal: entry.isFinal !== false,
+          at: Number(entry.at) || 0,
         }));
         renderLines();
         return true;

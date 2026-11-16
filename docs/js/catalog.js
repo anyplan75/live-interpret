@@ -95,12 +95,12 @@
   // 대신 종결어미·문장 부호로 끊고, 말이 너무 길면 maxSpeechMs 에서 한 발화를 닫는다.
   const timing = {
     livePushMinInterval: 250,
-    vadSilenceMs: 500,
+    vadSilenceMs: 700,
     silenceFlushMs: 1800,
     silenceForceFlushMs: 4500,
     // 추임새(음·아)는 isNoise 로 걸러지고, 그 외 짧은 본문도 침묵 후 교정으로 넘깁니다.
     minFlushChars: 2,
-    maxSpeechMs: 12000,
+    maxSpeechMs: 20000,
   };
 
   const defaultModel = "gpt-4o-mini";

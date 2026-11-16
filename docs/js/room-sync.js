@@ -136,6 +136,8 @@
     if (item && Object.prototype.hasOwnProperty.call(item, "spoken")) {
       row.spoken = cleanLang(item.spoken, "ko");
     }
+    // 스테레오 두 채널 합치기도 보낸 마이크 칸에만 넣습니다.
+    if (isMicKey(key) && item && Object.prototype.hasOwnProperty.call(item, "mix")) row.mix = item.mix === true;
     return row;
   }
 
@@ -255,6 +257,7 @@
       joining: !!(item && item.joining) && !(item && item.connected),
       code,
       joinUrl,
+      canMix: kind === "mic" && !!(item && item.canMix),
     };
   }
 

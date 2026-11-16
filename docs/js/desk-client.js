@@ -931,7 +931,7 @@
 
   function paintInputs(status) {
     const rows = status && Array.isArray(status.inputs) ? status.inputs : [];
-    const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.joining}|${row.code}|${row.live}|${row.name}|${row.spoken || "ko"}|${row.showName !== false}`).join(";");
+    const nextKey = rows.map((row) => `${row.key}|${row.title}|${row.connected}|${row.joining}|${row.code}|${row.live}|${row.name}|${row.spoken || "ko"}|${row.showName !== false}|${!!row.canMix}|${!!row.mix}`).join(";");
     if (nextKey === inputKey && inputs.childElementCount) {
       rows.forEach((row) => {
         const fill = inputs.querySelector(`[data-level="${row.key}"]`);
@@ -987,6 +987,18 @@
       showBox.setAttribute("aria-label", `${row.title || "입력"} 이름을 자막에 표시`);
       show.append(showBox, document.createTextNode(" 이 이름을 자막에 표시"));
       controls.append(spokenSelect, name, live, show);
+      let mixBox = null;
+      if (row.kind === "mic" && row.canMix) {
+        const mix = document.createElement("label");
+        mix.className = "check";
+        mixBox = document.createElement("input");
+        mixBox.type = "checkbox";
+        mixBox.checked = !!row.mix;
+        mixBox.setAttribute("aria-label", "스테레오 두 채널을 합쳐 한 줄로 듣기");
+        mix.title = "마이크 두 개를 스테레오 입력 한 개에 꽂았을 때 켭니다. 끄면 두 채널을 따로 인식합니다.";
+        mix.append(mixBox, document.createTextNode(" 다음 채널과 합쳐 듣기(스테레오 마이크 2개)"));
+        controls.append(mix);
+      }
       const bar = document.createElement("div");
       bar.className = "meter";
       const fill = document.createElement("span");
@@ -1008,6 +1020,7 @@
       name.addEventListener("change", () => save({ name: name.value }));
       live.addEventListener("click", () => save({ live: row.live === false }));
       showBox.addEventListener("change", () => save({ showName: showBox.checked }));
+      if (mixBox) mixBox.addEventListener("change", () => save({ mix: mixBox.checked }));
       card.append(head, controls, bar);
       inputs.append(card);
     });
