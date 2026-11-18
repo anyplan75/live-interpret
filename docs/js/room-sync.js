@@ -25,10 +25,10 @@
     return LANG.test(code) ? code : fallback;
   }
 
-  // 공개 status에는 설교를 숨기고, desired/갭 판정용으로는 설교를 허용합니다.
-  const PUBLIC_KINDS = ["강의", "연설", "행사"];
-  const DESIRED_KINDS = ["설교", "강의", "연설", "행사"];
-  const GAPS = ["저장 폴더", "강연자", "내용", "번역할 언어", "입력 장치"];
+  // 공개 모드와 desired 모드는 강연·예배·회의를 쓰고, 옛 값도 받아들입니다.
+  const PUBLIC_KINDS = ["강연", "예배", "회의", "강의", "연설", "행사"];
+  const DESIRED_KINDS = ["강연", "예배", "회의", "설교", "강의", "연설", "행사"];
+  const GAPS = ["저장 폴더", "강연자", "모드", "번역할 언어", "입력 장치"];
 
   function cleanSensitivity(value) {
     return value === "high" || value === "low" ? value : "normal";

@@ -8,7 +8,7 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.SetupReady = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const SESSION_KINDS = ["설교", "강의", "연설", "행사"];
+  const SESSION_KINDS = ["강연", "예배", "회의", "설교", "강의", "연설", "행사"];
 
   function missingSetup(input) {
     const source = input && typeof input === "object" ? input : {};
@@ -17,7 +17,7 @@
     const folderChecked = Object.prototype.hasOwnProperty.call(source, "folderReady");
     if (!folder || (folderChecked && source.folderReady !== true)) gaps.push("저장 폴더");
     if (!String(source.preacherId || "").trim()) gaps.push("강연자");
-    if (!SESSION_KINDS.includes(String(source.sessionKind || ""))) gaps.push("내용");
+    if (!SESSION_KINDS.includes(String(source.sessionKind || ""))) gaps.push("모드");
     const targets = Array.isArray(source.targets) ? source.targets.filter(Boolean) : [];
     if (!targets.length) gaps.push("번역할 언어");
     if (!String(source.deviceKey || "").trim()) gaps.push("입력 장치");

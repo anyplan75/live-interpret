@@ -557,8 +557,10 @@ function registerIpc() {
     const remaining = engine.remainingNow();
     const charged = engine.sessionCharge ? engine.sessionCharge.charged : 0;
     const saved = readSettings();
-    // 공개 status에는 설교를 비우지만, 갭 판정은 저장된 sessionKind(설교 포함)로 한다.
-    const publicKind = ["강의", "연설", "행사"].includes(saved.sessionKind) ? saved.sessionKind : "";
+    // 공개 status·갭 판정은 저장된 모드를 쓴다. 옛 값(설교·강의 등)도 그대로 둔다.
+    const publicKind = ["강연", "예배", "회의", "강의", "연설", "행사"].includes(saved.sessionKind)
+      ? saved.sessionKind
+      : "";
     const deviceKey = (engine.device && engine.device.key) || saved.deviceKey || "";
     const gaps = setupReady.missingSetup({
       folder: saved.folder || "",
@@ -1079,11 +1081,15 @@ function registerIpc() {
     if (!name) throw new Error("강연자 이름을 입력해 주세요.");
     const id = payload && catalog.isPreacherId(payload.id) ? payload.id : catalog.makePreacherId(name);
     const existing = (await firebase.listPreachers(church.id)).find((item) => item.id === id);
+    const sense = payload && (payload.sensitivity === "high" || payload.sensitivity === "low")
+      ? payload.sensitivity
+      : (existing && existing.sensitivity) || "normal";
     return firebase.savePreacher(church.id, id, {
       name,
       traits: payload && typeof payload.traits === "string" ? payload.traits : "",
       corrections: payload && typeof payload.corrections === "string" ? payload.corrections : "",
       terms: payload && typeof payload.terms === "string" ? payload.terms : "",
+      sensitivity: sense,
       pausePoints: existing ? existing.pausePoints : "",
       accuracy: existing ? existing.accuracy : "",
       naturalness: existing ? existing.naturalness : "",
@@ -1311,10 +1317,10 @@ function registerIpc() {
     if (!catalog.isPreacherId(preacherId)) {
       throw new Error("등록된 이름이 없습니다. 관리 페이지에서 이름을 먼저 등록해 주세요.");
     }
-    const kinds = ["설교", "강의", "연설", "행사"];
+    const kinds = ["강연", "예배", "회의", "설교", "강의", "연설", "행사"];
     const sessionKind = kinds.includes(opts && opts.sessionKind)
       ? opts.sessionKind
-      : (kinds.includes(saved.sessionKind) ? saved.sessionKind : "강의");
+      : (kinds.includes(saved.sessionKind) ? saved.sessionKind : "강연");
     const deskSpeech = saved.deskSpeech && typeof saved.deskSpeech === "object" ? saved.deskSpeech : {};
     // 저장된 키가 없어도 기본 마이크를 엽니다. 마이크 무신호(레벨 0)는 시작을 막지 않습니다.
     if (!engine.capture.opened) {

@@ -1669,7 +1669,9 @@ class Engine {
     if (!opts.folder) throw new Error("저장 폴더를 선택해 주세요.");
     if (!isChurchId(opts.churchId)) throw new Error("계정을 선택해 주세요.");
     if (!isPreacherId(opts.preacherId)) throw new Error("강연자를 등록하고 선택해 주세요.");
-    if (!["설교", "강의", "연설", "행사"].includes(opts.sessionKind)) throw new Error("내용을 선택해 주세요.");
+    if (!["강연", "예배", "회의", "설교", "강의", "연설", "행사"].includes(opts.sessionKind)) {
+      throw new Error("모드를 선택해 주세요.");
+    }
     const outputCodes = cleanTargets(opts.targets);
     if (!outputCodes.length) throw new Error("번역할 언어를 하나 이상 선택해 주세요.");
     // 장치 키가 비어도 기본 마이크를 엽니다. 소리가 없어도(무신호) 시작은 됩니다.

@@ -841,6 +841,7 @@
         traits: typeof row.traits === "string" ? row.traits : "",
         corrections: typeof row.corrections === "string" ? row.corrections : "",
         terms: typeof row.terms === "string" ? row.terms : "",
+        sensitivity: row.sensitivity === "high" || row.sensitivity === "low" ? row.sensitivity : "normal",
         pausePoints: typeof row.pausePoints === "string" ? row.pausePoints : "",
         accuracy: typeof row.accuracy === "string" ? row.accuracy : "",
         naturalness: typeof row.naturalness === "string" ? row.naturalness : "",
@@ -854,6 +855,87 @@
   function profileMsg(text) {
     const el = document.getElementById("preacherProfileMsg");
     if (el) el.textContent = text || "";
+  }
+
+  function normalizeSessionKind(kind) {
+    const raw = String(kind || "");
+    if (raw === "강의" || raw === "연설") return "강연";
+    if (raw === "설교") return "예배";
+    if (raw === "행사") return "회의";
+    if (raw === "강연" || raw === "예배" || raw === "회의") return raw;
+    return "";
+  }
+
+  function roleLabel(kind) {
+    const mode = normalizeSessionKind(kind);
+    if (mode === "예배") return "설교자";
+    if (mode === "회의") return "사회자";
+    if (mode === "강연") return "강연자";
+    return "이름";
+  }
+
+  function paintRoleLabel(kind) {
+    const label = document.getElementById("roleNameLabel");
+    const input = document.getElementById("preacherName");
+    const role = roleLabel(kind);
+    if (label) label.textContent = role;
+    if (input) input.placeholder = `자막에 보일 ${role}`;
+  }
+
+  function paintMaterialMode(kind) {
+    const slots = document.getElementById("materialSlots");
+    const hint = document.getElementById("materialHint");
+    const mode = normalizeSessionKind(kind);
+    if (slots) slots.setAttribute("data-mode", mode);
+    if (!hint) return;
+    if (mode === "강연") hint.textContent = "강연 모드: 강연자료를 올리면 순서·제목을 뽑아 교정에 씁니다.";
+    else if (mode === "예배") hint.textContent = "예배 모드: 주보·성경·찬송·공동기도문을 올리면 기초 자료로 참고합니다.";
+    else if (mode === "회의") hint.textContent = "회의 모드: 회의자료를 올리면 안건·순서를 참고합니다.";
+    else hint.textContent = "모드를 고르면 올릴 자료 칸이 바뀝니다. 사진·이미지로 올리면 방송실에서 분석해 교정에 씁니다.";
+  }
+
+  function appendMaterialLog(name) {
+    const list = document.getElementById("materialLog");
+    if (!list) return;
+    list.hidden = false;
+    const item = document.createElement("li");
+    item.textContent = `${name} 올림`;
+    list.append(item);
+  }
+
+  async function uploadMaterialFile(file, materialName) {
+    const msg = document.getElementById("bulletinMsg");
+    const label = String(materialName || "기초자료").trim() || "기초자료";
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 900 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.62));
+    if (!blob) throw new Error("자료 사진을 올리지 못했습니다.");
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+    const image = btoa(binary);
+    if (image.length > 160000) throw new Error("자료 사진이 너무 큽니다. 더 작은 사진을 올려 주세요.");
+    if (msg) msg.textContent = `${label}을(를) 방송실로 보내는 중입니다.`;
+    await command({ sheet: { name: label, image } });
+    appendMaterialLog(label);
+    if (msg) msg.textContent = `${label}을(를) 올렸습니다. 모드에 맞는 자료를 더 올릴 수 있습니다.`;
+  }
+
+  function bindSpeechTabs() {
+    const tabs = document.querySelectorAll(".speech-tabs [data-speech-tab]");
+    tabs.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-speech-tab") || "traits";
+        tabs.forEach((other) => other.classList.toggle("on", other === btn));
+        document.querySelectorAll(".speech-frame[data-speech-panel]").forEach((panel) => {
+          panel.hidden = panel.getAttribute("data-speech-panel") !== id;
+        });
+      });
+    });
   }
 
   function choiceValue(box, attr, fallback) {
@@ -874,7 +956,10 @@
     onAir.hidden = !running;
     const focus = document.activeElement;
     if (!focus || !focus.closest || !focus.closest("#sessionKind")) {
-      markChoice(document.getElementById("sessionKind"), "data-kind", row.sessionKind || "");
+      const kind = normalizeSessionKind(row.sessionKind);
+      markChoice(document.getElementById("sessionKind"), "data-kind", kind);
+      paintRoleLabel(kind);
+      paintMaterialMode(kind);
     }
     const name = document.getElementById("preacherName");
     if (fieldIdle("preacherName")) name.value = row.preacherName || "";
@@ -1421,8 +1506,11 @@
   document.getElementById("sessionKind").addEventListener("click", (event) => {
     const btn = event.target.closest("button[data-kind]");
     if (!btn) return;
-    markChoice(document.getElementById("sessionKind"), "data-kind", btn.getAttribute("data-kind") || "");
-    sendPatch({ sessionKind: btn.getAttribute("data-kind") || "" });
+    const kind = btn.getAttribute("data-kind") || "";
+    markChoice(document.getElementById("sessionKind"), "data-kind", kind);
+    paintRoleLabel(kind);
+    paintMaterialMode(kind);
+    sendPatch({ sessionKind: kind });
   });
 
   document.getElementById("preacherName").addEventListener("change", (event) => {
@@ -1444,7 +1532,7 @@
       const matched = matchPreacherByName(name);
       if (!matched) {
         activePreacherId = "";
-        profileMsg(name ? `"${name}" 이름으로 저장된 강연자가 없습니다.` : "먼저 이름을 입력하세요.");
+        profileMsg(name ? `"${name}" 이름으로 저장된 사람이 없습니다.` : "먼저 이름을 입력하세요.");
         return;
       }
       activePreacherId = matched.id;
@@ -1454,8 +1542,9 @@
         fixes: matched.corrections,
         terms: matched.terms,
       });
+      markChoice(document.getElementById("sensitivity"), "data-sense", matched.sensitivity || "normal");
       await sendPatch(speechPatch());
-      profileMsg(`${matched.name} 프로필을 불러왔습니다. 적용/무시와 변환을 고친 뒤 저장할 수 있습니다.`);
+      profileMsg(`${matched.name} 말투·감도를 불러왔습니다. 한 틀에서 고친 뒤 저장하세요.`);
     } catch (err) {
       profileMsg(personText(err));
     }
@@ -1466,11 +1555,12 @@
       await ensureToken();
       const name = document.getElementById("preacherName").value.trim();
       if (!name) {
-        profileMsg("저장할 강연자 이름을 입력하세요.");
+        profileMsg("저장할 이름을 입력하세요.");
         return;
       }
       await refreshPreachers();
       const speech = syncSpeechHidden();
+      const sensitivity = choiceValue(document.getElementById("sensitivity"), "data-sense", "normal");
       const matched = matchPreacherByName(name);
       const id = (activePreacherId && LI.catalog.isPreacherId(activePreacherId))
         ? activePreacherId
@@ -1481,6 +1571,7 @@
         traits: speech.traits,
         corrections: speech.fixes,
         terms: speech.terms,
+        sensitivity,
         pausePoints: existing ? existing.pausePoints : "",
         accuracy: existing ? existing.accuracy : "",
         naturalness: existing ? existing.naturalness : "",
@@ -1493,38 +1584,42 @@
       speechDirty = false;
       await refreshPreachers();
       await sendPatch(speechPatch());
-      profileMsg(`${name} 프로필을 이 계정에 저장했습니다.`);
+      profileMsg(`${name} 말투·감도를 이 계정에 저장했습니다.`);
     } catch (err) {
       profileMsg(personText(err));
     }
   });
 
+  bindSpeechTabs();
   bindSpeechEditors();
+  paintRoleLabel("");
+  paintMaterialMode("");
   paintPhoneCount(0);
+
+  document.querySelectorAll("#materialSlots input[type='file'][data-material]").forEach((input) => {
+    input.addEventListener("change", async (event) => {
+      const file = event.target.files && event.target.files[0];
+      const materialName = event.target.getAttribute("data-material") || "기초자료";
+      event.target.value = "";
+      if (!file) return;
+      try {
+        await uploadMaterialFile(file, materialName);
+      } catch (err) {
+        const msg = document.getElementById("bulletinMsg");
+        if (msg) msg.textContent = personText(err);
+      }
+    });
+  });
 
   document.getElementById("pickBulletin").addEventListener("change", async (event) => {
     const file = event.target.files && event.target.files[0];
     event.target.value = "";
     if (!file) return;
-    const msg = document.getElementById("bulletinMsg");
     try {
-      const bitmap = await createImageBitmap(file);
-      const scale = Math.min(1, 900 / Math.max(bitmap.width, bitmap.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.62));
-      if (!blob) throw new Error("진행자료 사진을 올리지 못했습니다.");
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      let binary = "";
-      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
-      const image = btoa(binary);
-      if (image.length > 160000) throw new Error("진행자료 사진이 너무 큽니다. 더 작은 사진을 올려 주세요.");
-      msg.textContent = "진행자료를 방송실로 보내는 중입니다.";
-      await command({ sheet: { name: "진행자료", image } });
+      await uploadMaterialFile(file, "진행자료");
     } catch (err) {
-      msg.textContent = personText(err);
+      const msg = document.getElementById("bulletinMsg");
+      if (msg) msg.textContent = personText(err);
     }
   });
 
