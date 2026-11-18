@@ -386,13 +386,53 @@ function nameShownText(shown) {
   return shown === false ? "이름 숨김" : "이름 표시";
 }
 
+const speechEditors = { traits: null, corrections: null, terms: null };
+
+function syncSpeechHidden() {
+  if (speechEditors.traits && document.getElementById("traits")) {
+    document.getElementById("traits").value = speechEditors.traits.getValue();
+  }
+  if (speechEditors.corrections && document.getElementById("corrections")) {
+    document.getElementById("corrections").value = speechEditors.corrections.getValue();
+  }
+  if (speechEditors.terms && document.getElementById("terms")) {
+    document.getElementById("terms").value = speechEditors.terms.getValue();
+  }
+}
+
 function lecturerStyle() {
+  syncSpeechHidden();
   return {
     traits: document.getElementById("traits") ? document.getElementById("traits").value : "",
     corrections: document.getElementById("corrections") ? document.getElementById("corrections").value : "",
     terms: document.getElementById("terms") ? document.getElementById("terms").value : "",
     sensitivity: sensitivityEl ? sensitivityEl.value : "normal",
   };
+}
+
+function bindSpeechEditors() {
+  const ui = typeof LI !== "undefined" ? LI.speechStyleUi : null;
+  if (!ui || typeof ui.mount !== "function") return;
+  const onChange = () => {
+    syncSpeechHidden();
+    rememberStyle("device:0", lecturerStyle());
+    paintGlances();
+  };
+  speechEditors.traits = ui.mount(document.getElementById("traitsList"), {
+    fromLabel: "특이점 말투",
+    toLabel: "변환 말투",
+    onChange,
+  });
+  speechEditors.corrections = ui.mount(document.getElementById("correctionsList"), {
+    fromLabel: "잘못 들은 말",
+    toLabel: "바른 말",
+    onChange,
+  });
+  speechEditors.terms = ui.mount(document.getElementById("termsList"), {
+    fromLabel: "원 용어",
+    toLabel: "통일 표기",
+    onChange,
+  });
 }
 
 function styleKey(row, index) {
@@ -600,26 +640,47 @@ function appendSpeechStyle(parent, row, index) {
   value.textContent = speechSummary(current);
   summary.append(title, value);
   details.append(summary);
+  const ui = typeof LI !== "undefined" ? LI.speechStyleUi : null;
+  const local = { traits: current.traits || "", corrections: current.corrections || "", terms: current.terms || "" };
   ["traits", "corrections", "terms"].forEach((field) => {
     const label = document.createElement("label");
     label.textContent = field === "traits" ? "말투" : field === "corrections" ? "교정" : "용어";
-    const area = document.createElement("textarea");
-    area.dataset.styleKey = key;
-    area.dataset.styleField = field;
-    area.value = current[field] || "";
-    area.addEventListener("change", () => {
-      const next = styleFor(row, index);
-      next[field] = area.value;
-      if (!row || row.source !== "phone") {
-        const canon = document.getElementById(field);
-        if (canon) canon.value = area.value;
-      }
-      value.textContent = speechSummary(next);
-      rememberStyle(key, next);
-      paintGlances();
-    });
-    label.append(area);
-    details.append(label);
+    const host = document.createElement("div");
+    host.dataset.styleKey = key;
+    host.dataset.styleField = field;
+    details.append(label, host);
+    if (ui && typeof ui.mount === "function") {
+      ui.mount(host, {
+        value: local[field],
+        fromLabel: field === "traits" ? "특이점 말투" : field === "corrections" ? "잘못 들은 말" : "원 용어",
+        toLabel: field === "traits" ? "변환 말투" : field === "corrections" ? "바른 말" : "통일 표기",
+        onChange: (text) => {
+          local[field] = text;
+          const next = { ...styleFor(row, index), ...local };
+          if (!row || row.source !== "phone") {
+            const canon = document.getElementById(field);
+            if (canon) canon.value = text;
+            if (speechEditors[field]) speechEditors[field].setValue(text);
+          }
+          value.textContent = speechSummary(next);
+          rememberStyle(key, next);
+          paintGlances();
+        },
+      });
+    } else {
+      const area = document.createElement("textarea");
+      area.dataset.styleKey = key;
+      area.dataset.styleField = field;
+      area.value = local[field];
+      area.addEventListener("change", () => {
+        local[field] = area.value;
+        const next = { ...styleFor(row, index), ...local };
+        value.textContent = speechSummary(next);
+        rememberStyle(key, next);
+        paintGlances();
+      });
+      host.append(area);
+    }
   });
   const senseLabel = document.createElement("label");
   senseLabel.textContent = "인식 감도";
@@ -634,8 +695,7 @@ function appendSpeechStyle(parent, row, index) {
   });
   sense.value = current.sensitivity === "high" || current.sensitivity === "low" ? current.sensitivity : "normal";
   sense.addEventListener("change", () => {
-    const next = styleFor(row, index);
-    next.sensitivity = sense.value;
+    const next = { ...styleFor(row, index), ...local, sensitivity: sense.value };
     if (!row || row.source !== "phone") {
       if (sensitivityEl) sensitivityEl.value = sense.value;
     }
@@ -1416,22 +1476,21 @@ function showBulletin(bulletin, error) {
 
 function fillPreacherForm(preacher) {
   document.getElementById("preacherName").value = preacher ? preacher.name : "";
-  document.getElementById("traits").value = preacher ? preacher.traits || "" : "";
-  document.getElementById("corrections").value = preacher ? preacher.corrections || "" : "";
-  document.getElementById("terms").value = preacher ? preacher.terms || "" : "";
+  const traits = preacher ? preacher.traits || "" : "";
+  const corrections = preacher ? preacher.corrections || "" : "";
+  const terms = preacher ? preacher.terms || "" : "";
+  document.getElementById("traits").value = traits;
+  document.getElementById("corrections").value = corrections;
+  document.getElementById("terms").value = terms;
+  if (speechEditors.traits) speechEditors.traits.setValue(traits);
+  if (speechEditors.corrections) speechEditors.corrections.setValue(corrections);
+  if (speechEditors.terms) speechEditors.terms.setValue(terms);
   const learned = preacher ? [
     ["말 끊는 위치", preacher.pausePoints],
     ["정확도 교정", preacher.accuracy],
     ["자연스러움 교정", preacher.naturalness],
   ].filter(([, value]) => value && String(value).trim()).map(([label, value]) => `${label}\n${String(value).trim()}`).join("\n\n") : "";
   document.getElementById("learned").textContent = learned || "아직 없습니다. 방송을 마치면 쌓입니다.";
-  document.querySelectorAll('[data-style-key="device:0"]').forEach((mirror) => {
-    const field = mirror.dataset.styleField;
-    if (!field || document.activeElement === mirror) return;
-    mirror.value = field === "sensitivity"
-      ? (sensitivityEl ? sensitivityEl.value : "normal")
-      : (document.getElementById(field) ? document.getElementById(field).value : "");
-  });
   paintGlances();
 }
 
@@ -1908,11 +1967,12 @@ document.getElementById("addPreacher").addEventListener("click", async () => {
   const msg = document.getElementById("preacherMsg");
   msg.textContent = "";
   try {
+    const style = lecturerStyle();
     const saved = await window.broadcast.savePreacher({
       name,
-      traits: document.getElementById("traits").value,
-      corrections: document.getElementById("corrections").value,
-      terms: document.getElementById("terms").value,
+      traits: style.traits,
+      corrections: style.corrections,
+      terms: style.terms,
     });
     state.preachers.push(saved);
     state.preachers.sort((a, b) => a.name.localeCompare(b.name, "ko"));
@@ -1935,12 +1995,13 @@ document.getElementById("savePreacher").addEventListener("click", async () => {
     return;
   }
   try {
+    const style = lecturerStyle();
     const saved = await window.broadcast.savePreacher({
       id: preacherEl.value,
       name: document.getElementById("preacherName").value.trim(),
-      traits: document.getElementById("traits").value,
-      corrections: document.getElementById("corrections").value,
-      terms: document.getElementById("terms").value,
+      traits: style.traits,
+      corrections: style.corrections,
+      terms: style.terms,
     });
     state.preachers = state.preachers.map((item) => (item.id === saved.id ? saved : item));
     renderPreachers();
@@ -2080,6 +2141,7 @@ sensitivityEl.addEventListener("change", () => {
   rememberStyle("device:0", lecturerStyle());
   paintGlances();
 });
+bindSpeechEditors();
 ["traits", "corrections", "terms"].forEach((id) => {
   const field = document.getElementById(id);
   if (!field) return;

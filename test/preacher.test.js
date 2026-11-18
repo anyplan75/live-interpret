@@ -196,8 +196,8 @@ test("model failure still saves the raw lesson once", async () => {
   ]) {
     const saved = await refineProfile({ apiKey: "sk-test", profile, lesson, fetchImpl });
     assert.equal(saved.sermonCount, 2);
-    assert.equal(saved.traits, "천천히");
-    assert.equal(saved.terms, "이른비");
+    assert.equal(saved.traits, "[적용] 천천히");
+    assert.equal(saved.terms, "[적용] 이른비");
     assert.match(saved.corrections, /열방을 축복합니다/);
     assert.equal(saved.accuracy, "열반을 → 열방을");
     assert.match(saved.pausePoints, /"께서" 뒤 쉼 2회/);

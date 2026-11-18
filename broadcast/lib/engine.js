@@ -7,6 +7,7 @@ const {
   isModelId,
   redactSecrets,
   sessionContextText,
+  promptSpeechText,
   contextKeywords,
   applyStyleToSettings,
   styleFromSettings,
@@ -979,7 +980,7 @@ class Engine {
       corrections: style.corrections,
       terms: style.terms,
     };
-    const glossary = [base.glossary, style.terms].map((part) => String(part || "").trim()).filter(Boolean).join("\n");
+    const glossary = [base.glossary, promptSpeechText(style.terms)].map((part) => String(part || "").trim()).filter(Boolean).join("\n");
     const context = [base.sessionContext, sessionContextText({ preacher: person })].filter(Boolean).join("\n").slice(0, 3600);
     return { ...base, glossary, sessionContext: context, sensitivity: style.sensitivity || base.sensitivity };
   }

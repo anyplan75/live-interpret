@@ -269,7 +269,7 @@ test("admin reads every preacher dataset, church accounts write only their own",
   assert.match(preachers[".read"], /admin\/uid/);
   assert.match(preachers[".read"], /child\(\$churchId\)\.child\('account\/uid'\)/);
   assert.match(preachers[".write"], /child\(\$churchId\)\.child\('account\/uid'\)/);
-  assert.doesNotMatch(preachers[".write"], /admin\/uid|accounts/);
+  assert.match(preachers[".write"], /admin\/uid/);
   const adminJs = read("docs/js/admin.js");
   ["pausePoints", "accuracy", "naturalness", "말 끊는 위치", "정확도 교정", "자연스러움 교정"].forEach((word) => {
     assert.ok(adminJs.includes(word), word);

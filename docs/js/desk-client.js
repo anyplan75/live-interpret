@@ -40,6 +40,10 @@
   let fontKey = "";
   let captionBusy = 0;
   let overlayBusy = 0;
+  let speechEditors = { traits: null, fixes: null, terms: null };
+  let speechDirty = false;
+  let preacherCache = [];
+  let activePreacherId = "";
 
   function say(text) {
     signInMsg.textContent = text || "";
@@ -789,6 +793,69 @@
     return !el || document.activeElement !== el;
   }
 
+  function speechFocusIdle() {
+    const focus = document.activeElement;
+    if (!focus || !focus.closest) return true;
+    return !focus.closest("#traitsList, #fixesList, #termsList");
+  }
+
+  function syncSpeechHidden() {
+    const traits = speechEditors.traits ? speechEditors.traits.getValue() : "";
+    const fixes = speechEditors.fixes ? speechEditors.fixes.getValue() : "";
+    const terms = speechEditors.terms ? speechEditors.terms.getValue() : "";
+    document.getElementById("traits").value = traits;
+    document.getElementById("fixes").value = fixes;
+    document.getElementById("terms").value = terms;
+    return { traits, fixes, terms };
+  }
+
+  function setSpeechValues(speech) {
+    const row = speech && typeof speech === "object" ? speech : {};
+    if (speechEditors.traits) speechEditors.traits.setValue(row.traits || "");
+    if (speechEditors.fixes) speechEditors.fixes.setValue(row.fixes || "");
+    if (speechEditors.terms) speechEditors.terms.setValue(row.terms || "");
+    syncSpeechHidden();
+  }
+
+  function matchPreacherByName(name) {
+    const norm = (value) => String(value || "").replace(/\s+/g, "").toLowerCase();
+    const target = norm(name);
+    if (!target) return null;
+    return preacherCache.find((row) => {
+      const current = norm(row && row.name);
+      return current && (current === target || current.includes(target) || target.includes(current));
+    }) || null;
+  }
+
+  async function refreshPreachers() {
+    if (!churchId) {
+      preacherCache = [];
+      return [];
+    }
+    const raw = (await dbGet(`churches/${churchId}/preachers`)) || {};
+    preacherCache = Object.entries(raw)
+      .filter(([id, row]) => LI.catalog.isPreacherId(id) && row && typeof row === "object")
+      .map(([id, row]) => ({
+        id,
+        name: typeof row.name === "string" ? row.name : id,
+        traits: typeof row.traits === "string" ? row.traits : "",
+        corrections: typeof row.corrections === "string" ? row.corrections : "",
+        terms: typeof row.terms === "string" ? row.terms : "",
+        pausePoints: typeof row.pausePoints === "string" ? row.pausePoints : "",
+        accuracy: typeof row.accuracy === "string" ? row.accuracy : "",
+        naturalness: typeof row.naturalness === "string" ? row.naturalness : "",
+        sermonCount: Number(row.sermonCount) || 0,
+        createdAt: Number(row.createdAt) || Date.now(),
+        updatedAt: Number(row.updatedAt) || 0,
+      }));
+    return preacherCache;
+  }
+
+  function profileMsg(text) {
+    const el = document.getElementById("preacherProfileMsg");
+    if (el) el.textContent = text || "";
+  }
+
   function choiceValue(box, attr, fallback) {
     const on = box && box.querySelector("button.on");
     if (!on) return fallback;
@@ -815,9 +882,9 @@
       markChoice(document.getElementById("sensitivity"), "data-sense", row.sensitivity || "normal");
     }
     const speech = row.speech || {};
-    if (fieldIdle("traits")) document.getElementById("traits").value = speech.traits || "";
-    if (fieldIdle("fixes")) document.getElementById("fixes").value = speech.fixes || "";
-    if (fieldIdle("terms")) document.getElementById("terms").value = speech.terms || "";
+    if (speechFocusIdle() && !speechDirty) {
+      setSpeechValues(speech);
+    }
     if (!focus || !focus.closest || !focus.closest("#phoneCount")) {
       paintPhoneCount(row.phoneCount || 0);
     }
@@ -1164,6 +1231,7 @@
       return;
     }
     await requireChurch();
+    await refreshPreachers().catch(() => {});
     openDesk(session.email);
   }
 
@@ -1208,14 +1276,40 @@
   document.getElementById("operatorSignOut").addEventListener("click", () => signOut().catch(() => {}));
 
   function speechPatch() {
+    const speech = syncSpeechHidden();
     return {
       sensitivity: choiceValue(document.getElementById("sensitivity"), "data-sense", "normal"),
       speech: {
-        traits: document.getElementById("traits").value,
-        fixes: document.getElementById("fixes").value,
-        terms: document.getElementById("terms").value,
+        traits: speech.traits,
+        fixes: speech.fixes,
+        terms: speech.terms,
       },
     };
+  }
+
+  function bindSpeechEditors() {
+    const ui = LI.speechStyleUi;
+    if (!ui || typeof ui.mount !== "function") return;
+    const onChange = () => {
+      speechDirty = true;
+      syncSpeechHidden();
+      sendPatch(speechPatch());
+    };
+    speechEditors.traits = ui.mount(document.getElementById("traitsList"), {
+      fromLabel: "특이점 말투",
+      toLabel: "변환 말투",
+      onChange,
+    });
+    speechEditors.fixes = ui.mount(document.getElementById("fixesList"), {
+      fromLabel: "잘못 들은 말",
+      toLabel: "바른 말",
+      onChange,
+    });
+    speechEditors.terms = ui.mount(document.getElementById("termsList"), {
+      fromLabel: "원 용어",
+      toLabel: "통일 표기",
+      onChange,
+    });
   }
 
   async function sendPatch(patch) {
@@ -1342,10 +1436,70 @@
     sendPatch(speechPatch());
   });
 
-  ["traits", "fixes", "terms"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", () => sendPatch(speechPatch()));
+  document.getElementById("loadPreacherProfile").addEventListener("click", async () => {
+    try {
+      await ensureToken();
+      await refreshPreachers();
+      const name = document.getElementById("preacherName").value.trim();
+      const matched = matchPreacherByName(name);
+      if (!matched) {
+        activePreacherId = "";
+        profileMsg(name ? `"${name}" 이름으로 저장된 강연자가 없습니다.` : "먼저 이름을 입력하세요.");
+        return;
+      }
+      activePreacherId = matched.id;
+      speechDirty = true;
+      setSpeechValues({
+        traits: matched.traits,
+        fixes: matched.corrections,
+        terms: matched.terms,
+      });
+      await sendPatch(speechPatch());
+      profileMsg(`${matched.name} 프로필을 불러왔습니다. 적용/무시와 변환을 고친 뒤 저장할 수 있습니다.`);
+    } catch (err) {
+      profileMsg(personText(err));
+    }
   });
 
+  document.getElementById("savePreacherProfile").addEventListener("click", async () => {
+    try {
+      await ensureToken();
+      const name = document.getElementById("preacherName").value.trim();
+      if (!name) {
+        profileMsg("저장할 강연자 이름을 입력하세요.");
+        return;
+      }
+      await refreshPreachers();
+      const speech = syncSpeechHidden();
+      const matched = matchPreacherByName(name);
+      const id = (activePreacherId && LI.catalog.isPreacherId(activePreacherId))
+        ? activePreacherId
+        : (matched && matched.id) || LI.catalog.makePreacherId(name);
+      const existing = preacherCache.find((row) => row.id === id) || matched || null;
+      const next = {
+        name,
+        traits: speech.traits,
+        corrections: speech.fixes,
+        terms: speech.terms,
+        pausePoints: existing ? existing.pausePoints : "",
+        accuracy: existing ? existing.accuracy : "",
+        naturalness: existing ? existing.naturalness : "",
+        sermonCount: existing ? existing.sermonCount : 0,
+        createdAt: existing && existing.createdAt ? existing.createdAt : Date.now(),
+        updatedAt: Date.now(),
+      };
+      await dbPut(`churches/${churchId}/preachers/${id}`, next);
+      activePreacherId = id;
+      speechDirty = false;
+      await refreshPreachers();
+      await sendPatch(speechPatch());
+      profileMsg(`${name} 프로필을 이 계정에 저장했습니다.`);
+    } catch (err) {
+      profileMsg(personText(err));
+    }
+  });
+
+  bindSpeechEditors();
   paintPhoneCount(0);
 
   document.getElementById("pickBulletin").addEventListener("change", async (event) => {
