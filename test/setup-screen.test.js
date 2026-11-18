@@ -13,15 +13,15 @@ test("a single registered speaker is selected and a saved choice stays", () => {
   assert.equal(preacherToSelect([{ id: "kim" }, { id: "lee" }], "lee"), "lee");
   assert.equal(preacherToSelect([{ id: "kim" }], "missing"), "kim");
   assert.equal(preacherToSelect([], "kim"), "");
-  assert.deepEqual(SESSION_KINDS, ["설교", "강의", "연설", "행사"]);
+  assert.deepEqual(SESSION_KINDS, ["강연", "예배", "회의", "설교", "강의", "연설", "행사"]);
 });
 
 test("incomplete setup lists every missing choice at once", () => {
-  assert.deepEqual(missingSetup({}), ["저장 폴더", "강연자", "내용", "번역할 언어", "입력 장치"]);
+  assert.deepEqual(missingSetup({}), ["저장 폴더", "강연자", "모드", "번역할 언어", "입력 장치"]);
   assert.deepEqual(missingSetup({
     folder: "/tmp/talks",
     preacherId: "kim",
-    sessionKind: "강의",
+    sessionKind: "강연",
     targets: ["en"],
     deviceKey: "core:0",
   }), []);
@@ -31,7 +31,7 @@ test("incomplete setup lists every missing choice at once", () => {
     sessionKind: "예배",
     targets: [],
     deviceKey: "core:0",
-  }), ["저장 폴더", "내용", "번역할 언어"]);
+  }), ["저장 폴더", "번역할 언어"]);
   assert.deepEqual(missingSetup({
     folder: "/tmp/talks",
     folderReady: false,
@@ -185,7 +185,7 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   const startMain = main.slice(main.indexOf("async function beginBroadcast"), main.indexOf("async function endBroadcast"));
   assert.ok(startMain.indexOf("openSavedFolder") < startMain.indexOf("engine.start"));
   assert.match(startMain, /고른 폴더에 기록을 만들 수 없습니다/);
-  assert.match(startMain, /\["설교", "강의", "연설", "행사"\]/);
+  assert.match(startMain, /\["강연", "예배", "회의", "설교", "강의", "연설", "행사"\]/);
   // 장치 키가 비어도 monitor를 호출해 기본 마이크를 엽니다. 무신호도 시작을 막지 않습니다.
   assert.match(startMain, /engine\.monitor\(key/);
   assert.doesNotMatch(startMain, /if \(key\) engine\.monitor/);
@@ -203,8 +203,8 @@ test("the top of the app is settings, start, and stop, and start opens settings 
   assert.match(settingsBlock, /id="channels"/);
   assert.match(settingsBlock, /id="pickBulletin"/);
   assert.match(settingsBlock, /id="subtitleStyleCard"/);
-  assert.match(settingsBlock, /value="설교"/);
-  assert.match(settingsBlock, /value="강의"/);
-  assert.match(settingsBlock, /value="연설"/);
-  assert.match(settingsBlock, /value="행사"/);
+  assert.match(settingsBlock, /value="강연"/);
+  assert.match(settingsBlock, /value="예배"/);
+  assert.match(settingsBlock, /value="회의"/);
+  assert.doesNotMatch(settingsBlock, /value="설교"|value="강의"/);
 });

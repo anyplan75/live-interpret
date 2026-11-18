@@ -6,8 +6,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>통역 설정</title>
-  <!-- desk-build 20261118a: 말투 원문→변환 목록·강연자 프로필 저장 -->
-  <link rel="stylesheet" href="../css/phone-app.css?v=20261118a">
+  <!-- desk-build 20261118b: 자막링크 앞·모드별 자료·말투 한 틀 -->
+  <link rel="stylesheet" href="../css/phone-app.css?v=20261118b">
   <style>
     /* desk: 위는 조작·금액, 가운데는 모니터, 연결은 넓게 언어 위 */
     body { padding: 16px 16px 40px; }
@@ -405,6 +405,52 @@
     }
     .speech-add,
     .speech-remove { white-space: nowrap; }
+    .speech-panel {
+      border: 1px solid #334155;
+      border-radius: 12px;
+      background: #121a24;
+      padding: 10px;
+      margin: 8px 0 12px;
+    }
+    .speech-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .speech-tabs button {
+      margin: 0;
+      padding: 6px 10px;
+      font-size: 0.88rem;
+    }
+    .speech-frame {
+      max-height: 220px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .speech-frame[hidden] { display: none; }
+    .material-slots {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .material-slot {
+      padding: 10px;
+      border-radius: 10px;
+      background: #121a24;
+      border: 1px solid #334155;
+    }
+    .material-slot label { margin: 0 0 6px; font-weight: 700; }
+    .material-slot input[type="file"] { width: 100%; margin: 0; }
+    .material-slot .hint { margin: 6px 0 0; }
+    .material-slots[data-mode=""] .material-slot { display: none; }
+    .material-slots[data-mode="강연"] .for-worship,
+    .material-slots[data-mode="강연"] .for-meeting { display: none; }
+    .material-slots[data-mode="예배"] .for-lecture,
+    .material-slots[data-mode="예배"] .for-meeting { display: none; }
+    .material-slots[data-mode="회의"] .for-lecture,
+    .material-slots[data-mode="회의"] .for-worship { display: none; }
     details.setup:not(.setup-info) textarea {
       width: min(320px, 100%);
       min-height: 56px;
@@ -566,9 +612,23 @@
         </article>
       </section>
 
+      <details class="setup setup-info" open>
+        <summary>자막링크</summary>
+        <p class="hint">복사·저장·공유로 나눠 주세요. 연결이 늘어도 이 칸이 먼저 보입니다.</p>
+        <div id="captionLinks" class="caption-grid"></div>
+        <p class="hint" id="captionMsg"></p>
+      </details>
+
+      <details class="setup setup-info">
+        <summary>OBS 오버레이</summary>
+        <p class="hint">고른 언어의 OBS 브라우저 소스 주소입니다. overlay.html?church=…&amp;lang=… 형식입니다.</p>
+        <div id="overlayLinks" class="caption-grid"></div>
+        <p class="hint" id="overlayMsg"></p>
+      </details>
+
       <aside class="panel conn">
         <h2>연결 상태</h2>
-        <p class="hint">마이크·휴대폰·말하는 언어·막대</p>
+        <p class="hint">마이크·휴대폰·말하는 언어·막대. 연결이 많아지면 이 칸이 아래로 길어집니다.</p>
         <div id="inputs" class="inputs"></div>
         <p class="hint" id="offline">방송실 앱이 아직 연결되지 않았습니다.</p>
         <details class="setup" style="margin-top:8px; width:100%; max-width:100%">
@@ -581,20 +641,6 @@
         <summary>오늘 번역할 언어</summary>
         <p class="hint">누른 언어로 번역합니다. 말하는 언어는 보통 한국어입니다.</p>
         <div id="langs" class="chips"></div>
-      </details>
-
-      <details class="setup setup-info" open>
-        <summary>자막링크</summary>
-        <p class="hint">복사·저장·공유로 나눠 주세요.</p>
-        <div id="captionLinks" class="caption-grid"></div>
-        <p class="hint" id="captionMsg"></p>
-      </details>
-
-      <details class="setup setup-info" open>
-        <summary>OBS 오버레이</summary>
-        <p class="hint">고른 언어의 OBS 브라우저 소스 주소입니다. overlay.html?church=…&amp;lang=… 형식입니다.</p>
-        <div id="overlayLinks" class="caption-grid"></div>
-        <p class="hint" id="overlayMsg"></p>
       </details>
 
       <details class="setup setup-info">
@@ -629,21 +675,31 @@
 
       <details class="setup setup-info">
         <summary>말투와 감도</summary>
-        <p class="hint">감도는 방송 중에도 바로 적용됩니다. 말투·교정·용어는 원문과 변환을 한 줄씩 적고, 적용/무시를 고릅니다. 이름은 아래 「내용과 이름」에서 정한 강연자 기준으로 이 계정에 저장합니다.</p>
+        <p class="hint">이름(강연자·설교자·사회자)마다 이 계정에 말투와 감도를 저장합니다. 한 틀 안에서 탭으로 보고, 목록이 길면 그 칸만 스크롤합니다.</p>
         <label>인식 감도</label>
         <div class="choice" id="sensitivity" role="group" aria-label="인식 감도">
           <button type="button" data-sense="high">감도 높음</button>
           <button type="button" data-sense="normal" class="on">감도 보통</button>
           <button type="button" data-sense="low">감도 낮음</button>
         </div>
-        <label>말투</label>
-        <div id="traitsList" class="speech-list" aria-label="말투 목록"></div>
-        <label>교정</label>
-        <div id="fixesList" class="speech-list" aria-label="교정 목록"></div>
-        <label>용어</label>
-        <div id="termsList" class="speech-list" aria-label="용어 목록"></div>
+        <div class="speech-panel">
+          <div class="speech-tabs" role="tablist" aria-label="말투 교정 용어">
+            <button type="button" class="on" data-speech-tab="traits">말투</button>
+            <button type="button" data-speech-tab="fixes">교정</button>
+            <button type="button" data-speech-tab="terms">용어</button>
+          </div>
+          <div class="speech-frame" data-speech-panel="traits">
+            <div id="traitsList" class="speech-list" aria-label="말투 목록"></div>
+          </div>
+          <div class="speech-frame" data-speech-panel="fixes" hidden>
+            <div id="fixesList" class="speech-list" aria-label="교정 목록"></div>
+          </div>
+          <div class="speech-frame" data-speech-panel="terms" hidden>
+            <div id="termsList" class="speech-list" aria-label="용어 목록"></div>
+          </div>
+        </div>
         <div class="row" style="margin-top:8px; gap:8px; flex-wrap:wrap;">
-          <button type="button" id="savePreacherProfile">강연자 프로필 저장</button>
+          <button type="button" id="savePreacherProfile">이름별 프로필 저장</button>
           <button type="button" class="ghost" id="loadPreacherProfile">이름으로 불러오기</button>
         </div>
         <p class="hint" id="preacherProfileMsg"></p>
@@ -653,30 +709,63 @@
       </details>
 
       <div class="controls">
-        <details class="setup">
+        <details class="setup" open>
+          <summary>모드와 이름</summary>
+          <p class="hint">시작 전에 모드를 고르면, 그 모드에 맞는 기초 자료를 참고합니다.</p>
+          <label>모드</label>
+          <div class="choice" id="sessionKind" role="group" aria-label="모드">
+            <button type="button" data-kind="">선택 안 함</button>
+            <button type="button" data-kind="강연">강연</button>
+            <button type="button" data-kind="예배">예배</button>
+            <button type="button" data-kind="회의">회의</button>
+          </div>
+          <label for="preacherName" id="roleNameLabel">이름</label>
+          <input id="preacherName" maxlength="40" placeholder="자막에 보일 이름">
+          <label class="check"><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
+        </details>
+
+        <details class="setup" open>
           <summary>시작 전 준비</summary>
           <p class="hint">기록 폴더는 방송실 앱에서 고릅니다. 폴더가 준비되기 전에는 시작할 수 없습니다.</p>
           <p class="hint" id="folderLine">기록 폴더는 방송실 앱에서 고릅니다.</p>
           <ul id="setupGaps" class="setup-gaps" hidden></ul>
-          <h2>진행자료</h2>
-          <p class="hint">순서지 사진을 올리면 방송실 컴퓨터에 저장하고 분석합니다.</p>
-          <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
-          <p class="hint" id="bulletinMsg">아직 올린 진행자료가 없습니다.</p>
-        </details>
-
-        <details class="setup">
-          <summary>내용과 이름</summary>
-          <p class="hint">자막에 보일 이름과 오늘 내용 종류를 정합니다.</p>
-          <label>종류</label>
-          <div class="choice" id="sessionKind" role="group" aria-label="종류">
-            <button type="button" data-kind="">선택 안 함</button>
-            <button type="button" data-kind="강의">강의</button>
-            <button type="button" data-kind="연설">연설</button>
-            <button type="button" data-kind="행사">행사</button>
+          <h2>기초 자료</h2>
+          <p class="hint" id="materialHint">모드를 고르면 올릴 자료 칸이 바뀝니다. 사진·이미지로 올리면 방송실에서 분석해 교정에 씁니다.</p>
+          <div class="material-slots" id="materialSlots" data-mode="">
+            <div class="material-slot for-lecture">
+              <label for="pickMaterialLecture">강연자료</label>
+              <input id="pickMaterialLecture" type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-material="강연자료">
+              <p class="hint">순서·슬라이드·발표 원고 사진</p>
+            </div>
+            <div class="material-slot for-worship">
+              <label for="pickMaterialBulletin">주보</label>
+              <input id="pickMaterialBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-material="주보">
+              <p class="hint">예배 순서·제목·설교자</p>
+            </div>
+            <div class="material-slot for-worship">
+              <label for="pickMaterialScripture">성경·말씀</label>
+              <input id="pickMaterialScripture" type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-material="성경말씀">
+              <p class="hint">본문·구절 사진</p>
+            </div>
+            <div class="material-slot for-worship">
+              <label for="pickMaterialHymn">찬송가</label>
+              <input id="pickMaterialHymn" type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-material="찬송가">
+              <p class="hint">찬송·찬양 곡 사진</p>
+            </div>
+            <div class="material-slot for-worship">
+              <label for="pickMaterialPrayer">주기도문·사도신경</label>
+              <input id="pickMaterialPrayer" type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-material="공동기도문">
+              <p class="hint">공동으로 읽는 글</p>
+            </div>
+            <div class="material-slot for-meeting">
+              <label for="pickMaterialMeeting">회의자료</label>
+              <input id="pickMaterialMeeting" type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-material="회의자료">
+              <p class="hint">안건·회의 순서</p>
+            </div>
           </div>
-          <label for="preacherName">이름</label>
-          <input id="preacherName" maxlength="40" placeholder="자막에 보일 이름">
-          <label class="check"><input id="showName" type="checkbox" checked> 이름을 자막에 표시</label>
+          <input id="pickBulletin" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+          <p class="hint" id="bulletinMsg">아직 올린 자료가 없습니다.</p>
+          <ul id="materialLog" class="setup-gaps" hidden></ul>
         </details>
 
         <details class="setup">
@@ -700,14 +789,14 @@
       <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
     </section>
   </main>
-  <script src="../js/phone-firebase-env.js?v=20261118a"></script>
-  <script src="../js/languages.js?v=20261118a"></script>
-  <script src="../js/catalog.js?v=20261118a"></script>
-  <script src="../js/speech-style-ui.js?v=20261118a"></script>
-  <script src="../js/cost.js?v=20261118a"></script>
-  <script src="../js/org-services.js?v=20261118a"></script>
-  <script src="../js/room-sync.js?v=20261118a"></script>
-  <script src="../js/qrcode-browser.js?v=20261118a"></script>
-  <script src="../js/desk-client.js?v=20261118a"></script>
+  <script src="../js/phone-firebase-env.js?v=20261118b"></script>
+  <script src="../js/languages.js?v=20261118b"></script>
+  <script src="../js/catalog.js?v=20261118b"></script>
+  <script src="../js/speech-style-ui.js?v=20261118b"></script>
+  <script src="../js/cost.js?v=20261118b"></script>
+  <script src="../js/org-services.js?v=20261118b"></script>
+  <script src="../js/room-sync.js?v=20261118b"></script>
+  <script src="../js/qrcode-browser.js?v=20261118b"></script>
+  <script src="../js/desk-client.js?v=20261118b"></script>
 </body>
 </html>
