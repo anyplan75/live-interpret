@@ -144,6 +144,32 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .style-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .style-grid label { font-size: 0.86rem; }
 textarea { min-height: 68px; resize: vertical; }
+.speech-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.speech-head,
+.speech-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(0, 1fr) 56px;
+  gap: 6px;
+  align-items: center;
+}
+.speech-head {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+.speech-row input,
+.speech-row select {
+  width: 100%;
+  margin: 0;
+  font-size: 0.88rem;
+}
+.speech-add,
+.speech-remove { white-space: nowrap; }
 input[type="color"] { width: 100%; height: 40px; padding: 4px; background: #0d1218; border: 1px solid var(--line); border-radius: 10px; }
 .font-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); }
 .font-row .font-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }

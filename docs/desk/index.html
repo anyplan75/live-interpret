@@ -6,8 +6,8 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <title>통역 설정</title>
-  <!-- desk-build 20261107g: 시작확인 3초·방송잔존·교정표시·1시간시계 -->
-  <link rel="stylesheet" href="../css/phone-app.css?v=20261107g">
+  <!-- desk-build 20261118a: 말투 원문→변환 목록·강연자 프로필 저장 -->
+  <link rel="stylesheet" href="../css/phone-app.css?v=20261118a">
   <style>
     /* desk: 위는 조작·금액, 가운데는 모니터, 연결은 넓게 언어 위 */
     body { padding: 16px 16px 40px; }
@@ -379,6 +379,32 @@
       font-size: 1rem;
       line-height: 1.45;
     }
+    .speech-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 6px 0 12px;
+    }
+    .speech-head,
+    .speech-row {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr) minmax(0, 1fr) 56px;
+      gap: 6px;
+      align-items: center;
+    }
+    .speech-head {
+      font-size: 0.78rem;
+      color: #8b98a8;
+      font-weight: 700;
+    }
+    .speech-row input,
+    .speech-row select {
+      width: 100%;
+      margin: 0;
+      font-size: 0.9rem;
+    }
+    .speech-add,
+    .speech-remove { white-space: nowrap; }
     details.setup:not(.setup-info) textarea {
       width: min(320px, 100%);
       min-height: 56px;
@@ -603,19 +629,27 @@
 
       <details class="setup setup-info">
         <summary>말투와 감도</summary>
-        <p class="hint">감도는 방송 중에도 바로 적용됩니다. 말투·교정·용어는 넓게 보입니다.</p>
+        <p class="hint">감도는 방송 중에도 바로 적용됩니다. 말투·교정·용어는 원문과 변환을 한 줄씩 적고, 적용/무시를 고릅니다. 이름은 아래 「내용과 이름」에서 정한 강연자 기준으로 이 계정에 저장합니다.</p>
         <label>인식 감도</label>
         <div class="choice" id="sensitivity" role="group" aria-label="인식 감도">
           <button type="button" data-sense="high">감도 높음</button>
           <button type="button" data-sense="normal" class="on">감도 보통</button>
           <button type="button" data-sense="low">감도 낮음</button>
         </div>
-        <label for="traits">말투</label>
-        <textarea id="traits"></textarea>
-        <label for="fixes">교정</label>
-        <textarea id="fixes"></textarea>
-        <label for="terms">용어</label>
-        <textarea id="terms"></textarea>
+        <label>말투</label>
+        <div id="traitsList" class="speech-list" aria-label="말투 목록"></div>
+        <label>교정</label>
+        <div id="fixesList" class="speech-list" aria-label="교정 목록"></div>
+        <label>용어</label>
+        <div id="termsList" class="speech-list" aria-label="용어 목록"></div>
+        <div class="row" style="margin-top:8px; gap:8px; flex-wrap:wrap;">
+          <button type="button" id="savePreacherProfile">강연자 프로필 저장</button>
+          <button type="button" class="ghost" id="loadPreacherProfile">이름으로 불러오기</button>
+        </div>
+        <p class="hint" id="preacherProfileMsg"></p>
+        <textarea id="traits" hidden></textarea>
+        <textarea id="fixes" hidden></textarea>
+        <textarea id="terms" hidden></textarea>
       </details>
 
       <div class="controls">
@@ -666,13 +700,14 @@
       <button type="button" class="ghost" id="operatorSignOut">로그아웃</button>
     </section>
   </main>
-  <script src="../js/phone-firebase-env.js?v=20261107g"></script>
-  <script src="../js/languages.js?v=20261107g"></script>
-  <script src="../js/catalog.js?v=20261107g"></script>
-  <script src="../js/cost.js?v=20261107g"></script>
-  <script src="../js/org-services.js?v=20261107g"></script>
-  <script src="../js/room-sync.js?v=20261107g"></script>
-  <script src="../js/qrcode-browser.js?v=20261107g"></script>
-  <script src="../js/desk-client.js?v=20261107g"></script>
+  <script src="../js/phone-firebase-env.js?v=20261118a"></script>
+  <script src="../js/languages.js?v=20261118a"></script>
+  <script src="../js/catalog.js?v=20261118a"></script>
+  <script src="../js/speech-style-ui.js?v=20261118a"></script>
+  <script src="../js/cost.js?v=20261118a"></script>
+  <script src="../js/org-services.js?v=20261118a"></script>
+  <script src="../js/room-sync.js?v=20261118a"></script>
+  <script src="../js/qrcode-browser.js?v=20261118a"></script>
+  <script src="../js/desk-client.js?v=20261118a"></script>
 </body>
 </html>

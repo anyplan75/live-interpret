@@ -325,14 +325,80 @@
     return text.slice(0, max);
   }
 
+  /** 말투·교정·용어 한 줄: [적용|무시] 원문 → 변환 */
+  function parseSpeechLine(line) {
+    const raw = String(line || "").replace(/\r/g, "").trim();
+    if (!raw) return null;
+    let action = "apply";
+    let body = raw;
+    const tagged = body.match(/^\[(적용|무시|apply|ignore)\]\s*/i);
+    if (tagged) {
+      action = /무시|ignore/i.test(tagged[1]) ? "ignore" : "apply";
+      body = body.slice(tagged[0].length).trim();
+    }
+    const parts = body.split(/\s*(?:→|->)\s*/).map((part) => part.trim());
+    const from = parts[0] || "";
+    if (!from) return null;
+    const to = parts.length > 1 ? parts.slice(1).filter(Boolean).join(" → ").trim() : "";
+    return { action, from, to };
+  }
+
+  function formatSpeechLine(row) {
+    if (!row || !row.from) return "";
+    const tag = row.action === "ignore" ? "[무시]" : "[적용]";
+    return row.to ? `${tag} ${row.from} → ${row.to}` : `${tag} ${row.from}`;
+  }
+
+  function parseSpeechLines(text) {
+    return String(text || "")
+      .replace(/\r/g, "")
+      .split("\n")
+      .map((line) => parseSpeechLine(line))
+      .filter(Boolean);
+  }
+
+  function speechLineKey(row) {
+    return String(row && row.from || "")
+      .replace(/["'“”‘’]/g, "")
+      .replace(/\s+/g, "")
+      .toLowerCase();
+  }
+
+  function mergeSpeechLines(current, extra, maxLines, maxChars) {
+    const rows = new Map();
+    [...parseSpeechLines(current), ...parseSpeechLines(extra)].forEach((row) => {
+      const key = speechLineKey(row);
+      if (!key) return;
+      rows.delete(key);
+      rows.set(key, row);
+    });
+    let lines = [...rows.values()].map(formatSpeechLine).filter(Boolean);
+    if (Number.isFinite(maxLines) && maxLines > 0) lines = lines.slice(-maxLines);
+    while (Number.isFinite(maxChars) && maxChars > 0 && lines.join("\n").length > maxChars && lines.length > 1) {
+      lines = lines.slice(1);
+    }
+    return lines.join("\n");
+  }
+
+  /** 인식·번역 프롬프트에 넣을 적용 줄만. 형식은 "원문 → 변환". */
+  function promptSpeechText(text) {
+    return parseSpeechLines(text)
+      .filter((row) => row.action !== "ignore")
+      .map((row) => (row.to ? `${row.from} → ${row.to}` : row.from))
+      .join("\n");
+  }
+
   function sessionContextText(parts) {
     const bulletin = parts && parts.bulletin ? parts.bulletin : null;
     const preacher = parts && parts.preacher ? parts.preacher : null;
     const lines = [];
     if (preacher && preacher.name) lines.push(`설교자: ${clipLine(preacher.name, 80)}`);
-    if (preacher && preacher.traits) lines.push(`말투: ${clipLine(preacher.traits, 400)}`);
-    if (preacher && preacher.corrections) lines.push(`교정: ${clipLine(preacher.corrections, 500)}`);
-    if (preacher && preacher.terms) lines.push(`용어: ${clipLine(preacher.terms, 500)}`);
+    const traits = promptSpeechText(preacher && preacher.traits);
+    const corrections = promptSpeechText(preacher && preacher.corrections);
+    const terms = promptSpeechText(preacher && preacher.terms);
+    if (traits) lines.push(`말투: ${clipLine(traits, 400)}`);
+    if (corrections) lines.push(`교정: ${clipLine(corrections, 500)}`);
+    if (terms) lines.push(`용어: ${clipLine(terms, 500)}`);
     if (preacher && preacher.pausePoints) lines.push(`말 끊는 위치(문장이 이어짐): ${clipLine(preacher.pausePoints, 300)}`);
     if (preacher && preacher.accuracy) lines.push(`정확도 교정: ${clipLine(preacher.accuracy, 450)}`);
     if (preacher && preacher.naturalness) lines.push(`자연스러움 교정: ${clipLine(preacher.naturalness, 450)}`);
@@ -583,6 +649,11 @@
     isPreacherId,
     makePreacherId,
     isModelId,
+    parseSpeechLine,
+    formatSpeechLine,
+    parseSpeechLines,
+    mergeSpeechLines,
+    promptSpeechText,
     sessionContextText,
     contextKeywords,
     sanitizeStyle,

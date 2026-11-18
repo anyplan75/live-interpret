@@ -1,5 +1,6 @@
 const { parseJsonSafe } = require("./translator");
 const sentence = require("./sentence");
+const catalog = require("./catalog");
 
 const LIMITS = {
   traits: [12, 800],
@@ -119,9 +120,9 @@ function mergeProfile(profile, lesson) {
   const name = textOf(extra.name || base.name);
   return {
     name,
-    traits: mergeLines(base.traits, extra.traits, ...LIMITS.traits),
-    corrections: mergeLines(base.corrections, extra.corrections, ...LIMITS.corrections),
-    terms: mergeLines(base.terms, extra.terms, ...LIMITS.terms),
+    traits: catalog.mergeSpeechLines(base.traits, extra.traits, ...LIMITS.traits),
+    corrections: catalog.mergeSpeechLines(base.corrections, extra.corrections, ...LIMITS.corrections),
+    terms: catalog.mergeSpeechLines(base.terms, extra.terms, ...LIMITS.terms),
     pausePoints: mergePausePoints(base.pausePoints, extra.pausePoints, ...LIMITS.pausePoints),
     accuracy: mergeCorrections(base.accuracy, extra.accuracy, ...LIMITS.accuracy),
     naturalness: mergeCorrections(base.naturalness, extra.naturalness, ...LIMITS.naturalness),
@@ -180,7 +181,7 @@ function lessonFromLines(pairs, extra) {
     const heard = textOf(pair && pair.heard);
     const corrected = textOf(pair && pair.corrected);
     if (!heard || !corrected || heard === corrected) return;
-    corrections.push(`${heard} → ${corrected}`);
+    corrections.push(`[적용] ${heard} → ${corrected}`);
     const fix = wordFix(heard, corrected);
     if (fix) accuracy.push(fix);
   });
@@ -238,7 +239,10 @@ async function refineProfile(opts) {
   const prompt = [
     "한국 교회 설교자의 인식·번역 프로필을 갱신하라.",
     "기존 프로필과 오늘 설교에서 고친 문장, 오늘 번역 예시를 보고 짧게 정리하라.",
-    "traits: 말투. corrections: 한국어 인식 교정(잘못 들은 말 → 바른 말). terms: 이 설교자가 자주 쓰는 용어.",
+    "traits·corrections·terms는 한 줄에 하나. 형식은 반드시 \"[적용] 원문 → 변환\" 또는 \"[무시] 원문 → 변환\".",
+    "traits: 이 설교자만의 말투 특이점(원문)과, 인식·번역에서 쓸 변환 말투.",
+    "corrections: 한국어 인식 교정(잘못 들은 말 → 바른 말).",
+    "terms: 자주 쓰는 용어(원 표기 → 통일 표기).",
     "accuracy: 번역을 더 정확하게 만드는 교정. 오역·용어 오류만. 형식은 한 줄에 하나, \"한국어 표현 → 바른 번역 (언어코드)\".",
     "naturalness: 번역을 더 자연스럽게 만드는 교정. 뜻은 맞지만 어색한 번역만. 형식은 한 줄에 하나, \"어색한 번역 → 자연스러운 번역 (언어코드)\".",
     "accuracy와 naturalness는 오늘 예시에서 새로 배운 것만 넣고, 확실하지 않으면 비워라.",

@@ -109,6 +109,35 @@ pre.transcript {
   overflow: auto;
 }
 
+.speech-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0 12px;
+}
+.speech-head,
+.speech-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(0, 1fr) 56px;
+  gap: 6px;
+  align-items: center;
+}
+.speech-head {
+  font-size: 0.78rem;
+  color: #9aa7b5;
+  font-weight: 700;
+}
+.speech-row input,
+.speech-row select {
+  width: 100%;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.speech-add,
+.speech-remove {
+  white-space: nowrap;
+}
+
 .stack label { display: block; font-weight: 700; margin: 10px 0 6px; }
 .stack input, .stack select { width: 100%; }
 .msg { min-height: 1.2em; color: #7dcea0; }

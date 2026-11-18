@@ -464,11 +464,16 @@ function renderAccount(account) {
 function renderPreachers(raw) {
   const box = document.getElementById("preachers");
   box.innerHTML = "";
-  const rows = !raw || typeof raw !== "object" ? [] : Object.values(raw).filter((row) => row && row.name);
+  const rows = !raw || typeof raw !== "object"
+    ? []
+    : Object.entries(raw)
+      .filter(([id, row]) => LI.catalog.isPreacherId(id) && row && row.name)
+      .map(([id, row]) => ({ id, ...row }));
   if (!rows.length) {
     box.innerHTML = '<p class="hint">아직 등록된 설교자가 없습니다.</p>';
     return;
   }
+  const ui = LI.speechStyleUi;
   rows.sort((a, b) => String(a.name).localeCompare(String(b.name), "ko")).forEach((row) => {
     const card = document.createElement("div");
     card.className = "link-box";
@@ -478,19 +483,84 @@ function renderPreachers(raw) {
       ? ` · 최근 반영 ${new Date(row.updatedAt).toLocaleString("ko-KR")}`
       : "";
     title.textContent = `${row.name} · 설교 ${row.sermonCount || 0}회${updated}`;
-    const body = document.createElement("pre");
-    body.className = "transcript";
+    card.append(title);
+
+    const traitsHost = document.createElement("div");
+    const fixesHost = document.createElement("div");
+    const termsHost = document.createElement("div");
+    const traitsLabel = document.createElement("label");
+    traitsLabel.textContent = "말투";
+    const fixesLabel = document.createElement("label");
+    fixesLabel.textContent = "교정";
+    const termsLabel = document.createElement("label");
+    termsLabel.textContent = "용어";
+    card.append(traitsLabel, traitsHost, fixesLabel, fixesHost, termsLabel, termsHost);
+
+    const traits = ui.mount(traitsHost, {
+      value: row.traits || "",
+      fromLabel: "특이점 말투",
+      toLabel: "변환 말투",
+    });
+    const fixes = ui.mount(fixesHost, {
+      value: row.corrections || "",
+      fromLabel: "잘못 들은 말",
+      toLabel: "바른 말",
+    });
+    const terms = ui.mount(termsHost, {
+      value: row.terms || "",
+      fromLabel: "원 용어",
+      toLabel: "통일 표기",
+    });
+
+    const extra = document.createElement("pre");
+    extra.className = "transcript";
     const text = (value) => (typeof value === "string" ? value.trim() : "");
-    body.textContent = [
-      ["말투", row.traits],
-      ["교정", row.corrections],
-      ["용어", row.terms],
+    const extras = [
       ["말 끊는 위치", row.pausePoints],
       ["정확도 교정 (더 정확한 번역)", row.accuracy],
       ["자연스러움 교정 (더 자연스러운 번역)", row.naturalness],
-    ].filter(([, value]) => text(value)).map(([label, value]) => `${label}\n${text(value)}`).join("\n\n")
-      || "아직 쌓인 프로필이 없습니다.";
-    card.append(title, body);
+    ].filter(([, value]) => text(value)).map(([label, value]) => `${label}\n${text(value)}`).join("\n\n");
+    if (extras) extra.textContent = extras;
+    else {
+      extra.className = "hint";
+      extra.textContent = "말 끊는 위치·정확도·자연스러움은 방송이 끝난 뒤 자동으로 쌓입니다.";
+    }
+    card.append(extra);
+
+    const rowBar = document.createElement("div");
+    rowBar.className = "row";
+    rowBar.style.marginTop = "8px";
+    const save = document.createElement("button");
+    save.type = "button";
+    save.textContent = "이 강연자 저장";
+    const msg = document.createElement("p");
+    msg.className = "msg";
+    save.addEventListener("click", async () => {
+      try {
+        if (!currentId) throw new Error("교회를 먼저 고르세요.");
+        await LI.db.set(`churches/${currentId}/preachers/${row.id}`, {
+          name: String(row.name || "").trim(),
+          traits: traits.getValue(),
+          corrections: fixes.getValue(),
+          terms: terms.getValue(),
+          pausePoints: text(row.pausePoints),
+          accuracy: text(row.accuracy),
+          naturalness: text(row.naturalness),
+          sermonCount: Number(row.sermonCount) || 0,
+          createdAt: Number(row.createdAt) || Date.now(),
+          updatedAt: Date.now(),
+        });
+        msg.textContent = `${row.name} 프로필을 저장했습니다.`;
+        msg.classList.remove("error");
+      } catch (err) {
+        msg.textContent = LI.catalog.authErrorMessage
+          ? LI.catalog.authErrorMessage(err && err.code, err && err.message)
+          : String(err && err.message || err);
+        msg.classList.add("error");
+      }
+    });
+    rowBar.append(save);
+    card.append(rowBar, msg);
     box.append(card);
   });
 }

@@ -107,7 +107,7 @@
 
         <details class="card fold">
           <summary><span class="fold-title">강연자</span><span class="fold-value" id="preacherGlance">선택 안 함</span></summary>
-          <p class="hint">이번 시간의 강연자 한 명을 고릅니다. 끝나면 말투, 교정, 용어가 쌓여 다음에 반영됩니다.</p>
+          <p class="hint">이번 시간의 강연자 한 명을 고릅니다. 말투·교정·용어는 원문 → 변환으로 나열하고 적용/무시를 고릅니다. 이 계정에 그 이름마다 저장됩니다.</p>
           <select id="preacher"></select>
           <label for="preacherName">이름</label>
           <input id="preacherName" type="text" maxlength="80">
@@ -117,12 +117,15 @@
           </label>
           <details class="fold-inner">
             <summary><span class="fold-title">말투와 교정</span><span class="fold-value" id="speechGlance">감도 보통</span></summary>
-            <label for="traits">말투</label>
-            <textarea id="traits"></textarea>
-            <label for="corrections">교정</label>
-            <textarea id="corrections"></textarea>
-            <label for="terms">용어</label>
-            <textarea id="terms"></textarea>
+            <label>말투</label>
+            <div id="traitsList" class="speech-list" aria-label="말투 목록"></div>
+            <label>교정</label>
+            <div id="correctionsList" class="speech-list" aria-label="교정 목록"></div>
+            <label>용어</label>
+            <div id="termsList" class="speech-list" aria-label="용어 목록"></div>
+            <textarea id="traits" hidden></textarea>
+            <textarea id="corrections" hidden></textarea>
+            <textarea id="terms" hidden></textarea>
             <label for="sensitivity">인식 감도</label>
             <select id="sensitivity" title="입력 감도">
               <option value="high">감도 높음</option>
@@ -256,6 +259,9 @@
       </div>
     </section>
   </main>
+  <script src="../../docs/js/languages.js"></script>
+  <script src="../../docs/js/catalog.js"></script>
+  <script src="../../docs/js/speech-style-ui.js"></script>
   <script src="../lib/setup-ready.js"></script>
   <script src="../lib/user-text.js"></script>
   <script src="hearing.js"></script>

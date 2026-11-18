@@ -129,7 +129,7 @@
         },
         "preachers": {
           ".read": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",
-          ".write": "auth != null && auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val()"
+          ".write": "auth != null && (auth.uid === root.child('live-interpret/admin/uid').val() || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())"
         },
         "sessionIndex": {
           ".read": "auth != null && ((auth.uid === root.child('live-interpret/admin/uid').val() && auth.token.email.toLowerCase() === 'anyplan@me.com') || auth.uid === root.child('live-interpret/churches').child($churchId).child('account/uid').val())",

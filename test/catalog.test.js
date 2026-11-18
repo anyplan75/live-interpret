@@ -12,6 +12,27 @@ test("language list matches the worship set", () => {
   assert.equal(catalog.firebase.rootPath, "live-interpret");
 });
 
+test("speech style lines keep source and converted text with apply or ignore", () => {
+  const merged = catalog.mergeSpeechLines(
+    "[적용] 아멘을 길게 → 아멘\n[무시] 그죠 → 그렇죠",
+    "아멘을 길게 → 아멘이요\n천천히 말함",
+    12,
+    800
+  );
+  assert.match(merged, /\[적용\] 아멘을 길게 → 아멘이요/);
+  assert.match(merged, /\[무시\] 그죠 → 그렇죠/);
+  assert.match(merged, /\[적용\] 천천히 말함/);
+  const prompt = catalog.promptSpeechText(merged);
+  assert.match(prompt, /아멘을 길게 → 아멘이요/);
+  assert.doesNotMatch(prompt, /그죠/);
+  assert.match(prompt, /천천히 말함/);
+  const context = catalog.sessionContextText({
+    preacher: { name: "김목사", traits: merged, corrections: "", terms: "" },
+  });
+  assert.match(context, /말투:/);
+  assert.doesNotMatch(context, /\[무시\]/);
+});
+
 test("the recognition prompt is not treated as heard speech", () => {
   const prompt = catalog.sttPrompt("서귀포제일교회", "설교자: 이종찬\n말투: 차분함");
   assert.equal(catalog.isGuidanceEcho(prompt), true);
@@ -142,6 +163,7 @@ test("owner and church logins split the controls", () => {
   assert.equal(keyRule === true || keyRule === "true", false);
   assert.match(church.preachers[".write"], /\$churchId/);
   assert.match(church.preachers[".write"], /account\/uid/);
+  assert.match(church.preachers[".write"], /admin\/uid/);
   assert.match(church.sessions[".write"], /account\/uid/);
   assert.match(church.sessions.$folder.bulletin[".write"], /account\/uid/);
   assert.match(church.live.settings[".write"], /account\/uid/);
