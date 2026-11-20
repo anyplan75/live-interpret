@@ -545,6 +545,7 @@ test("a phone is an extra input and the first input stays included", async () =>
   engine.sessionCharge = { charged: 15000, balance: 40000 };
   engine.outputs = ["en"];
   engine.paidChannels = new Set();
+  engine.readTestPeriod = async () => false;
   const opened = [];
   engine.openChannel = async (index) => { opened.push(index); };
   engine.writeBilling = async (_id, balance) => {
@@ -610,6 +611,7 @@ test("a phone that looks connected also feeds the translator", async () => {
   engine.sessionCharge = { charged: 15000, balance: 40000 };
   engine.outputs = ["en"];
   engine.paidChannels = new Set();
+  engine.readTestPeriod = async () => false;
   engine.syncSettings = async () => {};
   engine.writeBilling = async (_id, balance) => { engine.sessionCharge.balance = balance; };
   const fed = [];

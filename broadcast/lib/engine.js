@@ -30,6 +30,13 @@ const { cleanDisplayName, cleanPhoneId } = require("./phone-name");
 const { createSessionWriter } = require("./files");
 const firebase = require("./firebase");
 const { userText } = require("./user-text");
+const {
+  createProPresenterHub,
+  cleanMode: cleanCaptionSourceMode,
+  DEFAULT_MODE: DEFAULT_CAPTION_SOURCE_MODE,
+  DEFAULT_HOLD_MS,
+  DEFAULT_GRACE_MS,
+} = require("./propresenter");
 
 function cleanTargets(targets) {
   return [...new Set((targets || []).filter((code) => code !== "ko" && langByCode[code]))];
@@ -205,6 +212,11 @@ class Engine {
     this.inPrepaidTick = false;
     this.stopPromise = null;
     this.pendingStopReason = "";
+    this.ppHub = null;
+    this.captionSourceMode = DEFAULT_CAPTION_SOURCE_MODE;
+    this.ppHoldSec = Math.round(DEFAULT_HOLD_MS / 1000);
+    this.ppHybridGraceSec = Math.round(DEFAULT_GRACE_MS / 1000);
+    this.ppStripLabels = true;
     const extra = hooks || {};
     this.readLocalPrepaid = extra.readLocalPrepaid;
     this.writeLocalPrepaid = extra.writeLocalPrepaid;
@@ -1078,11 +1090,13 @@ class Engine {
       onInterim: (text) => {
         const current = this.channelSessions && this.channelSessions.get(index);
         if (current && current.captionLive === false) return;
+        if (!this.admitSttText(text, { isFinal: false })) return;
         pipeline.onInterim(text);
       },
       onFinal: (text) => {
         const current = this.channelSessions && this.channelSessions.get(index);
         if (current && current.captionLive === false) return;
+        if (!this.admitSttText(text, { isFinal: true })) return;
         pipeline.onFinalChunk(text);
       },
       onStatus: (text) => this.emit({ type: "log", level: "info", text }),
@@ -1492,6 +1506,7 @@ class Engine {
     const who = row.showName === false ? "" : cleanDisplayName(row.name);
     const session = this.channelSessions && this.channelSessions.get(index);
     if (session && session.pipeline && typeof session.pipeline.onFinalChunk === "function") {
+      if (!this.admitSttText(body, { isFinal: true })) return;
       if (who) {
         session.name = who;
         session.pipeline.speaker = who;
@@ -1616,6 +1631,102 @@ class Engine {
       });
     }
     return { showPreacherName: this.showPreacherName };
+  }
+
+  ensurePpHub() {
+    if (this.ppHub) return this.ppHub;
+    this.ppHub = createProPresenterHub({
+      mode: this.captionSourceMode,
+      holdMs: this.ppHoldSec * 1000,
+      graceMs: this.ppHybridGraceSec * 1000,
+      stripLabels: this.ppStripLabels,
+      onCaption: (row) => this.handlePpCaption(row),
+      onLog: (text) => this.emit({ type: "log", level: "info", text: String(text || "") }),
+    });
+    return this.ppHub;
+  }
+
+  setCaptionSource(opts) {
+    const src = opts && typeof opts === "object" ? opts : {};
+    if (Object.prototype.hasOwnProperty.call(src, "captionSourceMode") || Object.prototype.hasOwnProperty.call(src, "mode")) {
+      this.captionSourceMode = cleanCaptionSourceMode(src.captionSourceMode || src.mode);
+    }
+    if (Object.prototype.hasOwnProperty.call(src, "ppHoldSec")) {
+      const sec = Math.round(Number(src.ppHoldSec));
+      if (Number.isFinite(sec)) this.ppHoldSec = Math.min(30, Math.max(1, sec));
+    }
+    if (Object.prototype.hasOwnProperty.call(src, "ppHybridGraceSec")) {
+      const sec = Math.round(Number(src.ppHybridGraceSec));
+      if (Number.isFinite(sec)) this.ppHybridGraceSec = Math.min(60, Math.max(1, sec));
+    }
+    if (Object.prototype.hasOwnProperty.call(src, "ppStripLabels")) {
+      this.ppStripLabels = src.ppStripLabels !== false;
+    }
+    const hub = this.ensurePpHub();
+    hub.setOptions({
+      mode: this.captionSourceMode,
+      holdMs: this.ppHoldSec * 1000,
+      graceMs: this.ppHybridGraceSec * 1000,
+      stripLabels: this.ppStripLabels,
+    });
+    return this.captionSourceStatus();
+  }
+
+  captionSourceStatus() {
+    const hub = this.ppHub ? this.ppHub.status() : null;
+    return {
+      captionSourceMode: this.captionSourceMode,
+      ppHoldSec: this.ppHoldSec,
+      ppHybridGraceSec: this.ppHybridGraceSec,
+      ppStripLabels: this.ppStripLabels,
+      ppBridge: !!(hub && hub.bridge && hub.bridge.listening),
+      lead: hub ? hub.lead : "stt",
+    };
+  }
+
+  handlePpCaption(row) {
+    if (!this.running || !row || !row.text) return;
+    const sessions = this.channelSessions;
+    if (!sessions || !sessions.size) return;
+    const session = sessions.get(0) || [...sessions.values()][0];
+    if (!session || !session.pipeline || typeof session.pipeline.onFinalChunk !== "function") return;
+    if (session.captionLive === false) return;
+    try {
+      if (session.pipeline.forgetDraft) session.pipeline.forgetDraft();
+      if (row.at) session.pipeline.sentenceAt = Number(row.at) || Date.now();
+      session.pipeline.onFinalChunk(row.text);
+      if (this.ppHub && row.seq != null) this.ppHub.markApplied(row.seq);
+    } catch (err) {
+      this.emit({ type: "log", level: "error", text: `슬라이드 자막 반영 실패: ${userText(err)}` });
+    }
+  }
+
+  admitSttText(text, meta) {
+    if (!this.ppHub) return true;
+    const decision = this.ppHub.admitStt(text, meta);
+    return !!(decision && decision.accept);
+  }
+
+  async startPpHub() {
+    const hub = this.ensurePpHub();
+    hub.setOptions({
+      mode: this.captionSourceMode,
+      holdMs: this.ppHoldSec * 1000,
+      graceMs: this.ppHybridGraceSec * 1000,
+      stripLabels: this.ppStripLabels,
+    });
+    try {
+      await hub.start();
+    } catch (err) {
+      this.emit({ type: "log", level: "error", text: `슬라이드 입력 시작 실패: ${userText(err)}` });
+    }
+  }
+
+  async stopPpHub() {
+    if (!this.ppHub) return;
+    try {
+      await this.ppHub.stop();
+    } catch (_) { /* 종료 중 브릿지 오류는 무시합니다 */ }
   }
 
   broadcastLive() {
@@ -1848,6 +1959,7 @@ class Engine {
       throw err;
     }
     this.running = true;
+    await this.startPpHub();
     this.startPrepaidTimer();
     this.emitPrepaid();
     const opening = this.flushUsage(true);
@@ -1935,6 +2047,7 @@ class Engine {
     if (!this.running) return { stopped: true };
     this.running = false;
     this.pendingStopReason = "";
+    await this.stopPpHub();
     this.stopPrepaidTimer();
     if (!this.inPrepaidTick) {
       try { await this.prepaidChain; } catch (_) { /* 남은 시간 저장이 이미 실패해도 종료는 계속합니다 */ }

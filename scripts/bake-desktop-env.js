@@ -74,7 +74,8 @@ async function bakeInto(context, opts = {}) {
     || (context.packager && context.packager.info && context.packager.info.projectDir)
     || path.join(__dirname, "..");
   const envFile = opts.envFile || findEnvFile(projectDir);
-  if (!envFile) {
+  // 시험이 envText를 넘기면 .env 파일이 없어도 됩니다. Actions에 파일이 없을 때만 건너뜁니다.
+  if (!envFile && opts.envText == null) {
     if (process.env.GITHUB_ACTIONS === "true") {
       log("GitHub Actions 에는 .env 가 없어 설치 파일에 웹 접속 키를 넣지 않습니다.");
       return "";
