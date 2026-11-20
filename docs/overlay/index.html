@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overlay</title>
+  <link rel="stylesheet" href="../css/lower-third.css">
+</head>
+<body>
+  <div id="stage" class="pos-bottom size-medium">
+    <div id="caption"></div>
+  </div>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <script src="../js/languages.js"></script>
+  <script src="../js/runtime-env.js"></script>
+  <script src="../js/catalog.js"></script>
+  <script src="../js/db.js"></script>
+  <script src="../js/speaker-lines.js"></script>
+  <script src="../js/viewer.js"></script>
+  <script>
+    const churchId = LI.catalog.churchIdFromQuery(location.search);
+    const stage = document.getElementById("stage");
+    const caption = document.getElementById("caption");
+    const layout = LI.viewer.queryLowerThird();
+    if (!churchId) {
+      caption.textContent = "";
+    } else {
+      document.title = `Overlay (${layout.lang})`;
+      LI.db.useChurch(churchId);
+      let session = null;
+      LI.db.init().then(() => {
+        LI.db.onValue(`churches/${churchId}/active`, (value) => {
+          if (!LI.catalog.churchIsActive(value)) {
+            if (session) {
+              session.stop();
+              session = null;
+            }
+            caption.textContent = "";
+            return;
+          }
+          if (!session) {
+            session = LI.viewer.startLowerThird({
+              lang: layout.lang,
+              pos: layout.pos,
+              size: layout.size,
+              margin: layout.margin,
+              stage,
+              caption,
+            });
+          }
+        });
+      }).catch(() => {
+        caption.textContent = "";
+      });
+    }
+  </script>
+</body>
+</html>

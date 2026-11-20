@@ -1,0 +1,61 @@
+/* YoloBox Pro Web Overlay용 Lower Third. 배경은 항상 투명. OBS overlay.css 와 역할이 다름. */
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+  font-family: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+}
+
+#stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+  box-sizing: border-box;
+  --lt-size: 32px;
+  --lt-margin: 3vh;
+  --lt-side: 4vw;
+}
+
+#stage.pos-bottom {
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 var(--lt-side) var(--lt-margin);
+}
+
+#stage.pos-top {
+  justify-content: flex-start;
+  align-items: center;
+  padding: var(--lt-margin) var(--lt-side) 0;
+}
+
+#stage.size-small { --lt-size: 22px; }
+#stage.size-medium { --lt-size: 32px; }
+#stage.size-large { --lt-size: 48px; }
+
+#caption {
+  position: relative;
+  z-index: 1;
+  max-width: 92vw;
+  color: #fff;
+  font-size: var(--lt-size);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.9);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  opacity: 1;
+  transition: opacity 0.28s ease;
+  will-change: opacity;
+}
+
+#caption.is-fading {
+  opacity: 0;
+}
+
+#caption .line { display: block; }
+#caption .speaker { font-weight: 800; }
+#caption .interim { color: #cfcfcf; }
