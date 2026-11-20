@@ -1,5 +1,5 @@
 /**
- * OBS 오버레이와 성도 자막.
+ * OBS 오버레이, YoloBox Lower Third, 성도 자막.
  * 문장 id 가 같으면 같은 줄을 고치고, 임시 인식은 흐리게 표시합니다.
  */
 window.LI = window.LI || {};
@@ -8,6 +8,21 @@ LI.viewer = (() => {
   function queryLang(fallback = "en") {
     const lang = new URLSearchParams(location.search).get("lang") || fallback;
     return LI.catalog.langByCode[lang] ? lang : fallback;
+  }
+
+  /** YoloBox `/overlay/` 쿼리. OBS overlay.html 설정과 별개. */
+  function queryLowerThird() {
+    const q = new URLSearchParams(location.search);
+    const lang = queryLang("ko");
+    const posRaw = String(q.get("pos") || "bottom").toLowerCase();
+    const pos = posRaw === "top" ? "top" : "bottom";
+    const sizeRaw = String(q.get("size") || "medium").toLowerCase();
+    const size = sizeRaw === "small" || sizeRaw === "large" ? sizeRaw : "medium";
+    const marginNum = Number(q.get("margin"));
+    const margin = Number.isFinite(marginNum) && marginNum >= 0 && marginNum <= 40
+      ? marginNum
+      : 3;
+    return { lang, pos, size, margin };
   }
 
   function hexToRgba(hex, opacity) {
@@ -221,6 +236,109 @@ LI.viewer = (() => {
     return { stop };
   }
 
+  /**
+   * YoloBox Pro Web Overlay용 Lower Third.
+   * settings 구독 없이 subtitles만 듣고, 쿼리 pos/size/margin·fade만 쓴다.
+   */
+  function startLowerThird(opts) {
+    const lang = opts.lang || "ko";
+    const stage = opts.stage;
+    const caption = opts.caption;
+    const pos = opts.pos === "top" ? "top" : "bottom";
+    const size = opts.size === "small" || opts.size === "large" ? opts.size : "medium";
+    const margin = Number.isFinite(Number(opts.margin)) ? Number(opts.margin) : 3;
+    const maxLines = 2;
+    let lastTime = 0;
+    let lastKey = "";
+    let lines = [];
+    let fadeTimer = null;
+    let stopped = false;
+    let unsubSubs = null;
+
+    stage.className = `pos-${pos} size-${size}`;
+    stage.style.setProperty("--lt-margin", `${margin}vh`);
+    caption.style.fontFamily = useSubtitleFont(undefined, lang);
+    caption.textContent = "";
+    caption.classList.remove("is-fading");
+
+    function fingerprint(list) {
+      return list.map((line) => `${line.id}:${line.isFinal ? 1 : 0}:${line.text}`).join("|");
+    }
+
+    function paint(html, key, soft) {
+      if (key === lastKey) return;
+      lastKey = key;
+      if (fadeTimer) {
+        clearTimeout(fadeTimer);
+        fadeTimer = null;
+      }
+      if (!html) {
+        caption.classList.add("is-fading");
+        fadeTimer = setTimeout(() => {
+          if (stopped) return;
+          caption.innerHTML = "";
+          caption.classList.remove("is-fading");
+        }, 280);
+        return;
+      }
+      caption.classList.add("is-fading");
+      fadeTimer = setTimeout(() => {
+        if (stopped) return;
+        caption.innerHTML = html;
+        requestAnimationFrame(() => {
+          if (!stopped) caption.classList.remove("is-fading");
+        });
+      }, soft ? 120 : 220);
+    }
+
+    function applySubtitles(subtitles) {
+      if (!subtitles || subtitles._timestamp === lastTime) return;
+      lastTime = subtitles._timestamp;
+      const row = subtitles[lang];
+      if (!row) {
+        paint("", "", false);
+        return;
+      }
+      const incoming = captionEntries(row);
+      if (!incoming.length) {
+        paint("", "", false);
+        return;
+      }
+      incoming.forEach((entry) => upsertCaption(lines, entry, maxLines));
+      while (lines.length > maxLines) lines.shift();
+      const html = lines
+        .map((line) => {
+          const cls = line.isFinal === false ? "line interim" : "line";
+          return `<span class="${cls}">${lineHtml(line)}</span>`;
+        })
+        .join("");
+      const soft = lines.some((line) => line.isFinal === false);
+      paint(html, fingerprint(lines), soft);
+    }
+
+    function stop() {
+      stopped = true;
+      if (fadeTimer) clearTimeout(fadeTimer);
+      fadeTimer = null;
+      if (unsubSubs) unsubSubs();
+      unsubSubs = null;
+      lines = [];
+      lastTime = 0;
+      lastKey = "";
+      caption.classList.remove("is-fading");
+      caption.innerHTML = "";
+    }
+
+    LI.db.init().then(() => {
+      if (stopped) return;
+      unsubSubs = LI.db.onValue("subtitles", applySubtitles);
+    }).catch(() => {
+      paint("", false);
+    });
+
+    return { stop };
+  }
+
   function startPrompter(opts) {
     const langSelect = opts.langSelect;
     const scriptBox = opts.scriptBox;
@@ -310,8 +428,10 @@ LI.viewer = (() => {
 
   return {
     queryLang,
+    queryLowerThird,
     useSubtitleFont,
     startOverlay,
+    startLowerThird,
     startPrompter,
     fillLangSelect,
     activeLangCodesFromSettings,
