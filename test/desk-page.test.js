@@ -20,6 +20,8 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(page, /id="log"/);
   assert.match(page, /id="sensitivity"/);
   assert.match(page, /id="sessionKind"/);
+  assert.match(page, /id="captionSourceMode"/);
+  assert.match(page, /id="ppStripLabels"/);
   assert.match(page, /id="phoneCount"/);
   assert.match(page, /id="pickBulletin"/);
   assert.match(page, /id="inputs"/);
@@ -84,10 +86,12 @@ test("the web settings page starts a broadcast without picking a device", () => 
   assert.match(client, /showName:\s*showBox\.checked|showName: showBox\.checked/);
   assert.match(page, /id="placeLine"/);
   assert.match(page, /org-services\.js\?v=/);
-  assert.match(page, /desk-client\.js\?v=20261118b/);
-  assert.match(page, /speech-style-ui\.js\?v=20261118b/);
-  assert.match(page, /desk-build 20261118b/);
-  assert.match(page, /qrcode-browser\.js\?v=20261118b/);
+  assert.match(page, /desk-client\.js\?v=20261120a/);
+  assert.match(page, /speech-style-ui\.js\?v=20261120a/);
+  assert.match(page, /desk-build 20261120a/);
+  assert.match(page, /qrcode-browser\.js\?v=20261120a/);
+  assert.match(page, /자막 입력 우선/);
+  assert.match(client, /captionSourcePatch|captionSourceMode/);
   assert.match(page, /id="traitsList"/);
   assert.match(page, /id="savePreacherProfile"/);
   assert.match(page, /id="materialSlots"/);

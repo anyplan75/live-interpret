@@ -51,10 +51,14 @@ function createSubtitleBoard() {
         const channelKey = safeKey(row.channelKey || "main");
         const text = String(row.text || "").trim();
         const prev = bucket.get(channelKey);
+        const rowAt = Number(row.at) || 0;
+        const prevAt = prev ? Number(prev.at) || 0 : 0;
         // 늦게 온 듣는 중 자막이 같은 문장의 확정 자막을 덮지 않게 합니다.
-        const stale = row.isFinal === false && prev && prev.isFinal && prev.id === row.id;
-        if (stale) {
-          /* 확정 자막을 그대로 둡니다 */
+        const staleInterim = row.isFinal === false && prev && prev.isFinal && prev.id === row.id;
+        // 더 오래된 확정이 최신 확정을 덮지 않게 합니다(시퀀스/타임스탬프 가드).
+        const staleFinal = row.isFinal !== false && prev && prev.isFinal && prevAt > 0 && rowAt > 0 && rowAt < prevAt;
+        if (staleInterim || staleFinal) {
+          /* 더 새 자막을 그대로 둡니다 */
         } else if (!text) bucket.delete(channelKey);
         else {
           bucket.set(channelKey, {

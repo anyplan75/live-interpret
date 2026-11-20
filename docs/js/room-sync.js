@@ -63,6 +63,21 @@
     };
   }
 
+  // 자막 입력 우선: 슬라이드(PP)와 마이크(STT). hybrid_auto 는 hybrid_pp_priority 와 같습니다.
+  const CAPTION_SOURCE_MODES = ["hybrid_pp_priority", "pp_priority", "mic_priority"];
+
+  function cleanCaptionSourceMode(value) {
+    const raw = String(value || "").trim();
+    if (raw === "hybrid_auto") return "hybrid_pp_priority";
+    return CAPTION_SOURCE_MODES.includes(raw) ? raw : "hybrid_pp_priority";
+  }
+
+  function cleanSec(value, fallback, min, max) {
+    const n = Math.round(Number(value));
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
   function cleanSheet(raw) {
     if (!raw || typeof raw !== "object") return null;
     const image = String(raw.image || "");
@@ -168,6 +183,18 @@
     if (Object.prototype.hasOwnProperty.call(src, "phoneCount")) next.phoneCount = cleanCount(src.phoneCount);
     if (Object.prototype.hasOwnProperty.call(src, "preacherName")) next.preacherName = cleanName(src.preacherName);
     if (Object.prototype.hasOwnProperty.call(src, "speech")) next.speech = cleanSpeech(src.speech);
+    if (Object.prototype.hasOwnProperty.call(src, "captionSourceMode")) {
+      next.captionSourceMode = cleanCaptionSourceMode(src.captionSourceMode);
+    }
+    if (Object.prototype.hasOwnProperty.call(src, "ppHoldSec")) {
+      next.ppHoldSec = cleanSec(src.ppHoldSec, 4, 1, 30);
+    }
+    if (Object.prototype.hasOwnProperty.call(src, "ppHybridGraceSec")) {
+      next.ppHybridGraceSec = cleanSec(src.ppHybridGraceSec, 5, 1, 60);
+    }
+    if (Object.prototype.hasOwnProperty.call(src, "ppStripLabels")) {
+      next.ppStripLabels = src.ppStripLabels !== false;
+    }
     const sheet = cleanSheet(src.sheet);
     if (sheet) next.sheet = sheet;
     return next;
@@ -200,6 +227,25 @@
         terms: next.speech.terms,
         sensitivity: next.sensitivity || next.speech.sensitivity || "normal",
       });
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(next, "captionSourceMode")
+      || Object.prototype.hasOwnProperty.call(next, "ppHoldSec")
+      || Object.prototype.hasOwnProperty.call(next, "ppHybridGraceSec")
+      || Object.prototype.hasOwnProperty.call(next, "ppStripLabels")
+    ) {
+      const caption = { type: "captionSource" };
+      if (Object.prototype.hasOwnProperty.call(next, "captionSourceMode")) {
+        caption.captionSourceMode = next.captionSourceMode;
+      }
+      if (Object.prototype.hasOwnProperty.call(next, "ppHoldSec")) caption.ppHoldSec = next.ppHoldSec;
+      if (Object.prototype.hasOwnProperty.call(next, "ppHybridGraceSec")) {
+        caption.ppHybridGraceSec = next.ppHybridGraceSec;
+      }
+      if (Object.prototype.hasOwnProperty.call(next, "ppStripLabels")) {
+        caption.ppStripLabels = next.ppStripLabels;
+      }
+      actions.push(caption);
     }
     const running = {
       type: "running",
@@ -296,6 +342,17 @@
       phoneCount: cleanCount(src.phoneCount),
       preacherName: cleanName(src.preacherName),
       speech: cleanSpeech(src.speech),
+      captionSourceMode: Object.prototype.hasOwnProperty.call(src, "captionSourceMode")
+        ? cleanCaptionSourceMode(src.captionSourceMode)
+        : "",
+      ppHoldSec: Object.prototype.hasOwnProperty.call(src, "ppHoldSec")
+        ? cleanSec(src.ppHoldSec, 4, 1, 30)
+        : 0,
+      ppHybridGraceSec: Object.prototype.hasOwnProperty.call(src, "ppHybridGraceSec")
+        ? cleanSec(src.ppHybridGraceSec, 5, 1, 60)
+        : 0,
+      ppStripLabels: src.ppStripLabels !== false,
+      ppBridge: src.ppBridge === true,
       bulletinLabel: cleanNote(src.bulletinLabel, 120),
       // 대기(종료)일 때는 이전 방송의 듣는 말·교정·번역을 모니터에 남기지 않습니다.
       board: src.running === true ? cleanBoard(src.board) : { live: "", heard: [], cards: [] },

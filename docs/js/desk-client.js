@@ -966,6 +966,14 @@
     if (!focus || !focus.closest || !focus.closest("#sensitivity")) {
       markChoice(document.getElementById("sensitivity"), "data-sense", row.sensitivity || "normal");
     }
+    if (!focus || !focus.closest || !focus.closest("#captionSourceMode")) {
+      const mode = row.captionSourceMode === "pp_priority" || row.captionSourceMode === "mic_priority"
+        ? row.captionSourceMode
+        : "hybrid_pp_priority";
+      markChoice(document.getElementById("captionSourceMode"), "data-caption-source", mode);
+    }
+    const strip = document.getElementById("ppStripLabels");
+    if (strip && fieldIdle("ppStripLabels")) strip.checked = row.ppStripLabels !== false;
     const speech = row.speech || {};
     if (speechFocusIdle() && !speechDirty) {
       setSpeechValues(speech);
@@ -1372,6 +1380,16 @@
     };
   }
 
+  function captionSourcePatch() {
+    const mode = choiceValue(document.getElementById("captionSourceMode"), "data-caption-source", "hybrid_pp_priority")
+      || "hybrid_pp_priority";
+    const strip = document.getElementById("ppStripLabels");
+    return {
+      captionSourceMode: mode,
+      ppStripLabels: !(strip && strip.checked === false),
+    };
+  }
+
   function bindSpeechEditors() {
     const ui = LI.speechStyleUi;
     if (!ui || typeof ui.mount !== "function") return;
@@ -1447,6 +1465,7 @@
         sessionKind: choiceValue(document.getElementById("sessionKind"), "data-kind", ""),
         preacherName: document.getElementById("preacherName").value,
         ...speechPatch(),
+        ...captionSourcePatch(),
       });
       notice.textContent = gaps.length
         ? `시작 명령을 보냈습니다. 방송실 준비: ${gaps.join(", ")}`
@@ -1511,6 +1530,18 @@
     paintRoleLabel(kind);
     paintMaterialMode(kind);
     sendPatch({ sessionKind: kind });
+  });
+
+  document.getElementById("captionSourceMode").addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-caption-source]");
+    if (!btn) return;
+    const mode = btn.getAttribute("data-caption-source") || "hybrid_pp_priority";
+    markChoice(document.getElementById("captionSourceMode"), "data-caption-source", mode);
+    sendPatch(captionSourcePatch());
+  });
+
+  document.getElementById("ppStripLabels").addEventListener("change", () => {
+    sendPatch(captionSourcePatch());
   });
 
   document.getElementById("preacherName").addEventListener("change", (event) => {

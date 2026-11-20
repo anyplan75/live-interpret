@@ -571,6 +571,7 @@ function registerIpc() {
       deviceKey,
     });
     const speech = saved.deskSpeech && typeof saved.deskSpeech === "object" ? saved.deskSpeech : {};
+    const caption = engine.captionSourceStatus ? engine.captionSourceStatus() : {};
     const status = roomSync.publicStatus({
       updatedAt: Date.now(),
       online: true,
@@ -597,6 +598,11 @@ function registerIpc() {
         terms: speech.terms || "",
       },
       bulletinLabel: bulletinStatusLabel(roomChurchId),
+      captionSourceMode: caption.captionSourceMode || saved.captionSourceMode || "hybrid_pp_priority",
+      ppHoldSec: caption.ppHoldSec || saved.ppHoldSec || 4,
+      ppHybridGraceSec: caption.ppHybridGraceSec || saved.ppHybridGraceSec || 5,
+      ppStripLabels: caption.ppStripLabels !== false,
+      ppBridge: !!caption.ppBridge,
       // 방송이 꺼져 있으면 모니터용 board를 비워, Firebase에 남은 이전 글을 덮어씁니다.
       board: engine.running ? hearingBoard : { live: "", heard: [], cards: [] },
       logs: hearingLogs,
@@ -837,6 +843,15 @@ function registerIpc() {
           }
           else if (action.type === "kind" && action.sessionKind) writeSettings({ sessionKind: action.sessionKind });
           else if (action.type === "sensitivity" || action.type === "speech") applyDeskStyle(action);
+          else if (action.type === "captionSource") {
+            const next = engine.setCaptionSource(action);
+            writeSettings({
+              captionSourceMode: next.captionSourceMode,
+              ppHoldSec: next.ppHoldSec,
+              ppHybridGraceSec: next.ppHybridGraceSec,
+              ppStripLabels: next.ppStripLabels,
+            });
+          }
           else if (action.type === "phones") await applyPhoneCount(action.phoneCount, { fromDesired: true });
           else if (action.type === "preacher") applyPreacherName(action.name);
           else if (action.type === "sheet") await applySheet(action);
