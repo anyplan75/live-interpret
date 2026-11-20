@@ -120,7 +120,10 @@ test("a missing saved input uses the default mic and hides RtApiCore disconnect 
   assert.match(renderer, /defaultInputDevice/);
 });
 
-test("host audio APIs can be queried without throwing", () => {
+test("host audio APIs can be queried without throwing", {
+  // Windows CI에서 audify(RtAudio) 종료 시 네이티브 크래시(0xC0000005)가 납니다.
+  skip: process.platform === "win32" && process.env.GITHUB_ACTIONS === "true",
+}, () => {
   const result = listInputDevices();
   assert.ok(Array.isArray(result.devices));
   assert.ok(Array.isArray(result.notes));
