@@ -158,7 +158,10 @@ test("daily export writes the replica and never the credential", async () => {
   assert.equal(dated.includes(apiKey), false);
   assert.equal(dated.includes(idToken), false);
   if (firebase.apiKey) assert.equal(dated.includes(firebase.apiKey), false);
-  assert.equal(fs.statSync(result.files.dated).mode & 0o077, 0);
+  // Windows는 Unix 권한 비트를 그대로 두지 않습니다.
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(result.files.dated).mode & 0o077, 0);
+  }
 });
 
 test("refresh errors do not echo the token", async () => {

@@ -11,11 +11,12 @@ test("openai key file is not world-readable and session omits the key", () => {
   const key = `sk-${"b".repeat(20)}`;
   secrets.writeKey(dir, key);
   const keyStat = fs.statSync(path.join(dir, secrets.KEY_NAME));
-  assert.equal(keyStat.mode & 0o077, 0);
+  // Windows는 Unix 권한 비트를 그대로 두지 않습니다.
+  if (process.platform !== "win32") assert.equal(keyStat.mode & 0o077, 0);
   assert.equal(secrets.readKey(dir), key);
   secrets.writeSession(dir, { refreshToken: "refresh-token", email: "a@b.co", localId: "uid" });
   const sessionStat = fs.statSync(path.join(dir, secrets.SESSION_NAME));
-  assert.equal(sessionStat.mode & 0o077, 0);
+  if (process.platform !== "win32") assert.equal(sessionStat.mode & 0o077, 0);
   const raw = fs.readFileSync(path.join(dir, secrets.SESSION_NAME), "utf8");
   assert.equal(raw.includes(key), false);
   assert.equal(raw.includes("password"), false);

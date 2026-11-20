@@ -23,7 +23,7 @@ function readPlist(file, key) {
   return String(result.stdout || "").trim();
 }
 
-test("mas helpers keep an ascii name the sandbox can resolve", () => {
+test("mas helpers keep an ascii name the sandbox can resolve", { skip: process.platform === "win32" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "li-names-"));
   const app = path.join(dir, "live-interpret.app");
   const helperName = "실시간 통역시스템 Helper (GPU)";
@@ -56,7 +56,7 @@ test("mas helpers keep an ascii name the sandbox can resolve", () => {
   assert.equal(readPlist(path.join(app, "Contents", "Info.plist"), "CFBundleDisplayName"), "실시간 통역시스템");
 });
 
-test("mas bundle name uses the same decomposed hangul as the helper folder", () => {
+test("mas bundle name uses the same decomposed hangul as the helper folder", { skip: process.platform === "win32" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "li-nfd-"));
   const app = path.join(dir, "live-interpret.app");
   const helperName = `${PRODUCT_NAME.normalize("NFD")} Helper (GPU)`;

@@ -57,12 +57,15 @@ test("a missing or read-only folder is not ready", () => {
   }), false);
   assert.equal(stopped, 1);
   assert.equal(useFolder({ folder: root, mas: false }), true);
-  const blocked = path.join(root, "blocked");
-  fs.mkdirSync(blocked);
-  fs.chmodSync(blocked, 0o500);
-  releaseFolder();
-  assert.equal(useFolder({ folder: blocked, mas: false }), false);
-  fs.chmodSync(blocked, 0o700);
+  // Windows chmod는 쓰기 거부를 Unix처럼 만들지 않습니다.
+  if (process.platform !== "win32") {
+    const blocked = path.join(root, "blocked");
+    fs.mkdirSync(blocked);
+    fs.chmodSync(blocked, 0o500);
+    releaseFolder();
+    assert.equal(useFolder({ folder: blocked, mas: false }), false);
+    fs.chmodSync(blocked, 0o700);
+  }
   fs.rmSync(root, { recursive: true, force: true });
 });
 
